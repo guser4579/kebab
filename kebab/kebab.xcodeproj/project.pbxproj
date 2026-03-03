@@ -6,6 +6,13 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		1495E23D2F56542400945B31 /* Auth in Frameworks */ = {isa = PBXBuildFile; productRef = 1495E23C2F56542400945B31 /* Auth */; };
+		1495E23F2F56542400945B31 /* PostgREST in Frameworks */ = {isa = PBXBuildFile; productRef = 1495E23E2F56542400945B31 /* PostgREST */; };
+		1495E2412F56542400945B31 /* Storage in Frameworks */ = {isa = PBXBuildFile; productRef = 1495E2402F56542400945B31 /* Storage */; };
+		1495E2442F5655B900945B31 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = 1495E2432F5655B900945B31 /* Supabase */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		1498E94B2F5649F200FA9F11 /* kebab.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = kebab.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -23,16 +30,28 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1495E2442F5655B900945B31 /* Supabase in Frameworks */,
+				1495E2412F56542400945B31 /* Storage in Frameworks */,
+				1495E23F2F56542400945B31 /* PostgREST in Frameworks */,
+				1495E23D2F56542400945B31 /* Auth in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		1495E2422F5655B900945B31 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 		1498E9422F5649F100FA9F11 = {
 			isa = PBXGroup;
 			children = (
 				1498E94D2F5649F200FA9F11 /* kebab */,
+				1495E2422F5655B900945B31 /* Frameworks */,
 				1498E94C2F5649F200FA9F11 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -65,6 +84,10 @@
 			);
 			name = kebab;
 			packageProductDependencies = (
+				1495E23C2F56542400945B31 /* Auth */,
+				1495E23E2F56542400945B31 /* PostgREST */,
+				1495E2402F56542400945B31 /* Storage */,
+				1495E2432F5655B900945B31 /* Supabase */,
 			);
 			productName = kebab;
 			productReference = 1498E94B2F5649F200FA9F11 /* kebab.app */;
@@ -94,6 +117,9 @@
 			);
 			mainGroup = 1498E9422F5649F100FA9F11;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				1495E23B2F56542400945B31 /* XCRemoteSwiftPackageReference "supabase-swift" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 1498E94C2F5649F200FA9F11 /* Products */;
 			projectDirPath = "";
@@ -251,6 +277,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = CPAS7LJ7Q5;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -282,6 +309,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = CPAS7LJ7Q5;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -328,6 +356,40 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		1495E23B2F56542400945B31 /* XCRemoteSwiftPackageReference "supabase-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/supabase/supabase-swift";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.5.1;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		1495E23C2F56542400945B31 /* Auth */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 1495E23B2F56542400945B31 /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Auth;
+		};
+		1495E23E2F56542400945B31 /* PostgREST */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 1495E23B2F56542400945B31 /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = PostgREST;
+		};
+		1495E2402F56542400945B31 /* Storage */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 1495E23B2F56542400945B31 /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Storage;
+		};
+		1495E2432F5655B900945B31 /* Supabase */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 1495E23B2F56542400945B31 /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Supabase;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 1498E9432F5649F200FA9F11 /* Project object */;
 }
