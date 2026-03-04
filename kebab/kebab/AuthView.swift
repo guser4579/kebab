@@ -91,13 +91,26 @@ struct AuthView: View {
     private var emailScreen: some View {
         VStack(spacing: 0) {
             VStack(spacing: 0) {
-                Text("auth")
-                    .font(.system(size: 18, weight: .medium).monospaced())
-                    .foregroundColor(Style.Color.primaryText)
+                ZStack(alignment: .leading) {
+                    Text("auth")
+                        .font(.system(size: 18, weight: .medium).monospaced())
+                        .foregroundColor(Style.Color.primaryText)
+                        .frame(maxWidth: .infinity)
+
+                    Button("Back") {
+                        viewModel.email = ""
+                        viewModel.resetFlow()
+                        flow = .welcome
+                    }
+                    .font(Style.Typography.body())
+                    .foregroundColor(Style.Color.secondary)
+                }
 
                 Rectangle()
                     .fill(Style.Color.separator)
                     .frame(height: 1)
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, -Style.Layout.entryContentPadding)
                     .padding(.top, Style.Layout.separatorSpacingBelowHeader)
             }
             .frame(maxWidth: .infinity, alignment: .center)
@@ -173,13 +186,26 @@ struct AuthView: View {
     private var codeScreen: some View {
         VStack(spacing: 0) {
             VStack(spacing: 0) {
-                Text("auth")
-                    .font(.system(size: 18, weight: .medium).monospaced())
-                    .foregroundColor(Style.Color.primaryText)
+                ZStack(alignment: .leading) {
+                    Text("auth")
+                        .font(.system(size: 18, weight: .medium).monospaced())
+                        .foregroundColor(Style.Color.primaryText)
+                        .frame(maxWidth: .infinity)
+
+                    Button("Back") {
+                        viewModel.email = ""
+                        viewModel.resetFlow()
+                        flow = .welcome
+                    }
+                    .font(Style.Typography.body())
+                    .foregroundColor(Style.Color.secondary)
+                }
 
                 Rectangle()
                     .fill(Style.Color.separator)
                     .frame(height: 1)
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, -Style.Layout.entryContentPadding)
                     .padding(.top, Style.Layout.separatorSpacingBelowHeader)
             }
             .frame(maxWidth: .infinity, alignment: .center)
