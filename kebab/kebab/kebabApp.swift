@@ -1,6 +1,17 @@
 import SwiftUI
 import Supabase
 
+private struct SupabaseKey: EnvironmentKey {
+    static let defaultValue: SupabaseClient? = nil
+}
+
+extension EnvironmentValues {
+    var supabase: SupabaseClient? {
+        get { self[SupabaseKey.self] }
+        set { self[SupabaseKey.self] = newValue }
+    }
+}
+
 @main
 struct kebabApp: App {
 
@@ -11,7 +22,26 @@ struct kebabApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            RootView(supabase: supabase)
+                .environment(\.supabase, supabase)
+        }
+    }
+}
+
+struct RootView: View {
+    let supabase: SupabaseClient
+    @StateObject private var authViewModel: AuthViewModel
+
+    init(supabase: SupabaseClient) {
+        self.supabase = supabase
+        _authViewModel = StateObject(wrappedValue: AuthViewModel(supabase: supabase))
+    }
+
+    var body: some View {
+        if authViewModel.isAuthenticated {
+            MainAppView()
+        } else {
+            AuthView(viewModel: authViewModel)
         }
     }
 }
