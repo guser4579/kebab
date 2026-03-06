@@ -39,7 +39,7 @@ struct RootView: View {
 
     var body: some View {
         if authViewModel.isAuthenticated {
-            MainAppView()
+            MainAppView(supabase: supabase)
         } else {
             AuthView(viewModel: authViewModel)
         }
