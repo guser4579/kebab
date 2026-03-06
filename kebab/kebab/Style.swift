@@ -2,7 +2,7 @@
 //  Style.swift
 //  MicromsgiOS
 //
-//  Micromsg Visual System v1 — single source of truth for colors, typography, spacing, radii.
+//  Micromsg Visual System v2 — single source of truth for colors, typography, spacing, icons, layout, animation.
 //
 
 import SwiftUI
@@ -26,33 +26,56 @@ enum Style {
         static let composerSend = SwiftUI.Color(hex: "545FC6")
     }
 
-    // MARK: - Typography (Phase 2: system fonts; flat hierarchy)
+    // MARK: - Typography
 
     enum Typography {
-        /// Header title "kebab": monospaced, medium, 18pt, 24pt line height
+        /// Header title "kebab": DM Mono, medium, 18pt, 24pt line height
         static func headerTitle() -> Font {
-            .system(size: 18, weight: .medium)
-                .monospaced()
+            .custom("DMMono-Medium", size: 18)
         }
-        /// Entry body: regular, 16pt, 24pt line height
+        /// Entry body: DM Sans regular, 16pt, 24pt line height
         static func body() -> Font {
-            .system(size: 16, weight: .regular)
+            .custom("DMSans-Regular", size: 16)
         }
-        /// Timestamp/overline, reply count: regular, 16pt, 24pt line height, use secondary color
+        /// Timestamp/overline, reply count: DM Sans regular, 14pt, 24pt line height, use secondary color
         static func meta() -> Font {
-            .system(size: 14, weight: .regular)
+            .custom("DMSans-Regular", size: 14)
         }
-        /// Composer placeholder: medium, 16pt, 24pt line height, use secondary color
+        /// Composer placeholder: DM Sans medium, 16pt, 24pt line height, use secondary color
         static func composerPlaceholder() -> Font {
-            .system(size: 16, weight: .medium)
+            .custom("DMSans-Medium", size: 16)
         }
-        /// Composer active text: regular, 16pt, 24pt line height, use primary color
+        /// Composer active text: DM Sans regular, 16pt, 24pt line height, use primary color
         static func composerText() -> Font {
-            .system(size: 16, weight: .regular)
+            .custom("DMSans-Regular", size: 16)
         }
 
         static let bodyLineHeight: CGFloat = 24
         static let metaLineHeight: CGFloat = 24
+
+        struct BodyTextModifier: ViewModifier {
+            func body(content: Content) -> some View {
+                content
+                    .font(Typography.body())
+                    .lineSpacing(Typography.bodyLineHeight - 16)
+            }
+        }
+
+        struct MetaTextModifier: ViewModifier {
+            func body(content: Content) -> some View {
+                content
+                    .font(Typography.meta())
+                    .lineSpacing(Typography.metaLineHeight - 14)
+            }
+        }
+
+        static func bodyText() -> BodyTextModifier {
+            BodyTextModifier()
+        }
+
+        static func metaText() -> MetaTextModifier {
+            MetaTextModifier()
+        }
     }
 
     // MARK: - Spacing (base unit 4pt)
@@ -63,19 +86,30 @@ enum Style {
         static let x3: CGFloat = 12
         static let x4: CGFloat = 16
         /// Timestamp row above body
-        static let timestampAboveBody: CGFloat = 4
+        static let timestampAboveBody: CGFloat = base
         /// Reply icon row below body
-        static let replyBelowBody: CGFloat = 12
+        static let replyBelowBody: CGFloat = x3
         /// Reply count below reply icon row
-        static let replyCountBelowIcon: CGFloat = 8
+        static let replyCountBelowIcon: CGFloat = x2
         /// Composer inner padding vertical
-        static let composerPaddingVertical: CGFloat = 12
+        static let composerPaddingVertical: CGFloat = x3
         /// Composer inner padding left
-        static let composerPaddingLeft: CGFloat = 16
+        static let composerPaddingLeft: CGFloat = x4
         /// Composer text right margin from action button
-        static let composerTextMarginRight: CGFloat = 12
+        static let composerTextMarginRight: CGFloat = x3
         /// Composer action button inset from edges
         static let composerButtonInset: CGFloat = 6
+    }
+
+    // MARK: - Icon
+
+    enum Icon {
+        /// Standard icon grid used throughout the app
+        static let grid: CGFloat = 24
+        /// Default glyph size inside the grid
+        static let glyph: CGFloat = 18
+        /// Smaller glyph used for optical balance (ellipsis etc)
+        static let glyphSmall: CGFloat = 16
     }
 
     // MARK: - Layout

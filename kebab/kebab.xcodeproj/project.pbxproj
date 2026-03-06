@@ -17,9 +17,22 @@
 		1498E94B2F5649F200FA9F11 /* kebab.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = kebab.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		1495E25C2F5B76A600945B31 /* Exceptions for "kebab" folder in "kebab" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 1498E94A2F5649F200FA9F11 /* kebab */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		1498E94D2F5649F200FA9F11 /* kebab */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				1495E25C2F5B76A600945B31 /* Exceptions for "kebab" folder in "kebab" target */,
+			);
 			path = kebab;
 			sourceTree = "<group>";
 		};
@@ -280,6 +293,7 @@
 				DEVELOPMENT_TEAM = CPAS7LJ7Q5;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = kebab/Info.plist;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -312,6 +326,7 @@
 				DEVELOPMENT_TEAM = CPAS7LJ7Q5;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = kebab/Info.plist;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

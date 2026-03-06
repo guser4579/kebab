@@ -159,8 +159,7 @@ struct ComposerView: View {
                         : Style.Color.secondary.opacity(0.2)
                     )
                     .frame(width: buttonSize, height: buttonSize)
-                Image(systemName: "paperplane.fill")
-                    .font(.system(size: 18))
+                Icon("arrow-up")
                     .foregroundColor(
                         hasContent
                         ? Style.Color.composerSend

@@ -15,15 +15,14 @@ struct MainAppView: View {
         GeometryReader { geometry in
             ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 12) {
+                    LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(feedViewModel.entries) { entry in
-                            Text(entry.content)
+                            EntryRowView(entry: entry)
                         }
                         Color.clear
                             .frame(height: 1)
                             .id("feedBottom")
                     }
-                    .padding(.horizontal, Style.Layout.entryContentPadding)
                     .padding(.top, Style.Spacing.x4)
                     .padding(.bottom, 16)
                 }
