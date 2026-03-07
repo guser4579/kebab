@@ -8,6 +8,7 @@ struct MainAppView: View {
     @State private var hasScrolledToInitialBottom = false
     @State private var activeEntryMenuEntry: Entry?
     @State private var isEntryActionSheetVisible = false
+    @State private var selectedTab: StickyHeaderView.Tab = .feed
 
     init(supabase: SupabaseClient) {
         _feedViewModel = StateObject(wrappedValue: FeedViewModel(supabase: supabase))
@@ -15,8 +16,7 @@ struct MainAppView: View {
 
     var body: some View {
         GeometryReader { geometry in
-            ZStack(alignment: .bottom) {
-
+            ZStack(alignment: .top) {
                 ScrollViewReader { proxy in
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 0) {
@@ -33,7 +33,7 @@ struct MainAppView: View {
                                 .frame(height: 1)
                                 .id("feedBottom")
                         }
-                        .padding(.top, Style.Spacing.x4)
+                        .padding(.top, 142)
                         .padding(.bottom, 16)
                     }
                     .scrollDismissesKeyboard(.interactively)
@@ -69,12 +69,12 @@ struct MainAppView: View {
                                     proxy.scrollTo("feedBottom", anchor: .bottom)
                                 }
                             }
-                        )
-                    }
+                    )
+                }
                 }
 
-            }   // <-- THIS was the missing brace closing the ZStack
-
+                StickyHeaderView(selectedTab: $selectedTab)
+            }
             .overlay(alignment: .bottom) {
                 if activeEntryMenuEntry != nil {
                     ZStack(alignment: .bottom) {
