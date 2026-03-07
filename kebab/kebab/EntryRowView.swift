@@ -17,6 +17,16 @@ struct EntryRowView: View {
         Self.timestampFormatter.string(from: entry.created_at)
     }
 
+    private var displayContent: String {
+        if entry.isContentHidden {
+            return entry.content.map { char in
+                char.isWhitespace ? char : "*"
+            }.map(String.init).joined()
+        } else {
+            return entry.content
+        }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             topSeparator
@@ -82,7 +92,7 @@ struct EntryRowView: View {
     }
 
     private var contentText: some View {
-        Text(entry.content)
+        Text(displayContent)
             .font(Style.Typography.body())
             .foregroundColor(Style.Color.primaryText)
             .lineSpacing(4)

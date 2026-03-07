@@ -35,8 +35,8 @@ struct EntryActionSheetView: View {
                     }
                 )
                 actionRow(
-                    title: "Hide entry content",
-                    iconName: "eye-closed",
+                    title: entry.isContentHidden ? "Unhide entry content" : "Hide entry content",
+                    iconName: entry.isContentHidden ? "eye" : "eye-closed",
                     color: Style.Color.primaryText,
                     action: {
                         onEdit()

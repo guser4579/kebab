@@ -10,9 +10,11 @@ final class FeedViewModel: ObservableObject {
     @Published var errorMessage: String?
 
     private let repository: EntryRepository
+    private let supabase: SupabaseClient
 
     init(supabase: SupabaseClient) {
         self.repository = EntryRepository(supabase: supabase)
+        self.supabase = supabase
     }
 
     func loadEntries() async {
@@ -47,6 +49,20 @@ final class FeedViewModel: ObservableObject {
             await loadEntries()
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+
+    func toggleEntryHidden(id: UUID, currentValue: Bool) async {
+        do {
+            try await supabase
+                .from("entries")
+                .update(["is_content_hidden": !currentValue])
+                .eq("id", value: id)
+                .execute()
+
+            await loadEntries()
+        } catch {
+            print("Failed to toggle entry hidden state:", error)
         }
     }
 }

@@ -98,7 +98,14 @@ struct MainAppView: View {
                                 onDelete: {
                                     Task { await feedViewModel.deleteEntry(id: entry.id) }
                                 },
-                                onEdit: { },
+                                onEdit: {
+                                    Task {
+                                        await feedViewModel.toggleEntryHidden(
+                                            id: entry.id,
+                                            currentValue: entry.isContentHidden
+                                        )
+                                    }
+                                },
                                 onAddToGroup: { },
                                 onDismiss: {
                                     withAnimation(.easeOut(duration: 0.25)) {
