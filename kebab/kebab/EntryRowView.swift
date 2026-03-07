@@ -3,6 +3,7 @@ import SwiftUI
 struct EntryRowView: View {
 
     let entry: Entry
+    var onMoreTapped: (() -> Void)?
 
     private static let timestampFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -72,7 +73,7 @@ struct EntryRowView: View {
             Spacer(minLength: 0)
 
             Button {
-                print("more tapped")
+                onMoreTapped?()
             } label: {
                 Icon("ellipsis", glyphSize: Style.Icon.glyphSmall)
                     .foregroundColor(Style.Color.secondary)
