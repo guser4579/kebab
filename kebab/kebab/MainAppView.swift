@@ -9,9 +9,13 @@ struct MainAppView: View {
     @State private var activeEntryMenuEntry: Entry?
     @State private var isEntryActionSheetVisible = false
     @State private var selectedTab: StickyHeaderView.Tab = .feed
+    @State private var isSettingsOpen: Bool = false
 
-    init(supabase: SupabaseClient) {
+    let authViewModel: AuthViewModel
+
+    init(supabase: SupabaseClient, authViewModel: AuthViewModel) {
         _feedViewModel = StateObject(wrappedValue: FeedViewModel(supabase: supabase))
+        self.authViewModel = authViewModel
     }
 
     var body: some View {
@@ -73,7 +77,26 @@ struct MainAppView: View {
                 }
                 }
 
-                StickyHeaderView(selectedTab: $selectedTab)
+                StickyHeaderView(
+                    selectedTab: $selectedTab,
+                    onSettingsTapped: {
+                        withAnimation(.easeInOut(duration: 0.28)) {
+                            isSettingsOpen = true
+                        }
+                    }
+                )
+
+                SettingsView(
+                    onClose: {
+                        withAnimation(.easeInOut(duration: 0.28)) {
+                            isSettingsOpen = false
+                        }
+                    },
+                    authViewModel: authViewModel
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .offset(x: isSettingsOpen ? 0 : -UIScreen.main.bounds.width)
+                .animation(.easeInOut(duration: 0.28), value: isSettingsOpen)
             }
             .overlay(alignment: .bottom) {
                 if activeEntryMenuEntry != nil {
@@ -131,6 +154,10 @@ struct MainAppView: View {
         supabase: SupabaseClient(
             supabaseURL: URL(string: "https://example.supabase.co")!,
             supabaseKey: "key"
-        )
+        ),
+        authViewModel: AuthViewModel(supabase: SupabaseClient(
+            supabaseURL: URL(string: "https://example.supabase.co")!,
+            supabaseKey: "key"
+        ))
     )
 }

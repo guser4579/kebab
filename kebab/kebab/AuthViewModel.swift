@@ -11,6 +11,7 @@ final class AuthViewModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var isAuthenticated: Bool = false
     @Published var codeSent: Bool = false
+    @Published var currentUserEmail: String?
 
     private let supabase: SupabaseClient
 
@@ -21,10 +22,12 @@ final class AuthViewModel: ObservableObject {
 
     func checkSession() async {
         do {
-            _ = try await supabase.auth.session
+            let session = try await supabase.auth.session
             isAuthenticated = true
+            currentUserEmail = session.user.email
         } catch {
             isAuthenticated = false
+            currentUserEmail = nil
         }
     }
 
@@ -65,9 +68,18 @@ final class AuthViewModel: ObservableObject {
             isAuthenticated = true
             codeSent = false
             code = ""
+            currentUserEmail = email
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    func signOut() async {
+        do {
+            try await supabase.auth.signOut()
+        } catch { }
+        isAuthenticated = false
+        currentUserEmail = nil
     }
 
     func resetFlow() {

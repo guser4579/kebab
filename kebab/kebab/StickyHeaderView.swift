@@ -13,6 +13,7 @@ struct StickyHeaderView: View {
     }
 
     @Binding var selectedTab: StickyHeaderView.Tab
+    var onSettingsTapped: (() -> Void)?
     @Namespace private var tabNamespace
 
     private let headerTotalHeight: CGFloat = 142
@@ -51,7 +52,9 @@ struct StickyHeaderView: View {
                 .foregroundColor(Style.Color.primaryText)
 
             HStack {
-                Button { } label: {
+                Button {
+                    onSettingsTapped?()
+                } label: {
                     Icon("settings")
                         .foregroundColor(Style.Color.primaryText)
                 }

@@ -37,7 +37,7 @@ struct AuthView: View {
         VStack(spacing: 0) {
             VStack(spacing: 0) {
                 Text("kebab")
-                    .font(.system(size: 24, weight: .medium).monospaced())
+                    .font(.custom("DMMono-Medium", size: 24))
                     .foregroundColor(Style.Color.primaryText)
 
                 Text("Unifying fragmented thoughts.")
@@ -118,7 +118,7 @@ struct AuthView: View {
 
             VStack(spacing: 0) {
                 Text("kebab")
-                    .font(.system(size: 24, weight: .medium).monospaced())
+                    .font(.custom("DMMono-Medium", size: 24))
                     .foregroundColor(Style.Color.primaryText)
 
                 Text("Enter your email below.")
@@ -213,7 +213,7 @@ struct AuthView: View {
 
             VStack(spacing: 0) {
                 Text("kebab")
-                    .font(.system(size: 24, weight: .medium).monospaced())
+                    .font(.custom("DMMono-Medium", size: 24))
                     .foregroundColor(Style.Color.primaryText)
 
                 Text("Enter the 6-digit passcode sent to your email.")
