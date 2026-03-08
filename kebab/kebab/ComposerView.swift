@@ -84,6 +84,7 @@ struct ComposerView: View {
 
     @Binding var text: String
     let maxHeight: CGFloat
+    var placeholder: String = "Share something"
     let onSent: (String) -> Void
     var onFocus: (() -> Void)?
 
@@ -118,7 +119,7 @@ struct ComposerView: View {
     private var textArea: some View {
         ZStack(alignment: .leading) {
             if text.isEmpty && !isFocused {
-                Text("Share something")
+                Text(placeholder)
                     .font(Style.Typography.composerPlaceholder())
                     .foregroundColor(Style.Color.secondary)
                     .padding(.leading, textLeadingPadding)

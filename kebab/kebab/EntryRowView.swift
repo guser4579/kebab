@@ -3,6 +3,7 @@ import SwiftUI
 struct EntryRowView: View {
 
     let entry: Entry
+    var feedViewModel: FeedViewModel?
     var onMoreTapped: (() -> Void)?
 
     private static let timestampFormatter: DateFormatter = {
@@ -101,11 +102,18 @@ struct EntryRowView: View {
 
     private var actionRow: some View {
         HStack(spacing: Style.Spacing.replyBelowBody) {
-            Button {
-                print("comment tapped")
-            } label: {
-                Icon("message-circle")
-                    .foregroundColor(Style.Color.secondary)
+            Group {
+                if let feedViewModel = feedViewModel {
+                    NavigationLink(destination: EntryDetailView(entry: entry, feedViewModel: feedViewModel)) {
+                        Icon("message-circle")
+                            .foregroundColor(Style.Color.secondary)
+                    }
+                } else {
+                    Button { } label: {
+                        Icon("message-circle")
+                            .foregroundColor(Style.Color.secondary)
+                    }
+                }
             }
 
             Button {

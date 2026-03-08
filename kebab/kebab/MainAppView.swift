@@ -19,13 +19,14 @@ struct MainAppView: View {
     }
 
     var body: some View {
+        NavigationStack {
         GeometryReader { geometry in
             ZStack(alignment: .top) {
                 ScrollViewReader { proxy in
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 0) {
                             ForEach(feedViewModel.entries) { entry in
-                                EntryRowView(entry: entry, onMoreTapped: {
+                                EntryRowView(entry: entry, feedViewModel: feedViewModel, onMoreTapped: {
                                     activeEntryMenuEntry = entry
                                     withAnimation(.easeOut(duration: 0.25)) {
                                         isEntryActionSheetVisible = true
@@ -145,6 +146,7 @@ struct MainAppView: View {
                     .ignoresSafeArea(edges: .bottom)
                 }
             }
+        }
         }
     }
 }
