@@ -43,7 +43,9 @@ private struct GrowingTextView: UIViewRepresentable {
         if textView.text != text {
             textView.text = text
         }
-        context.coordinator.reportHeight(from: textView)
+        DispatchQueue.main.async {
+            context.coordinator.reportHeight(from: textView)
+        }
     }
 
     class Coordinator: NSObject, UITextViewDelegate {
