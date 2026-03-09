@@ -85,7 +85,7 @@ struct ComposerView: View {
 
     @Binding var text: String
     let maxHeight: CGFloat
-    var placeholder: String = "Share something"
+    var placeholder: String = "Make an entry"
     let onSent: (String) -> Void
     var onFocus: (() -> Void)?
 
@@ -156,14 +156,14 @@ struct ComposerView: View {
                 Circle()
                     .fill(
                         hasContent
-                        ? Style.Color.composerSend.opacity(0.25)
+                        ? Style.Color.composerSend
                         : Style.Color.secondary.opacity(0.2)
                     )
                     .frame(width: buttonSize, height: buttonSize)
                 Icon("arrow-up")
                     .foregroundColor(
                         hasContent
-                        ? Style.Color.composerSend
+                        ? Style.Color.primaryText
                         : Style.Color.secondary
                     )
             }
