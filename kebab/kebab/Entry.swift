@@ -9,6 +9,7 @@ struct Entry: Identifiable, Codable, Sendable, Equatable {
     let created_at: Date
     let pinned_at: Date?
     let isContentHidden: Bool
+    let comment_count: Int?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -19,5 +20,6 @@ struct Entry: Identifiable, Codable, Sendable, Equatable {
         case created_at
         case pinned_at
         case isContentHidden = "is_content_hidden"
+        case comment_count
     }
 }

@@ -11,13 +11,23 @@ final class EntryRepository {
 
     func fetchRootEntries() async throws -> [Entry] {
         let entries: [Entry] = try await supabase
-            .from("entries")
-            .select("id,user_id,parent_id,root_id,content,created_at,pinned_at,is_content_hidden")
+            .from("entries_with_comment_counts")
+            .select("id,user_id,parent_id,root_id,content,created_at,pinned_at,is_content_hidden,comment_count")
             .order("created_at", ascending: true)
             .execute()
             .value
+        return entries
+    }
 
-        return entries.filter { $0.parent_id == nil }
+    func fetchComments(rootId: UUID) async throws -> [Entry] {
+        let entries: [Entry] = try await supabase
+            .from("entries")
+            .select("id,user_id,parent_id,root_id,content,created_at,pinned_at,is_content_hidden")
+            .eq("root_id", value: rootId)
+            .order("created_at", ascending: false)
+            .execute()
+            .value
+        return entries.filter { $0.parent_id != nil }
     }
 
     func insertEntry(content: String) async throws {

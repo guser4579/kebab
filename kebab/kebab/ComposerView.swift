@@ -39,6 +39,7 @@ private struct GrowingTextView: UIViewRepresentable {
     }
 
     func updateUIView(_ textView: UITextView, context: Context) {
+        context.coordinator.parent = self
         if textView.text != text {
             textView.text = text
         }
@@ -134,18 +135,17 @@ struct ComposerView: View {
                 maxHeight: maxHeight,
                 onFocus: onFocus
             )
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .frame(maxWidth: .infinity)
+            .frame(height: contentHeight)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(maxWidth: .infinity)
+        .frame(height: contentHeight)
     }
 
     private var sendButtonColumn: some View {
-        VStack(spacing: 0) {
-            Spacer(minLength: 0)
-            sendButton
-            Color.clear.frame(height: buttonInset)
-        }
-        .frame(width: buttonSize)
+        sendButton
+            .padding(.bottom, buttonInset)
+            .frame(width: buttonSize, height: contentHeight, alignment: .bottom)
     }
 
     private var sendButton: some View {

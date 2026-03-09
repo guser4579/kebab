@@ -15,6 +15,7 @@ struct EntryDetailView: View {
     @State private var composerText: String = ""
     @State private var activeEntryMenuEntry: Entry?
     @State private var isEntryActionSheetVisible = false
+    @State private var comments: [Entry] = []
 
     private static let timestampFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -44,9 +45,18 @@ struct EntryDetailView: View {
                 entryDetailHeader
 
                 ScrollView {
-                    entryContentSection
+                    VStack(alignment: .leading, spacing: 0) {
+                        entryContentSection
+
+                        ForEach(comments) { comment in
+                            CommentRowView(comment: comment)
+                        }
+                    }
                 }
                 .frame(maxWidth: .infinity)
+                .task {
+                    comments = await feedViewModel.loadComments(rootId: entry.id)
+                }
                 .background(Style.Color.background)
                 .foregroundColor(Style.Color.primaryText)
             }
@@ -55,7 +65,12 @@ struct EntryDetailView: View {
                     text: $composerText,
                     maxHeight: geometry.size.height * Style.Layout.composerMaxHeightFraction,
                     placeholder: "Add comment",
-                    onSent: { _ in },
+                    onSent: { content in
+                        Task {
+                            await feedViewModel.sendComment(content: content, rootEntry: entry)
+                            comments = await feedViewModel.loadComments(rootId: entry.id)
+                        }
+                    },
                     onFocus: { }
                 )
             }
@@ -183,8 +198,24 @@ struct EntryDetailView: View {
                 .frame(height: 4)
 
             contentText
+
+            Color.clear
+                .frame(height: 12)
+
+            entryCommentCounter
         }
         .padding(.horizontal, Style.Layout.entryContentPadding)
+    }
+
+    @ViewBuilder
+    private var entryCommentCounter: some View {
+        let count = entry.comment_count ?? comments.count
+        if count > 0 {
+            Text(count == 1 ? "1 comment" : "\(count) comments")
+                .font(.custom("DMSans-Regular", size: 16))
+                .foregroundColor(Style.Color.secondary)
+                .frame(height: 24, alignment: .leading)
+        }
     }
 
     private var headerRow: some View {

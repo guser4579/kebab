@@ -1,9 +1,13 @@
+//
+//  CommentRowView.swift
+//  kebab
+//
+
 import SwiftUI
 
-struct EntryRowView: View {
+struct CommentRowView: View {
 
-    let entry: Entry
-    var feedViewModel: FeedViewModel?
+    let comment: Entry
     var onMoreTapped: (() -> Void)?
 
     private static let timestampFormatter: DateFormatter = {
@@ -15,16 +19,16 @@ struct EntryRowView: View {
     }()
 
     private var formattedTimestamp: String {
-        Self.timestampFormatter.string(from: entry.created_at)
+        Self.timestampFormatter.string(from: comment.created_at)
     }
 
     private var displayContent: String {
-        if entry.isContentHidden {
-            return entry.content.map { char in
+        if comment.isContentHidden {
+            return comment.content.map { char in
                 char.isWhitespace ? char : "*"
             }.map(String.init).joined()
         } else {
-            return entry.content
+            return comment.content
         }
     }
 
@@ -35,35 +39,37 @@ struct EntryRowView: View {
             Color.clear
                 .frame(height: 16)
 
-            entryContent
+            VStack(alignment: .leading, spacing: 0) {
+                headerRow
+
+                Color.clear
+                    .frame(height: 4)
+
+                contentText
+
+                Color.clear
+                    .frame(height: 12)
+
+                actionRow
+            }
+            .padding(.leading, 40)
+            .padding(.trailing, 16)
 
             Color.clear
                 .frame(height: 16)
 
             bottomSeparator
         }
-    }
-
-    private var entryContent: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            headerRow
-
-            Color.clear
-                .frame(height: 4)
-
-            contentText
-
-            Color.clear
-                .frame(height: 12)
-
-            actionRow
-
-            Color.clear
-                .frame(height: 8)
-
-            commentCounter
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay(alignment: .leading) {
+            GeometryReader { geometry in
+                Circle()
+                    .frame(width: 8, height: 8)
+                    .foregroundColor(Style.Color.secondary)
+                    .position(x: 20, y: geometry.size.height / 2)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .padding(.horizontal, Style.Layout.entryContentPadding)
     }
 
     private var topSeparator: some View {
@@ -105,36 +111,10 @@ struct EntryRowView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    @ViewBuilder
-    private var commentCounter: some View {
-        if let count = entry.comment_count, count > 0 {
-            Text(count == 1 ? "1 comment" : "\(count) comments")
-                .font(.custom("DMSans-Regular", size: 16))
-                .foregroundColor(Style.Color.secondary)
-                .frame(height: 24, alignment: .leading)
-        }
-    }
-
     private var actionRow: some View {
         HStack(spacing: Style.Spacing.replyBelowBody) {
-            Group {
-                if let feedViewModel = feedViewModel {
-                    NavigationLink(destination: EntryDetailView(entry: entry, feedViewModel: feedViewModel)) {
-                        Icon("message-circle")
-                            .foregroundColor(Style.Color.secondary)
-                    }
-                } else {
-                    Button { } label: {
-                        Icon("message-circle")
-                            .foregroundColor(Style.Color.secondary)
-                    }
-                }
-            }
-
-            Button {
-                print("pin tapped")
-            } label: {
-                Icon("pin")
+            Button { } label: {
+                Icon("message-circle")
                     .foregroundColor(Style.Color.secondary)
             }
         }

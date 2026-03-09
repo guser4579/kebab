@@ -42,7 +42,6 @@ struct StickyHeaderView: View {
         .frame(height: headerTotalHeight)
         .frame(maxWidth: .infinity)
         .background(Style.Color.background)
-        .ignoresSafeArea(edges: .top)
     }
 
     private var topBar: some View {

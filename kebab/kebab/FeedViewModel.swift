@@ -65,4 +65,42 @@ final class FeedViewModel: ObservableObject {
             print("Failed to toggle entry hidden state:", error)
         }
     }
+
+    func loadComments(rootId: UUID) async -> [Entry] {
+        do {
+            return try await repository.fetchComments(rootId: rootId)
+        } catch {
+            return []
+        }
+    }
+
+    func sendComment(content: String, rootEntry: Entry) async {
+        let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        do {
+            let session = try await supabase.auth.session
+            let payload = InsertCommentPayload(
+                user_id: session.user.id,
+                parent_id: rootEntry.id,
+                root_id: rootEntry.id,
+                content: trimmed,
+                is_content_hidden: false
+            )
+            try await supabase
+                .from("entries")
+                .insert(payload)
+                .execute()
+        } catch {
+            print("Failed to send comment:", error)
+        }
+    }
+}
+
+private struct InsertCommentPayload: Encodable {
+    let user_id: UUID
+    let parent_id: UUID
+    let root_id: UUID
+    let content: String
+    let is_content_hidden: Bool
 }

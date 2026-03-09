@@ -5,7 +5,6 @@ struct MainAppView: View {
 
     @StateObject private var feedViewModel: FeedViewModel
     @State private var composerText: String = ""
-    @State private var hasScrolledToInitialBottom = false
     @State private var activeEntryMenuEntry: Entry?
     @State private var isEntryActionSheetVisible = false
     @State private var selectedTab: StickyHeaderView.Tab = .feed
@@ -22,7 +21,17 @@ struct MainAppView: View {
         NavigationStack {
         GeometryReader { geometry in
             ZStack(alignment: .top) {
-                ScrollViewReader { proxy in
+
+                VStack(spacing: 0) {
+                    StickyHeaderView(
+                        selectedTab: $selectedTab,
+                        onSettingsTapped: {
+                            withAnimation(.easeInOut(duration: 0.28)) {
+                                isSettingsOpen = true
+                            }
+                        }
+                    )
+
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 0) {
                             ForEach(feedViewModel.entries) { entry in
@@ -33,59 +42,34 @@ struct MainAppView: View {
                                     }
                                 })
                             }
-
-                            Color.clear
-                                .frame(height: 1)
-                                .id("feedBottom")
                         }
-                        .padding(.top, 142)
                         .padding(.bottom, 16)
                     }
                     .scrollDismissesKeyboard(.interactively)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .frame(maxWidth: .infinity)
                     .background(Style.Color.background)
                     .foregroundColor(Style.Color.primaryText)
                     .task {
                         await feedViewModel.loadEntries()
                     }
-                    .onChange(of: feedViewModel.entries.count) { _, newCount in
-                        guard newCount > 0, !hasScrolledToInitialBottom else { return }
-                        hasScrolledToInitialBottom = true
-                        DispatchQueue.main.async {
-                            proxy.scrollTo("feedBottom", anchor: .bottom)
-                        }
-                    }
-                    .safeAreaInset(edge: .bottom) {
+                }
+                .ignoresSafeArea(edges: .top)
+                .safeAreaInset(edge: .bottom) {
+                    if !isSettingsOpen {
                         ComposerView(
                             text: $composerText,
                             maxHeight: geometry.size.height * Style.Layout.composerMaxHeightFraction,
                             onSent: { content in
                                 Task {
                                     await feedViewModel.sendEntry(content: content)
-                                    try? await Task.sleep(nanoseconds: 100_000_000)
-
-                                    withAnimation(.easeOut(duration: 0.25)) {
-                                        proxy.scrollTo("feedBottom", anchor: .bottom)
-                                    }
                                 }
                             },
-                            onFocus: {
-                                withAnimation(.easeOut(duration: 0.25)) {
-                                    proxy.scrollTo("feedBottom", anchor: .bottom)
-                                }
-                            }
-                    )
-                }
-                }
-
-                StickyHeaderView(
-                    selectedTab: $selectedTab,
-                    onSettingsTapped: {
-                        withAnimation(.easeInOut(duration: 0.28)) {
-                            isSettingsOpen = true
-                        }
+                            onFocus: { }
+                        )
+                    } else {
+                        EmptyView()
                     }
-                )
+                }
 
                 SettingsView(
                     onClose: {
