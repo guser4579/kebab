@@ -9,6 +9,7 @@ struct MainAppView: View {
     @State private var isEntryActionSheetVisible = false
     @State private var selectedTab: StickyHeaderView.Tab = .feed
     @State private var isSettingsOpen: Bool = false
+    @State private var scrollToBottomOnChange = false
 
     let authViewModel: AuthViewModel
 
@@ -32,25 +33,38 @@ struct MainAppView: View {
                         }
                     )
 
-                    ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 0) {
-                            ForEach(feedViewModel.entries) { entry in
-                                EntryRowView(entry: entry, feedViewModel: feedViewModel, onMoreTapped: {
-                                    activeEntryMenuEntry = entry
-                                    withAnimation(.easeOut(duration: 0.25)) {
-                                        isEntryActionSheetVisible = true
-                                    }
-                                })
+                    ScrollViewReader { proxy in
+                        ScrollView {
+                            LazyVStack(alignment: .leading, spacing: 0) {
+                                ForEach(feedViewModel.entries) { entry in
+                                    EntryRowView(entry: entry, feedViewModel: feedViewModel, onMoreTapped: {
+                                        activeEntryMenuEntry = entry
+                                        withAnimation(.easeOut(duration: 0.25)) {
+                                            isEntryActionSheetVisible = true
+                                        }
+                                    })
+                                }
+                            }
+                            .padding(.bottom, 16)
+
+                            Color.clear
+                                .frame(height: 1)
+                                .id("feed-bottom")
+                        }
+                        .defaultScrollAnchor(.bottom)
+                        .scrollDismissesKeyboard(.interactively)
+                        .frame(maxWidth: .infinity)
+                        .background(Style.Color.background)
+                        .foregroundColor(Style.Color.primaryText)
+                        .task {
+                            await feedViewModel.loadEntries()
+                        }
+                        .onChange(of: feedViewModel.entries.count) {
+                            if scrollToBottomOnChange {
+                                scrollToBottomOnChange = false
+                                proxy.scrollTo("feed-bottom", anchor: .bottom)
                             }
                         }
-                        .padding(.bottom, 16)
-                    }
-                    .scrollDismissesKeyboard(.interactively)
-                    .frame(maxWidth: .infinity)
-                    .background(Style.Color.background)
-                    .foregroundColor(Style.Color.primaryText)
-                    .task {
-                        await feedViewModel.loadEntries()
                     }
                 }
                 .ignoresSafeArea(edges: .top)
@@ -60,6 +74,7 @@ struct MainAppView: View {
                             text: $composerText,
                             maxHeight: geometry.size.height * Style.Layout.composerMaxHeightFraction,
                             onSent: { content in
+                                scrollToBottomOnChange = true
                                 Task {
                                     await feedViewModel.sendEntry(content: content)
                                 }
