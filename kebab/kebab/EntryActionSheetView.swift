@@ -8,9 +8,9 @@ import SwiftUI
 struct EntryActionSheetView: View {
 
     let entry: Entry
+    let isComment: Bool
     let onDelete: () -> Void
     let onEdit: () -> Void
-    let onAddToGroup: () -> Void
     let onDismiss: () -> Void
 
     private let sheetTopCornerRadius: CGFloat = 32
@@ -26,7 +26,7 @@ struct EntryActionSheetView: View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: actionRowSpacing) {
                 actionRow(
-                    title: "Delete entry",
+                    title: isComment ? "Delete comment" : "Delete entry",
                     iconName: "trash-2",
                     color: Style.Color.destructive,
                     action: {
@@ -35,20 +35,13 @@ struct EntryActionSheetView: View {
                     }
                 )
                 actionRow(
-                    title: entry.isContentHidden ? "Unhide entry content" : "Hide entry content",
+                    title: entry.isContentHidden
+                        ? (isComment ? "Unhide comment details" : "Unhide entry content")
+                        : (isComment ? "Hide comment details" : "Hide entry content"),
                     iconName: entry.isContentHidden ? "eye" : "eye-closed",
                     color: Style.Color.primaryText,
                     action: {
                         onEdit()
-                        onDismiss()
-                    }
-                )
-                actionRow(
-                    title: "Add entry to group",
-                    iconName: "folder",
-                    color: Style.Color.primaryText,
-                    action: {
-                        onAddToGroup()
                         onDismiss()
                     }
                 )

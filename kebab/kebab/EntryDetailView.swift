@@ -49,7 +49,12 @@ struct EntryDetailView: View {
                         entryContentSection
 
                         ForEach(comments) { comment in
-                            CommentRowView(comment: comment)
+                            CommentRowView(comment: comment, onMoreTapped: {
+                                activeEntryMenuEntry = comment
+                                withAnimation(.easeOut(duration: 0.25)) {
+                                    isEntryActionSheetVisible = true
+                                }
+                            })
                         }
                     }
                 }
@@ -94,8 +99,14 @@ struct EntryDetailView: View {
                         if isEntryActionSheetVisible, let sheetEntry = activeEntryMenuEntry {
                             EntryActionSheetView(
                                 entry: sheetEntry,
+                                isComment: sheetEntry.parent_id != nil,
                                 onDelete: {
-                                    Task { await feedViewModel.deleteEntry(id: sheetEntry.id) }
+                                    Task {
+                                        await feedViewModel.deleteEntry(id: sheetEntry.id)
+                                        if sheetEntry.parent_id != nil {
+                                            comments = await feedViewModel.loadComments(rootId: entry.id)
+                                        }
+                                    }
                                 },
                                 onEdit: {
                                     Task {
@@ -103,9 +114,11 @@ struct EntryDetailView: View {
                                             id: sheetEntry.id,
                                             currentValue: sheetEntry.isContentHidden
                                         )
+                                        if sheetEntry.parent_id != nil {
+                                            comments = await feedViewModel.loadComments(rootId: entry.id)
+                                        }
                                     }
                                 },
-                                onAddToGroup: { },
                                 onDismiss: {
                                     withAnimation(.easeOut(duration: 0.25)) {
                                         isEntryActionSheetVisible = false
