@@ -12,7 +12,7 @@ final class EntryRepository {
     func fetchRootEntries() async throws -> [Entry] {
         let entries: [Entry] = try await supabase
             .from("entries_with_comment_counts")
-            .select("id,user_id,parent_id,root_id,content,created_at,pinned_at,is_content_hidden,comment_count")
+            .select("id,user_id,parent_id,root_id,content,created_at,pinned_at,is_content_hidden,comment_count,attachments")
             .order("created_at", ascending: true)
             .execute()
             .value
@@ -22,7 +22,7 @@ final class EntryRepository {
     func fetchComments(rootId: UUID) async throws -> [Entry] {
         let entries: [Entry] = try await supabase
             .from("entries")
-            .select("id,user_id,parent_id,root_id,content,created_at,pinned_at,is_content_hidden")
+            .select("id,user_id,parent_id,root_id,content,created_at,pinned_at,is_content_hidden,attachments")
             .eq("root_id", value: rootId)
             .order("created_at", ascending: false)
             .execute()
@@ -30,7 +30,7 @@ final class EntryRepository {
         return entries.filter { $0.parent_id != nil }
     }
 
-    func insertEntry(content: String) async throws {
+    func insertEntry(content: String, attachments: [EntryAttachment]? = nil) async throws {
         do {
             let session = try await supabase.auth.session
             let userId = session.user.id
@@ -39,7 +39,8 @@ final class EntryRepository {
                 user_id: userId,
                 parent_id: nil,
                 root_id: nil,
-                content: content
+                content: content,
+                attachments: attachments
             )
 
             let response = try await supabase
@@ -79,6 +80,7 @@ final class EntryRepository {
         let parent_id: UUID?
         let root_id: UUID?
         let content: String
+        let attachments: [EntryAttachment]?
     }
 
     private struct PinUpdatePayload: Encodable {

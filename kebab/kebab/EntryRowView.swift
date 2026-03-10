@@ -45,6 +45,10 @@ struct EntryRowView: View {
         }
     }
 
+    private var hasLinkCard: Bool {
+        entry.linkAttachment != nil && !entry.isContentHidden
+    }
+
     private var entryContent: some View {
         VStack(alignment: .leading, spacing: 0) {
             headerRow
@@ -52,10 +56,24 @@ struct EntryRowView: View {
             Color.clear
                 .frame(height: 4)
 
-            contentText
+            if !entry.content.isEmpty {
+                contentText
 
-            Color.clear
-                .frame(height: 12)
+                Color.clear
+                    .frame(height: hasLinkCard ? 8 : 12)
+            }
+
+            if let link = entry.linkAttachment, !entry.isContentHidden {
+                LinkCardView(urlString: link.url)
+
+                Color.clear
+                    .frame(height: 12)
+            }
+
+            if entry.content.isEmpty && !hasLinkCard {
+                Color.clear
+                    .frame(height: 12)
+            }
 
             actionRow
 

@@ -129,6 +129,10 @@ enum Style {
         static var composerCapsuleRadius: CGFloat { composerSingleLineHeight / 2 }
         /// Multi-line composer corner radius
         static let composerMultiLineRadius: CGFloat = 24
+        /// Link card height
+        static let linkCardHeight: CGFloat = 44
+        /// Link card corner radius
+        static let linkCardCornerRadius: CGFloat = 12
 
         // MARK: - Auth Layout (Auth-specific offsets)
 

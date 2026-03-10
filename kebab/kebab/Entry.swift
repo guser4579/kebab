@@ -1,5 +1,21 @@
 import Foundation
 
+struct EntryAttachment: Codable, Sendable, Equatable {
+    let type: String
+    let url: String
+    let title: String?
+    let favicon_url: String?
+
+    enum AttachmentType: String {
+        case link
+        case image
+    }
+
+    var attachmentType: AttachmentType? {
+        AttachmentType(rawValue: type)
+    }
+}
+
 struct Entry: Identifiable, Codable, Sendable, Equatable {
     let id: UUID
     let user_id: UUID
@@ -10,6 +26,11 @@ struct Entry: Identifiable, Codable, Sendable, Equatable {
     let pinned_at: Date?
     let isContentHidden: Bool
     let comment_count: Int?
+    let attachments: [EntryAttachment]?
+
+    var linkAttachment: EntryAttachment? {
+        attachments?.first { $0.attachmentType == .link }
+    }
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -21,5 +42,6 @@ struct Entry: Identifiable, Codable, Sendable, Equatable {
         case pinned_at
         case isContentHidden = "is_content_hidden"
         case comment_count
+        case attachments
     }
 }

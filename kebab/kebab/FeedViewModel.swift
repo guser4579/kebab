@@ -42,13 +42,46 @@ final class FeedViewModel: ObservableObject {
         let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 
+        let (cleanedContent, attachment) = Self.extractFirstLink(from: trimmed)
+
         errorMessage = nil
         do {
-            try await repository.insertEntry(content: trimmed)
+            try await repository.insertEntry(
+                content: cleanedContent,
+                attachments: attachment.map { [$0] }
+            )
             await loadEntries()
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    private static func extractFirstLink(from text: String) -> (content: String, attachment: EntryAttachment?) {
+        guard let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) else {
+            return (text, nil)
+        }
+
+        let nsRange = NSRange(text.startIndex..., in: text)
+        guard let match = detector.firstMatch(in: text, range: nsRange),
+              let matchRange = Range(match.range, in: text),
+              let url = match.url else {
+            return (text, nil)
+        }
+
+        var cleaned = text
+        cleaned.removeSubrange(matchRange)
+        cleaned = cleaned.replacingOccurrences(of: "\\n([ \\t]*\\n)+", with: "\n", options: .regularExpression)
+        cleaned = cleaned.replacingOccurrences(of: " {2,}", with: " ", options: .regularExpression)
+        cleaned = cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let attachment = EntryAttachment(
+            type: "link",
+            url: url.absoluteString,
+            title: nil,
+            favicon_url: nil
+        )
+
+        return (cleaned, attachment)
     }
 
     func deleteEntry(id: UUID) async {
