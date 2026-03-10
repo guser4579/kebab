@@ -63,10 +63,34 @@ final class EntryRepository {
             .execute()
     }
 
+    func togglePin(id: UUID, pin: Bool) async throws {
+        let payload = PinUpdatePayload(
+            pinned_at: pin ? ISO8601DateFormatter().string(from: Date()) : nil
+        )
+        try await supabase
+            .from("entries")
+            .update(payload)
+            .eq("id", value: id)
+            .execute()
+    }
+
     private struct InsertEntryPayload: Encodable {
         let user_id: UUID
         let parent_id: UUID?
         let root_id: UUID?
         let content: String
+    }
+
+    private struct PinUpdatePayload: Encodable {
+        let pinned_at: String?
+
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(pinned_at, forKey: .pinned_at)
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case pinned_at
+        }
     }
 }

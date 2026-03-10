@@ -33,43 +33,69 @@ struct MainAppView: View {
                         }
                     )
 
-                    ScrollViewReader { proxy in
+                    ZStack {
+                        ScrollViewReader { proxy in
+                            ScrollView {
+                                LazyVStack(alignment: .leading, spacing: 0) {
+                                    ForEach(feedViewModel.feedEntries) { entry in
+                                        EntryRowView(entry: entry, feedViewModel: feedViewModel, onMoreTapped: {
+                                            activeEntryMenuEntry = entry
+                                            withAnimation(.easeOut(duration: 0.25)) {
+                                                isEntryActionSheetVisible = true
+                                            }
+                                        }, onPinTapped: {
+                                            Task { await feedViewModel.togglePin(entry: entry) }
+                                        })
+                                    }
+                                }
+                                .padding(.bottom, 16)
+
+                                Color.clear
+                                    .frame(height: 1)
+                                    .id("feed-bottom")
+                            }
+                            .defaultScrollAnchor(.bottom)
+                            .scrollDismissesKeyboard(.interactively)
+                            .onChange(of: feedViewModel.entries.count) {
+                                if scrollToBottomOnChange {
+                                    scrollToBottomOnChange = false
+                                    proxy.scrollTo("feed-bottom", anchor: .bottom)
+                                }
+                            }
+                        }
+                        .opacity(selectedTab == .feed ? 1 : 0)
+                        .allowsHitTesting(selectedTab == .feed)
+
                         ScrollView {
                             LazyVStack(alignment: .leading, spacing: 0) {
-                                ForEach(feedViewModel.entries) { entry in
+                                ForEach(feedViewModel.pinnedEntries) { entry in
                                     EntryRowView(entry: entry, feedViewModel: feedViewModel, onMoreTapped: {
                                         activeEntryMenuEntry = entry
                                         withAnimation(.easeOut(duration: 0.25)) {
                                             isEntryActionSheetVisible = true
                                         }
+                                    }, onPinTapped: {
+                                        Task { await feedViewModel.togglePin(entry: entry) }
                                     })
                                 }
                             }
                             .padding(.bottom, 16)
-
-                            Color.clear
-                                .frame(height: 1)
-                                .id("feed-bottom")
                         }
-                        .defaultScrollAnchor(.bottom)
+                        .defaultScrollAnchor(.top)
                         .scrollDismissesKeyboard(.interactively)
-                        .frame(maxWidth: .infinity)
-                        .background(Style.Color.background)
-                        .foregroundColor(Style.Color.primaryText)
-                        .task {
-                            await feedViewModel.loadEntries()
-                        }
-                        .onChange(of: feedViewModel.entries.count) {
-                            if scrollToBottomOnChange {
-                                scrollToBottomOnChange = false
-                                proxy.scrollTo("feed-bottom", anchor: .bottom)
-                            }
-                        }
+                        .opacity(selectedTab == .pinned ? 1 : 0)
+                        .allowsHitTesting(selectedTab == .pinned)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .background(Style.Color.background)
+                    .foregroundColor(Style.Color.primaryText)
+                    .task {
+                        await feedViewModel.loadEntries()
                     }
                 }
                 .ignoresSafeArea(edges: .top)
                 .safeAreaInset(edge: .bottom) {
-                    if !isSettingsOpen {
+                    if !isSettingsOpen && selectedTab == .feed {
                         ComposerView(
                             text: $composerText,
                             maxHeight: geometry.size.height * Style.Layout.composerMaxHeightFraction,

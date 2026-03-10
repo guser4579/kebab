@@ -5,6 +5,7 @@ struct EntryRowView: View {
     let entry: Entry
     var feedViewModel: FeedViewModel?
     var onMoreTapped: (() -> Void)?
+    var onPinTapped: (() -> Void)?
 
     private static let timestampFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -132,9 +133,9 @@ struct EntryRowView: View {
             }
 
             Button {
-                print("pin tapped")
+                onPinTapped?()
             } label: {
-                Icon("pin")
+                Icon(entry.pinned_at != nil ? "pin-filled" : "pin")
                     .foregroundColor(Style.Color.secondary)
             }
         }

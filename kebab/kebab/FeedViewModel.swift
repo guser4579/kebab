@@ -9,6 +9,15 @@ final class FeedViewModel: ObservableObject {
     @Published var isLoading: Bool = false
     @Published var errorMessage: String?
 
+    var feedEntries: [Entry] {
+        entries.filter { $0.pinned_at == nil }
+    }
+
+    var pinnedEntries: [Entry] {
+        entries.filter { $0.pinned_at != nil }
+               .sorted { $0.pinned_at! < $1.pinned_at! }
+    }
+
     private let repository: EntryRepository
     private let supabase: SupabaseClient
 
@@ -63,6 +72,15 @@ final class FeedViewModel: ObservableObject {
             await loadEntries()
         } catch {
             print("Failed to toggle entry hidden state:", error)
+        }
+    }
+
+    func togglePin(entry: Entry) async {
+        do {
+            try await repository.togglePin(id: entry.id, pin: entry.pinned_at == nil)
+            await loadEntries()
+        } catch {
+            print("Failed to toggle pin:", error)
         }
     }
 
