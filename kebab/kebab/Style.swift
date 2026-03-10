@@ -23,9 +23,9 @@ enum Style {
         /// Composer background
         static let composerBackground = SwiftUI.Color(hex: "282828")
         /// Composer send (typing state)
-        static let composerSend = SwiftUI.Color(hex: "545FC6")
+        static let composerSend = SwiftUI.Color(hex: "935ED5")
         /// Destructive actions (e.g. delete)
-        static let destructive = SwiftUI.Color(hex: "E45050")
+        static let destructive = SwiftUI.Color(hex: "DD2340")
     }
 
     // MARK: - Typography
