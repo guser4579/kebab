@@ -37,13 +37,13 @@ struct AuthView: View {
         VStack(spacing: 0) {
             VStack(spacing: 0) {
                 Text("kebab")
-                    .font(.custom("DMSans-Medium", size: 24))
-                    .foregroundColor(Style.Color.primaryText)
+                    .font(.custom("JetBrainsMonoNL-Bold", size: 56))
+                    .foregroundColor(Style.Color.composerBackground)
 
-                Text("Unifying fragmented thoughts.")
+                Text("A feed-based thought log.")
                     .font(Style.Typography.body())
                     .foregroundColor(Style.Color.primaryText)
-                    .padding(.top, Style.Layout.bodyBelowKebab)
+                    .padding(.top, 8)
                     .multilineTextAlignment(.center)
 
                 if let error = viewModel.errorMessage {
@@ -54,7 +54,7 @@ struct AuthView: View {
                         .multilineTextAlignment(.center)
                 }
             }
-            .padding(.top, Style.Layout.welcomeTopOffset)
+            .padding(.top, 120)
             .frame(maxWidth: .infinity)
 
             Spacer(minLength: 0)
@@ -75,14 +75,17 @@ struct AuthView: View {
                 }
                 .font(.system(size: 16, weight: .medium))
                 .foregroundColor(Style.Color.primaryText)
-                .padding(.top, Style.Layout.signInBelowPrimary)
+                .frame(height: Style.Layout.composerSingleLineHeight)
+                .frame(maxWidth: .infinity)
+                .background(Style.Color.composerBackground, in: Capsule())
+                .padding(.top, 16)
 
                 legalText
                     .font(Style.Typography.meta())
                     .multilineTextAlignment(.center)
                     .padding(.top, Style.Layout.legalBelowSignIn)
             }
-            .padding(.bottom, 8)
+            .padding(.bottom, 0)
         }
     }
 
@@ -118,13 +121,13 @@ struct AuthView: View {
 
             VStack(spacing: 0) {
                 Text("kebab")
-                    .font(.custom("DMSans-Medium", size: 24))
-                    .foregroundColor(Style.Color.primaryText)
+                    .font(.custom("JetBrainsMonoNL-Bold", size: 56))
+                    .foregroundColor(Style.Color.composerBackground)
 
                 Text("Enter your email below.")
                     .font(Style.Typography.body())
                     .foregroundColor(Style.Color.primaryText)
-                    .padding(.top, Style.Layout.bodyBelowKebab)
+                    .padding(.top, 8)
                     .multilineTextAlignment(.center)
 
                 emailField
@@ -213,13 +216,13 @@ struct AuthView: View {
 
             VStack(spacing: 0) {
                 Text("kebab")
-                    .font(.custom("DMSans-Medium", size: 24))
-                    .foregroundColor(Style.Color.primaryText)
+                    .font(.custom("JetBrainsMonoNL-Bold", size: 56))
+                    .foregroundColor(Style.Color.composerBackground)
 
                 Text("Enter the 6-digit passcode sent to your email.")
                     .font(Style.Typography.body())
                     .foregroundColor(Style.Color.primaryText)
-                    .padding(.top, Style.Layout.bodyBelowKebab)
+                    .padding(.top, 8)
                     .multilineTextAlignment(.center)
 
                 codeField
@@ -243,22 +246,25 @@ struct AuthView: View {
                     Task { await viewModel.verifyOTP() }
                 }
 
-                Button("I didn't receive a code") {
+                Button("Resend code") {
                     Task { await viewModel.sendOTP() }
                 }
-                .font(Style.Typography.meta())
-                .foregroundColor(Style.Color.secondary)
-                .padding(.top, Style.Layout.signInBelowPrimary)
+                .font(.system(size: 16, weight: .medium))
+                .foregroundColor(Style.Color.primaryText)
+                .frame(height: Style.Layout.composerSingleLineHeight)
+                .frame(maxWidth: .infinity)
+                .background(Style.Color.composerBackground, in: Capsule())
+                .padding(.top, 16)
 
-                Button("Use a different email address") {
+                Button("Use different email") {
                     viewModel.resetFlow()
                     flow = .email
                 }
                 .font(Style.Typography.meta())
                 .foregroundColor(Style.Color.secondary)
-                .padding(.top, Style.Layout.signInBelowPrimary)
+                .padding(.top, 28)
             }
-            .padding(.bottom, 8)
+            .padding(.bottom, 0)
         }
     }
 
