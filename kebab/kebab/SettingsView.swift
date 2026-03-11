@@ -47,7 +47,7 @@ struct SettingsView: View {
     private var headerRow: some View {
         HStack {
             Text("settings")
-                .font(.custom("DMMono-Medium", size: 18))
+                .font(.custom("DMSans-Medium", size: 18))
                 .foregroundColor(Style.Color.primaryText)
 
             Spacer(minLength: 0)

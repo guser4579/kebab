@@ -31,9 +31,9 @@ enum Style {
     // MARK: - Typography
 
     enum Typography {
-        /// Header title "kebab": DM Mono, medium, 18pt, 24pt line height
+        /// Header title "kebab": JetBrains Mono NL, bold, 18pt, 24pt line height
         static func headerTitle() -> Font {
-            .custom("DMMono-Medium", size: 18)
+            .custom("JetBrainsMonoNL-Bold", size: 18)
         }
         /// Entry body: DM Sans regular, 16pt, 24pt line height
         static func body() -> Font {
