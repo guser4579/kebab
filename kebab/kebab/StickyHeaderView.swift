@@ -14,6 +14,7 @@ struct StickyHeaderView: View {
 
     @Binding var selectedTab: StickyHeaderView.Tab
     var onSettingsTapped: (() -> Void)?
+    var onSearchTapped: (() -> Void)?
     @Namespace private var tabNamespace
 
     private let headerTotalHeight: CGFloat = 142
@@ -58,7 +59,9 @@ struct StickyHeaderView: View {
                         .foregroundColor(Style.Color.primaryText)
                 }
                 Spacer(minLength: 0)
-                Button { } label: {
+                Button {
+                    onSearchTapped?()
+                } label: {
                     Icon("search")
                         .foregroundColor(Style.Color.primaryText)
                 }

@@ -3,17 +3,20 @@ import Supabase
 
 struct MainAppView: View {
 
+    private let supabase: SupabaseClient
     @StateObject private var feedViewModel: FeedViewModel
     @State private var composerText: String = ""
     @State private var activeEntryMenuEntry: Entry?
     @State private var isEntryActionSheetVisible = false
     @State private var selectedTab: StickyHeaderView.Tab = .feed
     @State private var isSettingsOpen: Bool = false
+    @State private var isSearchActive: Bool = false
     @State private var scrollToBottomOnChange = false
 
     let authViewModel: AuthViewModel
 
     init(supabase: SupabaseClient, authViewModel: AuthViewModel) {
+        self.supabase = supabase
         _feedViewModel = StateObject(wrappedValue: FeedViewModel(supabase: supabase))
         self.authViewModel = authViewModel
     }
@@ -30,6 +33,9 @@ struct MainAppView: View {
                             withAnimation(.easeInOut(duration: 0.28)) {
                                 isSettingsOpen = true
                             }
+                        },
+                        onSearchTapped: {
+                            isSearchActive = true
                         }
                     )
 
@@ -170,6 +176,9 @@ struct MainAppView: View {
                     }
                     .ignoresSafeArea(edges: .bottom)
                 }
+            }
+            .navigationDestination(isPresented: $isSearchActive) {
+                SearchView(supabase: supabase)
             }
         }
         }

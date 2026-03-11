@@ -56,6 +56,14 @@ final class EntryRepository {
         }
     }
 
+    func searchEntries(query: String) async throws -> [Entry] {
+        let entries: [Entry] = try await supabase
+            .rpc("search_entries", params: ["search_query": query])
+            .execute()
+            .value
+        return entries
+    }
+
     func deleteEntry(id: UUID) async throws {
         try await supabase
             .from("entries")
