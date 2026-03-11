@@ -117,6 +117,7 @@ struct ComposerView: View {
             in: RoundedRectangle(cornerRadius: Style.Layout.composerCapsuleRadius)
         )
         .padding(.horizontal, composerOuterPadding)
+        .padding(.bottom, isFocused ? 24 : 0)
     }
 
     private var textArea: some View {

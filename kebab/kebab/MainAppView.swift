@@ -25,6 +25,8 @@ struct MainAppView: View {
         NavigationStack {
         GeometryReader { geometry in
             ZStack(alignment: .top) {
+                Style.Color.background
+                    .ignoresSafeArea()
 
                 VStack(spacing: 0) {
                     StickyHeaderView(

@@ -38,12 +38,20 @@ struct SearchView: View {
                 .scrollDismissesKeyboard(.interactively)
             } else {
                 Spacer()
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        UIApplication.shared.sendAction(
+                            #selector(UIResponder.resignFirstResponder),
+                            to: nil, from: nil, for: nil
+                        )
+                    }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Style.Color.background)
         .foregroundColor(Style.Color.primaryText)
         .ignoresSafeArea(edges: .top)
+        .background(Style.Color.background.ignoresSafeArea())
         .navigationBarBackButtonHidden(true)
     }
 

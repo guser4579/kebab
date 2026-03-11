@@ -58,6 +58,7 @@ struct EntryDetailView: View {
                         }
                     }
                 }
+                .scrollDismissesKeyboard(.interactively)
                 .frame(maxWidth: .infinity)
                 .task {
                     comments = await feedViewModel.loadComments(rootId: entry.id)
@@ -137,6 +138,7 @@ struct EntryDetailView: View {
             .background(Style.Color.background)
             .ignoresSafeArea(edges: .top)
         }
+        .background(Style.Color.background.ignoresSafeArea())
         .navigationBarBackButtonHidden(true)
     }
 
