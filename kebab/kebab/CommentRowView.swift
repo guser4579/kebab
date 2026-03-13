@@ -95,6 +95,7 @@ struct CommentRowView: View {
             Spacer(minLength: 0)
 
             Button {
+                UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
                 onMoreTapped?()
             } label: {
                 Icon("ellipsis", glyphSize: Style.Icon.glyphSmall)
@@ -113,7 +114,9 @@ struct CommentRowView: View {
 
     private var actionRow: some View {
         HStack(spacing: Style.Spacing.replyBelowBody) {
-            Button { } label: {
+            Button {
+                UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+            } label: {
                 Icon("message-circle")
                     .foregroundColor(Style.Color.secondary)
             }

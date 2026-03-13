@@ -98,7 +98,7 @@ struct ComposerView: View {
         !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    private let composerOuterPadding: CGFloat = 24
+    private let composerOuterPadding: CGFloat = Style.Spacing.x4
     private let textLeadingPadding: CGFloat = 16
     private let textVerticalPadding: CGFloat = 12
     private let gapBetweenTextAndButton: CGFloat = 12
@@ -117,7 +117,7 @@ struct ComposerView: View {
             in: RoundedRectangle(cornerRadius: Style.Layout.composerCapsuleRadius)
         )
         .padding(.horizontal, composerOuterPadding)
-        .padding(.bottom, isFocused ? 24 : 0)
+        .padding(.bottom, isFocused ? Style.Spacing.x3 : 0)
     }
 
     private var textArea: some View {

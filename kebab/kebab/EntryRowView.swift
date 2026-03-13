@@ -108,6 +108,7 @@ struct EntryRowView: View {
             Spacer(minLength: 0)
 
             Button {
+                UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
                 onMoreTapped?()
             } label: {
                 Icon("ellipsis", glyphSize: Style.Icon.glyphSmall)
@@ -143,7 +144,9 @@ struct EntryRowView: View {
                             .foregroundColor(Style.Color.secondary)
                     }
                 } else {
-                    Button { } label: {
+                    Button {
+                        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                    } label: {
                         Icon("message-circle")
                             .foregroundColor(Style.Color.secondary)
                     }
@@ -151,6 +154,7 @@ struct EntryRowView: View {
             }
 
             Button {
+                UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
                 onPinTapped?()
             } label: {
                 Icon(entry.pinned_at != nil ? "pin-filled" : "pin")

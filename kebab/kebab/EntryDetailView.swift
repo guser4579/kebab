@@ -260,6 +260,7 @@ struct EntryDetailView: View {
             Spacer(minLength: 0)
 
             Button {
+                UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
                 activeEntryMenuEntry = entry
                 withAnimation(.easeOut(duration: 0.25)) {
                     isEntryActionSheetVisible = true
