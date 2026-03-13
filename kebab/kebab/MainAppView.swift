@@ -180,7 +180,7 @@ struct MainAppView: View {
                 }
             }
             .navigationDestination(isPresented: $isSearchActive) {
-                SearchView(supabase: supabase)
+                SearchView(supabase: supabase, feedViewModel: feedViewModel)
             }
         }
         }

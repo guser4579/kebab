@@ -4,10 +4,15 @@ import Supabase
 struct SearchView: View {
 
     @StateObject private var searchViewModel: SearchViewModel
+    @ObservedObject var feedViewModel: FeedViewModel
     @Environment(\.dismiss) private var dismiss
 
-    init(supabase: SupabaseClient) {
+    @State private var activeEntryMenuEntry: Entry?
+    @State private var isEntryActionSheetVisible = false
+
+    init(supabase: SupabaseClient, feedViewModel: FeedViewModel) {
         _searchViewModel = StateObject(wrappedValue: SearchViewModel(supabase: supabase))
+        self.feedViewModel = feedViewModel
     }
 
     private var isActiveQuery: Bool {
@@ -30,12 +35,23 @@ struct SearchView: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(searchViewModel.results) { entry in
-                            EntryRowView(entry: entry)
+                            EntryRowView(entry: entry, feedViewModel: feedViewModel, onMoreTapped: {
+                                activeEntryMenuEntry = entry
+                                withAnimation(.easeOut(duration: 0.25)) {
+                                    isEntryActionSheetVisible = true
+                                }
+                            }, onPinTapped: {
+                                Task {
+                                    await feedViewModel.togglePin(entry: entry)
+                                    searchViewModel.refreshResults()
+                                }
+                            })
                         }
                     }
                     .padding(.bottom, 16)
                 }
                 .scrollDismissesKeyboard(.interactively)
+                .onAppear { searchViewModel.refreshResults() }
             } else {
                 Spacer()
                     .contentShape(Rectangle())
@@ -52,6 +68,57 @@ struct SearchView: View {
         .foregroundColor(Style.Color.primaryText)
         .ignoresSafeArea(edges: .top)
         .background(Style.Color.background.ignoresSafeArea())
+        .overlay(alignment: .bottom) {
+            if activeEntryMenuEntry != nil {
+                ZStack(alignment: .bottom) {
+                    Color.black.opacity(0.4)
+                        .ignoresSafeArea()
+                        .transaction { transaction in
+                            transaction.animation = nil
+                        }
+                        .onTapGesture {
+                            withAnimation(.easeOut(duration: 0.25)) {
+                                isEntryActionSheetVisible = false
+                            }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                                activeEntryMenuEntry = nil
+                            }
+                        }
+
+                    if isEntryActionSheetVisible, let entry = activeEntryMenuEntry {
+                        EntryActionSheetView(
+                            entry: entry,
+                            isComment: false,
+                            onDelete: {
+                                Task {
+                                    await feedViewModel.deleteEntry(id: entry.id)
+                                    searchViewModel.refreshResults()
+                                }
+                            },
+                            onEdit: {
+                                Task {
+                                    await feedViewModel.toggleEntryHidden(
+                                        id: entry.id,
+                                        currentValue: entry.isContentHidden
+                                    )
+                                    searchViewModel.refreshResults()
+                                }
+                            },
+                            onDismiss: {
+                                withAnimation(.easeOut(duration: 0.25)) {
+                                    isEntryActionSheetVisible = false
+                                }
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                                    activeEntryMenuEntry = nil
+                                }
+                            }
+                        )
+                        .transition(.move(edge: .bottom))
+                    }
+                }
+                .ignoresSafeArea(edges: .bottom)
+            }
+        }
         .navigationBarBackButtonHidden(true)
     }
 

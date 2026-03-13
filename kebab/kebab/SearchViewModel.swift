@@ -47,6 +47,11 @@ final class SearchViewModel: ObservableObject {
         spinnerTask?.cancel()
     }
 
+    func refreshResults() {
+        guard query.count >= 3, hasCompletedSearch else { return }
+        performSearch(query: query)
+    }
+
     private func performSearch(query: String) {
         searchTask?.cancel()
         spinnerTask?.cancel()
