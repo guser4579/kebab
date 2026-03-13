@@ -169,7 +169,7 @@ struct EntryDetailView: View {
     private var headerTopBar: some View {
         ZStack {
             Text("Entry")
-                .font(.custom("DMMono-Medium", size: 16))
+                .font(.custom("DMSans-Medium", size: 16))
                 .foregroundColor(Style.Color.primaryText)
 
             HStack {
