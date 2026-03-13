@@ -109,7 +109,7 @@ enum Style {
         /// Standard icon grid used throughout the app
         static let grid: CGFloat = 24
         /// Default glyph size inside the grid
-        static let glyph: CGFloat = 18
+        static let glyph: CGFloat = 21
         /// Smaller glyph used for optical balance (ellipsis etc)
         static let glyphSmall: CGFloat = 16
     }
