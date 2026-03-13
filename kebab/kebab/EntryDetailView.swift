@@ -106,6 +106,8 @@ struct EntryDetailView: View {
                                         await feedViewModel.deleteEntry(id: sheetEntry.id)
                                         if sheetEntry.parent_id != nil {
                                             comments = await feedViewModel.loadComments(rootId: entry.id)
+                                        } else {
+                                            dismiss()
                                         }
                                     }
                                 },
@@ -140,6 +142,9 @@ struct EntryDetailView: View {
         }
         .background(Style.Color.background.ignoresSafeArea())
         .navigationBarBackButtonHidden(true)
+        .onAppear {
+            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        }
     }
 
     private var entryDetailHeader: some View {
