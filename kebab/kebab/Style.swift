@@ -51,6 +51,10 @@ enum Style {
         static func composerText() -> Font {
             .custom("DMSans-Regular", size: 16)
         }
+        /// Link card text: DM Sans medium, 14pt, underlined, use primary color
+        static func linkCard() -> Font {
+            .custom("DMSans-Medium", size: 14)
+        }
 
         static let bodyLineHeight: CGFloat = 24
         static let metaLineHeight: CGFloat = 24
@@ -132,7 +136,7 @@ enum Style {
         /// Link card height
         static let linkCardHeight: CGFloat = 44
         /// Link card corner radius
-        static let linkCardCornerRadius: CGFloat = 12
+        static let linkCardCornerRadius: CGFloat = 8
 
         // MARK: - Auth Layout (Auth-specific offsets)
 

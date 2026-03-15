@@ -5,6 +5,8 @@ struct LinkCardView: View {
     let urlString: String
     var title: String? = nil
 
+    @State private var isShowingSafari = false
+
     private var displayText: String {
         if let title = title?.trimmingCharacters(in: .whitespacesAndNewlines),
            !title.isEmpty {
@@ -15,10 +17,16 @@ struct LinkCardView: View {
 
     var body: some View {
         if let url = URL(string: urlString) {
-            Link(destination: url) {
+            Button {
+                isShowingSafari = true
+            } label: {
                 cardContent
             }
             .buttonStyle(.plain)
+            .fullScreenCover(isPresented: $isShowingSafari) {
+                SafariView(url: url)
+                    .ignoresSafeArea()
+            }
         } else {
             cardContent
         }
@@ -26,14 +34,13 @@ struct LinkCardView: View {
 
     private var cardContent: some View {
         HStack(spacing: 12) {
-            Image(systemName: "link")
-                .font(.system(size: 14, weight: .medium))
-                .foregroundColor(Style.Color.secondary)
-                .frame(width: Style.Icon.grid, height: Style.Icon.grid)
+            Icon("link-02")
+                .foregroundColor(Color(hex: "4597F7"))
 
             Text(displayText)
-                .font(Style.Typography.meta())
+                .font(Style.Typography.linkCard())
                 .foregroundColor(Style.Color.primaryText)
+                .underline()
                 .lineLimit(1)
                 .truncationMode(.tail)
 
@@ -42,8 +49,14 @@ struct LinkCardView: View {
         .padding(.horizontal, 12)
         .frame(height: Style.Layout.linkCardHeight)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Style.Color.composerBackground)
-        .clipShape(RoundedRectangle(cornerRadius: Style.Layout.linkCardCornerRadius))
+        .background(
+            RoundedRectangle(cornerRadius: Style.Layout.linkCardCornerRadius)
+                .fill(Style.Color.background)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Style.Layout.linkCardCornerRadius)
+                .strokeBorder(Style.Color.separator, lineWidth: 1)
+        )
     }
 
     static func displayURL(from urlString: String) -> String {
