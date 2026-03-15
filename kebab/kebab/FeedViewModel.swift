@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import LinkPresentation
 import Supabase
 
 @MainActor
@@ -46,11 +47,17 @@ final class FeedViewModel: ObservableObject {
 
         errorMessage = nil
         do {
-            try await repository.insertEntry(
+            let entryId = try await repository.insertEntry(
                 content: cleanedContent,
                 attachments: attachment.map { [$0] }
             )
             await loadEntries()
+
+            if let attachment = attachment, attachment.title == nil {
+                Task {
+                    await self.enrichLinkMetadata(entryId: entryId, attachment: attachment)
+                }
+            }
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -82,6 +89,34 @@ final class FeedViewModel: ObservableObject {
         )
 
         return (cleaned, attachment)
+    }
+
+    private func enrichLinkMetadata(entryId: UUID, attachment: EntryAttachment) async {
+        guard let url = URL(string: attachment.url) else { return }
+
+        do {
+            let provider = LPMetadataProvider()
+            provider.timeout = 10
+
+            let metadata = try await provider.startFetchingMetadata(for: url)
+
+            guard let title = metadata.title?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !title.isEmpty else {
+                return
+            }
+
+            let enriched = EntryAttachment(
+                type: attachment.type,
+                url: attachment.url,
+                title: title,
+                favicon_url: attachment.favicon_url
+            )
+
+            try await repository.updateAttachments(entryId: entryId, attachments: [enriched])
+            await loadEntries()
+        } catch {
+            // Silently ignore — entry keeps its current URL-only presentation
+        }
     }
 
     func deleteEntry(id: UUID) async {

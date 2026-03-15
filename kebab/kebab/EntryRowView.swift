@@ -64,7 +64,7 @@ struct EntryRowView: View {
             }
 
             if let link = entry.linkAttachment, !entry.isContentHidden {
-                LinkCardView(urlString: link.url)
+                LinkCardView(urlString: link.url, title: link.title)
 
                 Color.clear
                     .frame(height: 12)

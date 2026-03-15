@@ -30,7 +30,8 @@ final class EntryRepository {
         return entries.filter { $0.parent_id != nil }
     }
 
-    func insertEntry(content: String, attachments: [EntryAttachment]? = nil) async throws {
+    @discardableResult
+    func insertEntry(content: String, attachments: [EntryAttachment]? = nil) async throws -> UUID {
         do {
             let session = try await supabase.auth.session
             let userId = session.user.id
@@ -43,17 +44,29 @@ final class EntryRepository {
                 attachments: attachments
             )
 
-            let response = try await supabase
+            let inserted: InsertedRow = try await supabase
                 .from("entries")
                 .insert(payload)
+                .select("id")
+                .single()
                 .execute()
+                .value
 
-            print("INSERT RESPONSE:", response)
+            return inserted.id
 
         } catch {
             print("INSERT ERROR:", error)
             throw error
         }
+    }
+
+    func updateAttachments(entryId: UUID, attachments: [EntryAttachment]) async throws {
+        let payload = AttachmentUpdatePayload(attachments: attachments)
+        try await supabase
+            .from("entries")
+            .update(payload)
+            .eq("id", value: entryId)
+            .execute()
     }
 
     func searchEntries(query: String) async throws -> [Entry] {
@@ -102,5 +115,13 @@ final class EntryRepository {
         enum CodingKeys: String, CodingKey {
             case pinned_at
         }
+    }
+
+    private struct InsertedRow: Decodable {
+        let id: UUID
+    }
+
+    private struct AttachmentUpdatePayload: Encodable {
+        let attachments: [EntryAttachment]
     }
 }

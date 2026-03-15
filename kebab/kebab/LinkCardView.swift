@@ -3,6 +3,15 @@ import SwiftUI
 struct LinkCardView: View {
 
     let urlString: String
+    var title: String? = nil
+
+    private var displayText: String {
+        if let title = title?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !title.isEmpty {
+            return title
+        }
+        return Self.displayURL(from: urlString)
+    }
 
     var body: some View {
         if let url = URL(string: urlString) {
@@ -22,7 +31,7 @@ struct LinkCardView: View {
                 .foregroundColor(Style.Color.secondary)
                 .frame(width: Style.Icon.grid, height: Style.Icon.grid)
 
-            Text(Self.displayURL(from: urlString))
+            Text(displayText)
                 .font(Style.Typography.meta())
                 .foregroundColor(Style.Color.primaryText)
                 .lineLimit(1)
