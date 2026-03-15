@@ -26,6 +26,8 @@ enum Style {
         static let composerSend = SwiftUI.Color(hex: "935ED5")
         /// Destructive actions (e.g. delete)
         static let destructive = SwiftUI.Color(hex: "DD2340")
+        /// Auth welcome sticky note
+        static let stickyNoteYellow = SwiftUI.Color(hex: "EBCF47")
     }
 
     // MARK: - Typography
@@ -54,6 +56,14 @@ enum Style {
         /// Link card text: DM Sans medium, 14pt, underlined, use primary color
         static func linkCard() -> Font {
             .custom("DMSans-Medium", size: 14)
+        }
+        /// Auth screen titles: DM Sans extra bold, 24pt, 32pt line height
+        static func authTitle() -> Font {
+            .custom("DMSans-ExtraBold", size: 24)
+        }
+        /// Auth button labels: DM Sans semibold, 16pt, 24pt line height
+        static func authButton() -> Font {
+            .custom("DMSans-SemiBold", size: 16)
         }
 
         static let bodyLineHeight: CGFloat = 24

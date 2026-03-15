@@ -28,6 +28,16 @@ struct AuthView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .padding(.horizontal, Style.Layout.entryContentPadding)
+
+            if flow == .welcome {
+                Text("kebab")
+                    .font(Style.Typography.headerTitle())
+                    .foregroundColor(Style.Color.background)
+                    .padding(.top, 60)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .ignoresSafeArea(.container, edges: .top)
+                    .allowsHitTesting(false)
+            }
         }
     }
 
@@ -35,57 +45,54 @@ struct AuthView: View {
 
     private var welcomeScreen: some View {
         VStack(spacing: 0) {
-            VStack(spacing: 0) {
-                Text("kebab")
-                    .font(.custom("JetBrainsMonoNL-Bold", size: 56))
-                    .foregroundColor(Style.Color.composerBackground)
-
-                Text("A feed-based thought log.")
-                    .font(Style.Typography.body())
-                    .foregroundColor(Style.Color.primaryText)
-                    .padding(.top, 8)
-                    .multilineTextAlignment(.center)
-
-                if let error = viewModel.errorMessage {
-                    Text(error)
-                        .font(Style.Typography.meta())
-                        .foregroundColor(Style.Color.secondary)
-                        .padding(.top, Style.Layout.bodyBelowKebab)
-                        .multilineTextAlignment(.center)
-                }
-            }
-            .padding(.top, 120)
-            .frame(maxWidth: .infinity)
-
             Spacer(minLength: 0)
 
             VStack(spacing: 0) {
-                Button("Sign up") {
-                    flow = .email
-                }
-                .font(.system(size: 16, weight: .medium))
-                .foregroundColor(Style.Color.primaryText)
-                .frame(height: Style.Layout.composerSingleLineHeight)
-                .frame(maxWidth: .infinity)
-                .background(Style.Color.composerSend, in: Capsule())
-                .disabled(viewModel.isLoading)
+                Text("A place for thoughts you\ndon\u{2019}t want to lose.")
+                    .font(Style.Typography.authTitle())
+                    .foregroundColor(.white)
+                    .lineSpacing(8)
+                    .multilineTextAlignment(.center)
 
-                Button("Sign in") {
+                Button {
                     flow = .email
+                } label: {
+                    ZStack {
+                        Text("Continue with email")
+                            .font(Style.Typography.authButton())
+                            .foregroundColor(.white)
+
+                        HStack(spacing: 0) {
+                            Icon("email")
+                                .foregroundColor(.white)
+                                .padding(.leading, Style.Spacing.composerPaddingLeft)
+                            Spacer(minLength: 0)
+                        }
+                    }
+                    .frame(height: Style.Layout.composerSingleLineHeight)
+                    .frame(maxWidth: .infinity)
+                    .background(Style.Color.composerBackground, in: Capsule())
                 }
-                .font(.system(size: 16, weight: .medium))
-                .foregroundColor(Style.Color.primaryText)
-                .frame(height: Style.Layout.composerSingleLineHeight)
-                .frame(maxWidth: .infinity)
-                .background(Style.Color.composerBackground, in: Capsule())
-                .padding(.top, 16)
+                .disabled(viewModel.isLoading)
+                .padding(.top, 24)
 
                 legalText
                     .font(Style.Typography.meta())
                     .multilineTextAlignment(.center)
-                    .padding(.top, Style.Layout.legalBelowSignIn)
+                    .padding(.top, 24)
             }
-            .padding(.bottom, 0)
+        }
+        .background(alignment: .top) {
+            UnevenRoundedRectangle(
+                topLeadingRadius: 0,
+                bottomLeadingRadius: 40,
+                bottomTrailingRadius: 40,
+                topTrailingRadius: 0
+            )
+            .fill(Style.Color.stickyNoteYellow)
+            .frame(height: 300)
+            .padding(.horizontal, 24)
+            .ignoresSafeArea(.all, edges: .top)
         }
     }
 
@@ -120,44 +127,46 @@ struct AuthView: View {
             .padding(.top, 12)
 
             VStack(spacing: 0) {
-                Text("kebab")
-                    .font(.custom("JetBrainsMonoNL-Bold", size: 56))
-                    .foregroundColor(Style.Color.composerBackground)
-
-                Text("Enter your email below.")
-                    .font(Style.Typography.body())
-                    .foregroundColor(Style.Color.primaryText)
-                    .padding(.top, 8)
+                Text("Enter your email")
+                    .font(Style.Typography.authTitle())
+                    .foregroundColor(.white)
+                    .lineSpacing(8)
                     .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity)
 
                 emailField
-                    .padding(.top, Style.Layout.inputBelowBody)
+                    .padding(.top, 24)
 
                 if let error = viewModel.errorMessage {
                     Text(error)
                         .font(Style.Typography.meta())
                         .foregroundColor(Style.Color.secondary)
-                        .padding(.top, Style.Layout.bodyBelowKebab)
-                        .multilineTextAlignment(.center)
+                        .padding(.top, 12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
             .frame(maxWidth: .infinity)
-            .padding(.top, Style.Layout.kebabBelowHeader)
+            .padding(.top, 40)
 
             Spacer(minLength: 0)
 
-            VStack(spacing: 0) {
-                primaryButton(title: "Submit") {
-                    Task {
-                        await viewModel.sendOTP()
-                        if viewModel.errorMessage == nil {
-                            flow = .code
-                        }
+            Button("Next") {
+                Task {
+                    await viewModel.sendOTP()
+                    if viewModel.errorMessage == nil {
+                        flow = .code
                     }
                 }
             }
-            .padding(.bottom, 8)
+            .font(Style.Typography.authButton())
+            .foregroundColor(Style.Color.background)
+            .frame(height: Style.Layout.composerSingleLineHeight)
+            .frame(maxWidth: .infinity)
+            .background(.white, in: Capsule())
+            .disabled(viewModel.isLoading)
+            .padding(.bottom, 40)
         }
+        .ignoresSafeArea(.container, edges: .bottom)
     }
 
     private var emailField: some View {
@@ -166,11 +175,15 @@ struct AuthView: View {
                 .fill(Style.Color.composerBackground)
                 .frame(height: Style.Layout.composerSingleLineHeight)
 
+            Icon("email")
+                .foregroundColor(.white)
+                .padding(.leading, Style.Spacing.composerPaddingLeft)
+
             if viewModel.email.isEmpty {
                 Text("Enter email")
                     .font(Style.Typography.composerPlaceholder())
                     .foregroundColor(Style.Color.secondary)
-                    .padding(.leading, Style.Spacing.composerPaddingLeft)
+                    .padding(.leading, 52)
             }
 
             TextField("", text: $viewModel.email)
@@ -179,7 +192,7 @@ struct AuthView: View {
                 .textContentType(.emailAddress)
                 .autocapitalization(.none)
                 .keyboardType(.emailAddress)
-                .padding(.leading, Style.Spacing.composerPaddingLeft)
+                .padding(.leading, 52)
                 .frame(height: Style.Layout.composerSingleLineHeight)
         }
     }
@@ -215,61 +228,74 @@ struct AuthView: View {
             .padding(.top, 12)
 
             VStack(spacing: 0) {
-                Text("kebab")
-                    .font(.custom("JetBrainsMonoNL-Bold", size: 56))
-                    .foregroundColor(Style.Color.composerBackground)
+                Text("Enter your code")
+                    .font(Style.Typography.authTitle())
+                    .foregroundColor(.white)
+                    .lineSpacing(8)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity)
 
-                Text("Enter the 6-digit passcode sent to your email.")
+                Text("We sent a code to your email. Enter it below.")
                     .font(Style.Typography.body())
                     .foregroundColor(Style.Color.primaryText)
-                    .padding(.top, 8)
+                    .lineSpacing(8)
                     .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 8)
 
                 codeField
-                    .padding(.top, Style.Layout.inputBelowBody)
+                    .padding(.top, 24)
 
                 if let error = viewModel.errorMessage {
                     Text(error)
                         .font(Style.Typography.meta())
                         .foregroundColor(Style.Color.secondary)
-                        .padding(.top, Style.Layout.bodyBelowKebab)
-                        .multilineTextAlignment(.center)
+                        .padding(.top, 12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
             .frame(maxWidth: .infinity)
-            .padding(.top, Style.Layout.kebabBelowHeader)
+            .padding(.top, 40)
 
             Spacer(minLength: 0)
 
             VStack(spacing: 0) {
-                primaryButton(title: "Submit") {
+                Button("Submit") {
                     Task { await viewModel.verifyOTP() }
                 }
+                .font(Style.Typography.authButton())
+                .foregroundColor(Style.Color.background)
+                .frame(height: Style.Layout.composerSingleLineHeight)
+                .frame(maxWidth: .infinity)
+                .background(.white, in: Capsule())
+                .disabled(viewModel.isLoading)
 
-                Button("Resend code") {
+                Button("I didn\u{2019}t receive a code") {
                     Task { await viewModel.sendOTP() }
                 }
-                .font(.system(size: 16, weight: .medium))
-                .foregroundColor(Style.Color.primaryText)
+                .font(Style.Typography.authButton())
+                .foregroundColor(.white)
                 .frame(height: Style.Layout.composerSingleLineHeight)
                 .frame(maxWidth: .infinity)
                 .background(Style.Color.composerBackground, in: Capsule())
                 .padding(.top, 16)
 
                 Button("Use different email") {
+                    viewModel.email = ""
                     viewModel.resetFlow()
                     flow = .email
                 }
-                .font(Style.Typography.meta())
-                .foregroundColor(Style.Color.secondary)
+                .font(Style.Typography.authButton())
+                .foregroundColor(.white)
                 .padding(.top, 28)
             }
-            .padding(.bottom, 0)
+            .padding(.bottom, 40)
         }
+        .ignoresSafeArea(.container, edges: .bottom)
     }
 
     private var codeField: some View {
-        ZStack(alignment: .leading) {
+        ZStack {
             Capsule()
                 .fill(Style.Color.composerBackground)
                 .frame(height: Style.Layout.composerSingleLineHeight)
@@ -278,14 +304,14 @@ struct AuthView: View {
                 Text("Enter code")
                     .font(Style.Typography.composerPlaceholder())
                     .foregroundColor(Style.Color.secondary)
-                    .padding(.leading, Style.Spacing.composerPaddingLeft)
             }
 
             TextField("", text: $viewModel.code)
                 .font(Style.Typography.composerText())
                 .foregroundColor(Style.Color.primaryText)
                 .keyboardType(.numberPad)
-                .padding(.leading, Style.Spacing.composerPaddingLeft)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, Style.Spacing.composerPaddingLeft)
                 .frame(height: Style.Layout.composerSingleLineHeight)
         }
     }
@@ -306,12 +332,12 @@ struct AuthView: View {
         Text("By continuing you are agreeing to the ")
             .foregroundColor(Style.Color.secondary)
         + Text("Terms of Service")
-            .foregroundColor(Style.Color.composerSend)
+            .foregroundColor(Style.Color.secondary)
             .underline()
         + Text(" and ")
             .foregroundColor(Style.Color.secondary)
         + Text("Privacy Policy")
-            .foregroundColor(Style.Color.composerSend)
+            .foregroundColor(Style.Color.secondary)
             .underline()
         + Text(".")
             .foregroundColor(Style.Color.secondary)
