@@ -16,7 +16,7 @@ struct SearchView: View {
     }
 
     private var isActiveQuery: Bool {
-        searchViewModel.query.count >= 3
+        searchViewModel.trimmedQuery.count >= 3
     }
 
     private var shouldShowCountRow: Bool {
@@ -52,7 +52,7 @@ struct SearchView: View {
                 }
                 .scrollDismissesKeyboard(.interactively)
                 .onAppear { searchViewModel.refreshResults() }
-            } else {
+            } else if searchViewModel.history.isEmpty {
                 Spacer()
                     .contentShape(Rectangle())
                     .onTapGesture {
@@ -61,6 +61,15 @@ struct SearchView: View {
                             to: nil, from: nil, for: nil
                         )
                     }
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(searchViewModel.history) { item in
+                            historyRow(item)
+                        }
+                    }
+                }
+                .scrollDismissesKeyboard(.interactively)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -120,6 +129,7 @@ struct SearchView: View {
             }
         }
         .navigationBarBackButtonHidden(true)
+        .onDisappear { searchViewModel.flushPendingHistory() }
     }
 
     // MARK: - Header
@@ -185,6 +195,7 @@ struct SearchView: View {
         .autocorrectionDisabled()
         .textInputAutocapitalization(.never)
         .lineLimit(1)
+        .onSubmit { searchViewModel.flushPendingHistory() }
         .padding(.leading, Style.Spacing.x4)
         .padding(.trailing, Style.Spacing.x4 + Style.Icon.grid)
         .padding(.vertical, Style.Spacing.x3)
@@ -202,6 +213,46 @@ struct SearchView: View {
             }
         }
         .padding(.horizontal, Style.Spacing.x4)
+    }
+
+    // MARK: - History
+
+    private func historyRow(_ item: SearchHistoryItem) -> some View {
+        VStack(spacing: 0) {
+            HStack(alignment: .center, spacing: 0) {
+                Button {
+                    searchViewModel.query = item.query
+                } label: {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(item.query)
+                            .font(Style.Typography.body())
+                            .foregroundColor(Style.Color.primaryText)
+                            .lineLimit(1)
+
+                        Text(item.resultCount == 1 ? "1 result" : "\(item.resultCount) results")
+                            .font(Style.Typography.meta())
+                            .foregroundColor(Style.Color.secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    searchViewModel.deleteHistoryItem(id: item.id)
+                } label: {
+                    Icon("close", glyphSize: Style.Icon.glyphSmall)
+                        .foregroundColor(Style.Color.secondary)
+                }
+            }
+            .padding(.horizontal, Style.Spacing.x4)
+            .padding(.vertical, Style.Spacing.x3)
+
+            Rectangle()
+                .fill(Style.Color.separator)
+                .frame(height: 1)
+                .frame(maxWidth: .infinity)
+        }
     }
 
     // MARK: - Result Count
