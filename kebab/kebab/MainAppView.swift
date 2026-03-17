@@ -12,6 +12,7 @@ struct MainAppView: View {
     @State private var isSettingsOpen: Bool = false
     @State private var isSearchActive: Bool = false
     @State private var scrollToBottomOnChange = false
+    @State private var hasScrolledToBottom = false
 
     let authViewModel: AuthViewModel
 
@@ -64,10 +65,12 @@ struct MainAppView: View {
                                     .frame(height: 1)
                                     .id("feed-bottom")
                             }
-                            .defaultScrollAnchor(.bottom)
                             .scrollDismissesKeyboard(.interactively)
                             .onChange(of: feedViewModel.entries.count) {
-                                if scrollToBottomOnChange {
+                                if !hasScrolledToBottom && !feedViewModel.entries.isEmpty {
+                                    hasScrolledToBottom = true
+                                    proxy.scrollTo("feed-bottom", anchor: .bottom)
+                                } else if scrollToBottomOnChange {
                                     scrollToBottomOnChange = false
                                     proxy.scrollTo("feed-bottom", anchor: .bottom)
                                 }
