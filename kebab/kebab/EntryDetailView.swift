@@ -262,6 +262,18 @@ struct EntryDetailView: View {
                 .font(Style.Typography.meta())
                 .foregroundColor(Style.Color.secondary)
 
+            if entry.resurface_count > 0 {
+                HStack(spacing: 0) {
+                    Icon("refresh-04", glyphSize: Style.Icon.glyphSmall)
+                        .foregroundColor(Style.Color.resurface)
+
+                    Text("\(entry.resurface_count)")
+                        .font(Style.Typography.meta())
+                        .foregroundColor(Style.Color.resurface)
+                }
+                .padding(.leading, 2)
+            }
+
             Spacer(minLength: 0)
 
             Button {

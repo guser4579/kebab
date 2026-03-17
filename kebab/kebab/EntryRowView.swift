@@ -5,7 +5,10 @@ struct EntryRowView: View {
     let entry: Entry
     var feedViewModel: FeedViewModel?
     var onMoreTapped: (() -> Void)?
+    var onResurfaceTapped: (() -> Void)?
     var onPinTapped: (() -> Void)?
+
+    @State private var isResurfacing = false
 
     private static let timestampFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -42,6 +45,9 @@ struct EntryRowView: View {
                 .frame(height: 16)
 
             bottomSeparator
+        }
+        .onChange(of: entry.resurface_count) {
+            isResurfacing = false
         }
     }
 
@@ -105,6 +111,18 @@ struct EntryRowView: View {
                 .font(Style.Typography.meta())
                 .foregroundColor(Style.Color.secondary)
 
+            if entry.resurface_count > 0 {
+                HStack(spacing: 0) {
+                    Icon("refresh-04", glyphSize: Style.Icon.glyphSmall)
+                        .foregroundColor(Style.Color.resurface)
+
+                    Text("\(entry.resurface_count)")
+                        .font(Style.Typography.meta())
+                        .foregroundColor(Style.Color.resurface)
+                }
+                .padding(.leading, 2)
+            }
+
             Spacer(minLength: 0)
 
             Button {
@@ -136,7 +154,7 @@ struct EntryRowView: View {
     }
 
     private var actionRow: some View {
-        HStack(spacing: Style.Spacing.replyBelowBody) {
+        HStack(spacing: Style.Spacing.x4) {
             Group {
                 if let feedViewModel = feedViewModel {
                     NavigationLink(destination: EntryDetailView(entry: entry, feedViewModel: feedViewModel)) {
@@ -150,6 +168,18 @@ struct EntryRowView: View {
                         Icon("message-circle")
                             .foregroundColor(Style.Color.secondary)
                     }
+                }
+            }
+
+            if entry.pinned_at == nil {
+                Button {
+                    guard !isResurfacing else { return }
+                    isResurfacing = true
+                    UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                    onResurfaceTapped?()
+                } label: {
+                    Icon("refresh-04")
+                        .foregroundColor(Style.Color.secondary)
                 }
             }
 

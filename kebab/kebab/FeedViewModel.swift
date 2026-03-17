@@ -143,6 +143,16 @@ final class FeedViewModel: ObservableObject {
         }
     }
 
+    func resurfaceEntry(entry: Entry) async {
+        guard entry.pinned_at == nil, entry.parent_id == nil else { return }
+        do {
+            try await repository.resurfaceEntry(id: entry.id)
+            await loadEntries()
+        } catch {
+            print("Failed to resurface entry:", error)
+        }
+    }
+
     func togglePin(entry: Entry) async {
         do {
             try await repository.togglePin(id: entry.id, pin: entry.pinned_at == nil)

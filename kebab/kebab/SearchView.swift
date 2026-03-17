@@ -10,8 +10,8 @@ struct SearchView: View {
     @State private var activeEntryMenuEntry: Entry?
     @State private var isEntryActionSheetVisible = false
 
-    init(supabase: SupabaseClient, feedViewModel: FeedViewModel) {
-        _searchViewModel = StateObject(wrappedValue: SearchViewModel(supabase: supabase))
+    init(supabase: SupabaseClient, feedViewModel: FeedViewModel, userId: UUID) {
+        _searchViewModel = StateObject(wrappedValue: SearchViewModel(supabase: supabase, userId: userId))
         self.feedViewModel = feedViewModel
     }
 
@@ -39,6 +39,11 @@ struct SearchView: View {
                                 activeEntryMenuEntry = entry
                                 withAnimation(.easeOut(duration: 0.25)) {
                                     isEntryActionSheetVisible = true
+                                }
+                            }, onResurfaceTapped: {
+                                Task {
+                                    await feedViewModel.resurfaceEntry(entry: entry)
+                                    searchViewModel.refreshResults()
                                 }
                             }, onPinTapped: {
                                 Task {

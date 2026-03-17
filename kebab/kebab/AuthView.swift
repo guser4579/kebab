@@ -30,9 +30,16 @@ struct AuthView: View {
             .padding(.horizontal, Style.Layout.entryContentPadding)
 
             if flow == .welcome {
-                Text("kebab")
-                    .font(Style.Typography.headerTitle())
-                    .foregroundColor(Style.Color.background)
+                RoundedRectangle(cornerRadius: 24)
+                    .fill(Style.Color.stickyNoteYellow)
+                    .frame(width: 225, height: 225)
+                    .overlay(alignment: .top) {
+                        Text("kebab")
+                            .font(Style.Typography.headerTitle())
+                            .foregroundColor(Style.Color.background)
+                            .frame(height: 24)
+                            .padding(.top, 24)
+                    }
                     .padding(.top, 60)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                     .ignoresSafeArea(.container, edges: .top)
@@ -81,18 +88,6 @@ struct AuthView: View {
                     .multilineTextAlignment(.center)
                     .padding(.top, 24)
             }
-        }
-        .background(alignment: .top) {
-            UnevenRoundedRectangle(
-                topLeadingRadius: 0,
-                bottomLeadingRadius: 40,
-                bottomTrailingRadius: 40,
-                topTrailingRadius: 0
-            )
-            .fill(Style.Color.stickyNoteYellow)
-            .frame(height: 300)
-            .padding(.horizontal, 24)
-            .ignoresSafeArea(.all, edges: .top)
         }
     }
 

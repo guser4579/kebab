@@ -51,6 +51,8 @@ struct MainAppView: View {
                                             withAnimation(.easeOut(duration: 0.25)) {
                                                 isEntryActionSheetVisible = true
                                             }
+                                        }, onResurfaceTapped: {
+                                            Task { await feedViewModel.resurfaceEntry(entry: entry) }
                                         }, onPinTapped: {
                                             Task { await feedViewModel.togglePin(entry: entry) }
                                         })
@@ -82,6 +84,8 @@ struct MainAppView: View {
                                         withAnimation(.easeOut(duration: 0.25)) {
                                             isEntryActionSheetVisible = true
                                         }
+                                    }, onResurfaceTapped: {
+                                        Task { await feedViewModel.resurfaceEntry(entry: entry) }
                                     }, onPinTapped: {
                                         Task { await feedViewModel.togglePin(entry: entry) }
                                     })
@@ -180,7 +184,9 @@ struct MainAppView: View {
                 }
             }
             .navigationDestination(isPresented: $isSearchActive) {
-                SearchView(supabase: supabase, feedViewModel: feedViewModel)
+                if let userId = authViewModel.currentUserId {
+                    SearchView(supabase: supabase, feedViewModel: feedViewModel, userId: userId)
+                }
             }
         }
         }

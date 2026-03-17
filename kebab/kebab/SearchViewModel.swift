@@ -18,6 +18,7 @@ final class SearchViewModel: ObservableObject {
         query.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    private let userId: UUID
     private let repository: EntryRepository
     private var debounceTask: Task<Void, Never>?
     private var searchTask: Task<Void, Never>?
@@ -32,13 +33,17 @@ final class SearchViewModel: ObservableObject {
     private var pendingCandidate: HistoryCandidate?
     private var settleTask: Task<Void, Never>?
 
-    private static let historyKey = "searchHistory"
+    private static let legacyHistoryKey = "searchHistory"
+    private var historyKey: String { "searchHistory_\(userId.uuidString)" }
     private static let maxHistoryItems = 10
     private static let settleDuration: UInt64 = 2_000_000_000
 
-    init(supabase: SupabaseClient) {
+    init(supabase: SupabaseClient, userId: UUID) {
+        self.userId = userId
         self.repository = EntryRepository(supabase: supabase)
-        self.history = Self.loadHistory()
+        self.history = []
+        self.history = loadHistory()
+        UserDefaults.standard.removeObject(forKey: Self.legacyHistoryKey)
     }
 
     // MARK: - Search
@@ -166,14 +171,14 @@ final class SearchViewModel: ObservableObject {
         saveHistory()
     }
 
-    private static func loadHistory() -> [SearchHistoryItem] {
+    private func loadHistory() -> [SearchHistoryItem] {
         guard let data = UserDefaults.standard.data(forKey: historyKey) else { return [] }
         return (try? JSONDecoder().decode([SearchHistoryItem].self, from: data)) ?? []
     }
 
     private func saveHistory() {
         if let data = try? JSONEncoder().encode(history) {
-            UserDefaults.standard.set(data, forKey: Self.historyKey)
+            UserDefaults.standard.set(data, forKey: historyKey)
         }
     }
 }

@@ -26,6 +26,7 @@ struct Entry: Identifiable, Codable, Sendable, Equatable {
     let pinned_at: Date?
     let isContentHidden: Bool
     let comment_count: Int?
+    let resurface_count: Int
     let attachments: [EntryAttachment]?
 
     var linkAttachment: EntryAttachment? {
@@ -42,6 +43,7 @@ struct Entry: Identifiable, Codable, Sendable, Equatable {
         case pinned_at
         case isContentHidden = "is_content_hidden"
         case comment_count
+        case resurface_count
         case attachments
     }
 }
