@@ -291,7 +291,7 @@ struct EntryDetailView: View {
 
     private var contentText: some View {
         Text(displayContent)
-            .font(Style.Typography.body())
+            .font(.custom("DMSans-SemiBold", size: 16))
             .foregroundColor(Style.Color.primaryText)
             .lineSpacing(4)
             .frame(maxWidth: .infinity, alignment: .leading)

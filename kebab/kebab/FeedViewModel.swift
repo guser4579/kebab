@@ -16,7 +16,7 @@ final class FeedViewModel: ObservableObject {
 
     var pinnedEntries: [Entry] {
         entries.filter { $0.pinned_at != nil }
-               .sorted { $0.pinned_at! < $1.pinned_at! }
+               .sorted { $0.pinned_at! > $1.pinned_at! }
     }
 
     private let repository: EntryRepository

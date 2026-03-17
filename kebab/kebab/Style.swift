@@ -27,7 +27,7 @@ enum Style {
         /// Destructive actions (e.g. delete)
         static let destructive = SwiftUI.Color(hex: "DD2340")
         /// Resurface indicator
-        static let resurface = SwiftUI.Color(hex: "378E9A")
+        static let resurface = SwiftUI.Color(hex: "FFC57C")
         /// Auth welcome sticky note
         static let stickyNoteYellow = SwiftUI.Color(hex: "EBCF47")
     }
