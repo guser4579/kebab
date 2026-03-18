@@ -35,7 +35,9 @@ struct SearchView: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(searchViewModel.results) { entry in
-                            EntryRowView(entry: entry, feedViewModel: feedViewModel, onMoreTapped: {
+                            EntryRowView(entry: entry, feedViewModel: feedViewModel, onResultActivated: {
+                                searchViewModel.recordDisplayedResultActivation()
+                            }, onMoreTapped: {
                                 activeEntryMenuEntry = entry
                                 withAnimation(.easeOut(duration: 0.25)) {
                                     isEntryActionSheetVisible = true
@@ -134,7 +136,6 @@ struct SearchView: View {
             }
         }
         .navigationBarBackButtonHidden(true)
-        .onDisappear { searchViewModel.flushPendingHistory() }
     }
 
     // MARK: - Header
@@ -200,7 +201,7 @@ struct SearchView: View {
         .autocorrectionDisabled()
         .textInputAutocapitalization(.never)
         .lineLimit(1)
-        .onSubmit { searchViewModel.flushPendingHistory() }
+        .onSubmit { searchViewModel.recordExplicitSubmitIntent() }
         .padding(.leading, Style.Spacing.x4)
         .padding(.trailing, Style.Spacing.x4 + Style.Icon.grid)
         .padding(.vertical, Style.Spacing.x3)

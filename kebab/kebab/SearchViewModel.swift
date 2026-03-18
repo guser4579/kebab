@@ -25,18 +25,16 @@ final class SearchViewModel: ObservableObject {
     private var spinnerTask: Task<Void, Never>?
     private var searchGeneration: Int = 0
 
-    private struct HistoryCandidate {
-        let query: String
-        let resultCount: Int
-    }
-
-    private var pendingCandidate: HistoryCandidate?
-    private var settleTask: Task<Void, Never>?
+    // The exact query whose results are currently displayed.
+    private var lastSearchedQuery: String?
+    // A valid query explicitly submitted via keyboard whose matching search has not yet completed.
+    private var pendingSubmittedQuery: String?
+    // The query already committed in the current active-query cycle; prevents duplicate saves without time heuristics.
+    private var committedDisplayedQuery: String?
 
     private static let legacyHistoryKey = "searchHistory"
     private var historyKey: String { "searchHistory_\(userId.uuidString)" }
     private static let maxHistoryItems = 10
-    private static let settleDuration: UInt64 = 2_000_000_000
 
     init(supabase: SupabaseClient, userId: UUID) {
         self.userId = userId
@@ -49,10 +47,19 @@ final class SearchViewModel: ObservableObject {
     // MARK: - Search
 
     private func queryDidChange() {
-        if trimmedQuery.count < 3 {
+        let trimmed = trimmedQuery
+
+        // End the active-query cycle for any intent state that no longer matches the current effective query.
+        if trimmed.lowercased() != pendingSubmittedQuery?.lowercased() {
+            pendingSubmittedQuery = nil
+        }
+        if trimmed.lowercased() != committedDisplayedQuery?.lowercased() {
+            committedDisplayedQuery = nil
+        }
+
+        if trimmed.count < 3 {
             cancelAll()
-            settleTask?.cancel()
-            pendingCandidate = nil
+            lastSearchedQuery = nil
             results = []
             isSearching = false
             showSpinner = false
@@ -107,40 +114,57 @@ final class SearchViewModel: ObservableObject {
                 self.showSpinner = false
                 self.hasCompletedSearch = true
                 self.spinnerTask?.cancel()
-                if recordHistory {
-                    self.setPendingCandidate(query: query, resultCount: entries.count)
+                self.lastSearchedQuery = query
+                if recordHistory,
+                   let pending = self.pendingSubmittedQuery,
+                   pending.lowercased() == query.lowercased(),
+                   self.committedDisplayedQuery?.lowercased() != query.lowercased() {
+                    self.commitToHistory(query: query, resultCount: entries.count)
+                    self.committedDisplayedQuery = query
+                    self.pendingSubmittedQuery = nil
                 }
             } catch {
                 guard !Task.isCancelled, generation == self.searchGeneration else { return }
                 self.isSearching = false
                 self.showSpinner = false
                 self.spinnerTask?.cancel()
+                if self.pendingSubmittedQuery?.lowercased() == query.lowercased() {
+                    self.pendingSubmittedQuery = nil
+                }
             }
         }
+    }
+
+    // MARK: - Explicit Intent
+
+    /// Called when the user presses Enter/Search on the keyboard.
+    /// Source of truth: current trimmed input field.
+    func recordExplicitSubmitIntent() {
+        let trimmed = trimmedQuery
+        guard trimmed.count >= 3 else { return }
+        guard committedDisplayedQuery?.lowercased() != trimmed.lowercased() else { return }
+
+        if hasCompletedSearch && lastSearchedQuery?.lowercased() == trimmed.lowercased() {
+            // Results for this exact query are already displayed — commit immediately.
+            commitToHistory(query: trimmed, resultCount: results.count)
+            committedDisplayedQuery = trimmed
+            pendingSubmittedQuery = nil
+        } else {
+            // Search not yet complete for this query — park intent and commit when it succeeds.
+            pendingSubmittedQuery = trimmed
+        }
+    }
+
+    /// Called when the user activates a search result (e.g. taps the comment icon).
+    /// Source of truth: the query that produced the currently displayed results.
+    func recordDisplayedResultActivation() {
+        guard let displayed = lastSearchedQuery, displayed.count >= 3 else { return }
+        guard committedDisplayedQuery?.lowercased() != displayed.lowercased() else { return }
+        commitToHistory(query: displayed, resultCount: results.count)
+        committedDisplayedQuery = displayed
     }
 
     // MARK: - History
-
-    private func setPendingCandidate(query: String, resultCount: Int) {
-        pendingCandidate = HistoryCandidate(query: query, resultCount: resultCount)
-        settleTask?.cancel()
-        settleTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: Self.settleDuration)
-            guard let self, !Task.isCancelled else { return }
-            if let candidate = self.pendingCandidate {
-                self.commitToHistory(query: candidate.query, resultCount: candidate.resultCount)
-                self.pendingCandidate = nil
-            }
-        }
-    }
-
-    func flushPendingHistory() {
-        settleTask?.cancel()
-        if let candidate = pendingCandidate {
-            commitToHistory(query: candidate.query, resultCount: candidate.resultCount)
-            pendingCandidate = nil
-        }
-    }
 
     func deleteHistoryItem(id: UUID) {
         history.removeAll { $0.id == id }
@@ -149,7 +173,7 @@ final class SearchViewModel: ObservableObject {
 
     private func commitToHistory(query: String, resultCount: Int) {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
+        guard trimmed.count >= 3 else { return }
 
         let dedupeKey = trimmed.lowercased()
         history.removeAll {

@@ -4,6 +4,7 @@ struct EntryRowView: View {
 
     let entry: Entry
     var feedViewModel: FeedViewModel?
+    var onResultActivated: (() -> Void)?
     var onMoreTapped: (() -> Void)?
     var onResurfaceTapped: (() -> Void)?
     var onPinTapped: (() -> Void)?
@@ -161,6 +162,7 @@ struct EntryRowView: View {
                         Icon("message-circle")
                             .foregroundColor(Style.Color.secondary)
                     }
+                    .simultaneousGesture(TapGesture().onEnded { onResultActivated?() })
                 } else {
                     Button {
                         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
