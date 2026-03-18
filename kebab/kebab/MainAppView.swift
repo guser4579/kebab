@@ -45,6 +45,15 @@ struct MainAppView: View {
                     ZStack {
                         ScrollViewReader { proxy in
                             ScrollView {
+                                if feedViewModel.hasCompletedInitialLoad && feedViewModel.feedEntries.isEmpty {
+                                    EmptyStateView(
+                                        iconName: "bookmark-02",
+                                        title: "Save it here",
+                                        primaryBody: "Kebab is a micro journal for thoughts, links, and things you don't want to lose.\n\nLike a sticky note you'll come back to.",
+                                        secondaryBody: "Recipes, quotes, ideas, movies to watch, random thoughts that come to you at 3am."
+                                    )
+                                    .padding(Style.Spacing.emptyStateMargin)
+                                }
                                 LazyVStack(alignment: .leading, spacing: 0) {
                                     ForEach(feedViewModel.feedEntries) { entry in
                                         EntryRowView(entry: entry, feedViewModel: feedViewModel, onMoreTapped: {
@@ -80,6 +89,15 @@ struct MainAppView: View {
                         .allowsHitTesting(selectedTab == .feed)
 
                         ScrollView {
+                            if feedViewModel.hasCompletedInitialLoad && feedViewModel.pinnedEntries.isEmpty {
+                                EmptyStateView(
+                                    iconName: "pin-filled",
+                                    title: "Come back to it",
+                                    primaryBody: "Keep your most important thoughts and threads close by pinning them here.",
+                                    secondaryBody: "For ideas in progress, links to revisit, and anything you want top of mind."
+                                )
+                                .padding(Style.Spacing.emptyStateMargin)
+                            }
                             LazyVStack(alignment: .leading, spacing: 0) {
                                 ForEach(feedViewModel.pinnedEntries) { entry in
                                     EntryRowView(entry: entry, feedViewModel: feedViewModel, onMoreTapped: {

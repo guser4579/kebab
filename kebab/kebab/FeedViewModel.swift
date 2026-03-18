@@ -8,6 +8,7 @@ final class FeedViewModel: ObservableObject {
 
     @Published var entries: [Entry] = []
     @Published var isLoading: Bool = false
+    @Published var hasCompletedInitialLoad: Bool = false
     @Published var errorMessage: String?
 
     var feedEntries: [Entry] {
@@ -30,7 +31,10 @@ final class FeedViewModel: ObservableObject {
     func loadEntries() async {
         isLoading = true
         errorMessage = nil
-        defer { isLoading = false }
+        defer {
+            isLoading = false
+            hasCompletedInitialLoad = true
+        }
 
         do {
             entries = try await repository.fetchRootEntries()

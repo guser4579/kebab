@@ -67,6 +67,10 @@ enum Style {
         static func authButton() -> Font {
             .custom("DMSans-SemiBold", size: 16)
         }
+        /// Empty state title: DM Sans extra bold, 16pt, 24pt line height
+        static func emptyStateTitle() -> Font {
+            .custom("DMSans-ExtraBold", size: 16)
+        }
 
         static let bodyLineHeight: CGFloat = 24
         static let metaLineHeight: CGFloat = 24
@@ -117,6 +121,8 @@ enum Style {
         static let composerTextMarginRight: CGFloat = x3
         /// Composer action button inset from edges
         static let composerButtonInset: CGFloat = 6
+        /// Empty state container margin (all four sides)
+        static let emptyStateMargin: CGFloat = 40
     }
 
     // MARK: - Icon
