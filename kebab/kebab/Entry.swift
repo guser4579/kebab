@@ -16,11 +16,12 @@ struct EntryAttachment: Codable, Sendable, Equatable {
     }
 }
 
-struct Entry: Identifiable, Codable, Sendable, Equatable {
+struct Entry: Identifiable, Sendable, Equatable {
     let id: UUID
     let user_id: UUID
     let parent_id: UUID?
     let root_id: UUID?
+    let depth: Int
     let content: String
     let created_at: Date
     let pinned_at: Date?
@@ -38,6 +39,7 @@ struct Entry: Identifiable, Codable, Sendable, Equatable {
         case user_id
         case parent_id
         case root_id
+        case depth
         case content
         case created_at
         case pinned_at
@@ -45,5 +47,23 @@ struct Entry: Identifiable, Codable, Sendable, Equatable {
         case comment_count
         case resurface_count
         case attachments
+    }
+}
+
+extension Entry: Codable {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        user_id = try c.decode(UUID.self, forKey: .user_id)
+        parent_id = try c.decodeIfPresent(UUID.self, forKey: .parent_id)
+        root_id = try c.decodeIfPresent(UUID.self, forKey: .root_id)
+        depth = try c.decodeIfPresent(Int.self, forKey: .depth) ?? 0
+        content = try c.decode(String.self, forKey: .content)
+        created_at = try c.decode(Date.self, forKey: .created_at)
+        pinned_at = try c.decodeIfPresent(Date.self, forKey: .pinned_at)
+        isContentHidden = try c.decode(Bool.self, forKey: .isContentHidden)
+        comment_count = try c.decodeIfPresent(Int.self, forKey: .comment_count)
+        resurface_count = try c.decodeIfPresent(Int.self, forKey: .resurface_count) ?? 0
+        attachments = try c.decodeIfPresent([EntryAttachment].self, forKey: .attachments)
     }
 }

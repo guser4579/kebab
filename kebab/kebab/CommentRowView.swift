@@ -8,6 +8,9 @@ import SwiftUI
 struct CommentRowView: View {
 
     let comment: Entry
+    var feedViewModel: FeedViewModel?
+    var rootId: UUID?
+    var subtreeCount: Int = 0
     var onMoreTapped: (() -> Void)?
 
     private static let timestampFormatter: DateFormatter = {
@@ -51,6 +54,13 @@ struct CommentRowView: View {
                     .frame(height: 12)
 
                 actionRow
+
+                if subtreeCount > 0 {
+                    Color.clear
+                        .frame(height: 8)
+
+                    replyCounter
+                }
             }
             .padding(.leading, 40)
             .padding(.trailing, 16)
@@ -114,13 +124,32 @@ struct CommentRowView: View {
 
     private var actionRow: some View {
         HStack(spacing: Style.Spacing.replyBelowBody) {
-            Button {
-                UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-            } label: {
-                Icon("message-circle")
-                    .foregroundColor(Style.Color.secondary)
+            if let feedViewModel = feedViewModel, let rootId = rootId {
+                NavigationLink(destination: CommentDetailView(
+                    comment: comment,
+                    rootId: rootId,
+                    feedViewModel: feedViewModel
+                )) {
+                    Icon("message-circle")
+                        .foregroundColor(Style.Color.secondary)
+                }
+            } else {
+                Button {
+                    UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                } label: {
+                    Icon("message-circle")
+                        .foregroundColor(Style.Color.secondary)
+                }
             }
         }
         .frame(minHeight: 24, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private var replyCounter: some View {
+        Text(subtreeCount == 1 ? "1 reply" : "\(subtreeCount) replies")
+            .font(.custom("DMSans-Regular", size: 16))
+            .foregroundColor(Style.Color.secondary)
+            .frame(height: 24, alignment: .leading)
     }
 }

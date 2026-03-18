@@ -170,33 +170,50 @@ final class FeedViewModel: ObservableObject {
         }
     }
 
-    func sendComment(content: String, rootEntry: Entry) async {
+    func sendComment(content: String, parentId: UUID, rootId: UUID, depth: Int) async {
         let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 
         do {
             let session = try await supabase.auth.session
-            let payload = InsertCommentPayload(
-                user_id: session.user.id,
-                parent_id: rootEntry.id,
-                root_id: rootEntry.id,
-                content: trimmed,
-                is_content_hidden: false
+            try await repository.insertComment(
+                userId: session.user.id,
+                parentId: parentId,
+                rootId: rootId,
+                depth: depth,
+                content: trimmed
             )
-            try await supabase
-                .from("entries")
-                .insert(payload)
-                .execute()
         } catch {
             print("Failed to send comment:", error)
         }
     }
 }
 
-private struct InsertCommentPayload: Encodable {
-    let user_id: UUID
-    let parent_id: UUID
-    let root_id: UUID
-    let content: String
-    let is_content_hidden: Bool
+// MARK: - Thread data derivation
+
+struct ThreadData {
+    private let childrenMap: [UUID: [Entry]]
+    let totalCount: Int
+
+    init(entries: [Entry]) {
+        totalCount = entries.count
+        var map: [UUID: [Entry]] = [:]
+        for entry in entries {
+            guard let parentId = entry.parent_id else { continue }
+            map[parentId, default: []].append(entry)
+        }
+        for key in map.keys {
+            map[key]?.sort { $0.created_at < $1.created_at }
+        }
+        childrenMap = map
+    }
+
+    func directChildren(of id: UUID) -> [Entry] {
+        childrenMap[id] ?? []
+    }
+
+    func subtreeCount(for id: UUID) -> Int {
+        let children = childrenMap[id] ?? []
+        return children.reduce(children.count) { $0 + subtreeCount(for: $1.id) }
+    }
 }

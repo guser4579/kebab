@@ -1,13 +1,14 @@
 //
-//  EntryDetailView.swift
+//  CommentDetailView.swift
 //  kebab
 //
 
 import SwiftUI
 
-struct EntryDetailView: View {
+struct CommentDetailView: View {
 
-    let entry: Entry
+    let comment: Entry
+    let rootId: UUID
     @ObservedObject var feedViewModel: FeedViewModel
 
     @Environment(\.dismiss) private var dismiss
@@ -18,7 +19,7 @@ struct EntryDetailView: View {
     @State private var threadData: ThreadData?
 
     private var directChildren: [Entry] {
-        threadData?.directChildren(of: entry.id) ?? []
+        threadData?.directChildren(of: comment.id) ?? []
     }
 
     private static let timestampFormatter: DateFormatter = {
@@ -30,36 +31,36 @@ struct EntryDetailView: View {
     }()
 
     private var formattedTimestamp: String {
-        Self.timestampFormatter.string(from: entry.created_at)
+        Self.timestampFormatter.string(from: comment.created_at)
     }
 
     private var displayContent: String {
-        if entry.isContentHidden {
-            return entry.content.map { char in
+        if comment.isContentHidden {
+            return comment.content.map { char in
                 char.isWhitespace ? char : "*"
             }.map(String.init).joined()
         } else {
-            return entry.content
+            return comment.content
         }
     }
 
     var body: some View {
         GeometryReader { geometry in
             VStack(spacing: 0) {
-                entryDetailHeader
+                commentDetailHeader
 
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
-                        entryContentSection
+                        commentContentSection
 
-                        ForEach(directChildren) { comment in
+                        ForEach(directChildren) { child in
                             CommentRowView(
-                                comment: comment,
+                                comment: child,
                                 feedViewModel: feedViewModel,
-                                rootId: entry.id,
-                                subtreeCount: threadData?.subtreeCount(for: comment.id) ?? 0,
+                                rootId: rootId,
+                                subtreeCount: threadData?.subtreeCount(for: child.id) ?? 0,
                                 onMoreTapped: {
-                                    activeEntryMenuEntry = comment
+                                    activeEntryMenuEntry = child
                                     withAnimation(.easeOut(duration: 0.25)) {
                                         isEntryActionSheetVisible = true
                                     }
@@ -80,14 +81,14 @@ struct EntryDetailView: View {
                 ComposerView(
                     text: $composerText,
                     maxHeight: geometry.size.height * Style.Layout.composerMaxHeightFraction,
-                    placeholder: "Add comment",
+                    placeholder: "Add reply",
                     onSent: { content in
                         Task {
                             await feedViewModel.sendComment(
                                 content: content,
-                                parentId: entry.id,
-                                rootId: entry.id,
-                                depth: 1
+                                parentId: comment.id,
+                                rootId: rootId,
+                                depth: comment.depth + 1
                             )
                             await reloadThread()
                         }
@@ -115,14 +116,14 @@ struct EntryDetailView: View {
                         if isEntryActionSheetVisible, let sheetEntry = activeEntryMenuEntry {
                             EntryActionSheetView(
                                 entry: sheetEntry,
-                                isComment: sheetEntry.parent_id != nil,
+                                isComment: true,
                                 onDelete: {
                                     Task {
                                         await feedViewModel.deleteEntry(id: sheetEntry.id)
-                                        if sheetEntry.parent_id != nil {
-                                            await reloadThread()
-                                        } else {
+                                        if sheetEntry.id == comment.id {
                                             dismiss()
+                                        } else {
+                                            await reloadThread()
                                         }
                                     }
                                 },
@@ -132,9 +133,7 @@ struct EntryDetailView: View {
                                             id: sheetEntry.id,
                                             currentValue: sheetEntry.isContentHidden
                                         )
-                                        if sheetEntry.parent_id != nil {
-                                            await reloadThread()
-                                        }
+                                        await reloadThread()
                                     }
                                 },
                                 onDismiss: {
@@ -163,13 +162,13 @@ struct EntryDetailView: View {
     }
 
     private func reloadThread() async {
-        let entries = await feedViewModel.loadComments(rootId: entry.id)
+        let entries = await feedViewModel.loadComments(rootId: rootId)
         threadData = ThreadData(entries: entries)
     }
 
     // MARK: - Header
 
-    private var entryDetailHeader: some View {
+    private var commentDetailHeader: some View {
         VStack(spacing: 0) {
             Color.clear
                 .frame(height: 60)
@@ -190,7 +189,7 @@ struct EntryDetailView: View {
 
     private var headerTopBar: some View {
         ZStack {
-            Text("Entry")
+            Text("Comment [\(comment.depth)]")
                 .font(.custom("DMSans-Medium", size: 16))
                 .foregroundColor(Style.Color.primaryText)
 
@@ -213,12 +212,12 @@ struct EntryDetailView: View {
 
     // MARK: - Content
 
-    private var entryContentSection: some View {
+    private var commentContentSection: some View {
         VStack(spacing: 0) {
             Color.clear
                 .frame(height: 16)
 
-            entryContent
+            commentContent
 
             Color.clear
                 .frame(height: 16)
@@ -234,46 +233,35 @@ struct EntryDetailView: View {
             .frame(maxWidth: .infinity)
     }
 
-    private var hasLinkCard: Bool {
-        entry.linkAttachment != nil && !entry.isContentHidden
-    }
-
-    private var entryContent: some View {
+    private var commentContent: some View {
         VStack(alignment: .leading, spacing: 0) {
             headerRow
 
             Color.clear
                 .frame(height: 4)
 
-            if !entry.content.isEmpty {
+            if !comment.content.isEmpty {
                 contentText
 
                 Color.clear
-                    .frame(height: hasLinkCard ? 8 : 12)
+                    .frame(height: 12)
             }
 
-            if let link = entry.linkAttachment, !entry.isContentHidden {
-                LinkCardView(urlString: link.url, title: link.title)
-
+            if comment.content.isEmpty {
                 Color.clear
                     .frame(height: 12)
             }
 
-            if entry.content.isEmpty && !hasLinkCard {
-                Color.clear
-                    .frame(height: 12)
-            }
-
-            entryCommentCounter
+            commentReplyCounter
         }
         .padding(.horizontal, Style.Layout.entryContentPadding)
     }
 
     @ViewBuilder
-    private var entryCommentCounter: some View {
-        let count = threadData.map(\.totalCount) ?? entry.comment_count ?? 0
+    private var commentReplyCounter: some View {
+        let count = threadData?.subtreeCount(for: comment.id) ?? 0
         if count > 0 {
-            Text(count == 1 ? "1 comment" : "\(count) comments")
+            Text(count == 1 ? "1 reply" : "\(count) replies")
                 .font(.custom("DMSans-Regular", size: 16))
                 .foregroundColor(Style.Color.secondary)
                 .frame(height: 24, alignment: .leading)
@@ -286,23 +274,11 @@ struct EntryDetailView: View {
                 .font(Style.Typography.meta())
                 .foregroundColor(Style.Color.secondary)
 
-            if entry.resurface_count > 0 {
-                HStack(spacing: 0) {
-                    Icon("refresh-04", glyphSize: Style.Icon.glyphSmall)
-                        .foregroundColor(Style.Color.resurface)
-
-                    Text("\(entry.resurface_count)")
-                        .font(Style.Typography.meta())
-                        .foregroundColor(Style.Color.resurface)
-                }
-                .padding(.leading, 2)
-            }
-
             Spacer(minLength: 0)
 
             Button {
                 UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-                activeEntryMenuEntry = entry
+                activeEntryMenuEntry = comment
                 withAnimation(.easeOut(duration: 0.25)) {
                     isEntryActionSheetVisible = true
                 }
@@ -315,7 +291,7 @@ struct EntryDetailView: View {
 
     private var contentText: some View {
         Text(displayContent)
-            .font(.custom("DMSans-SemiBold", size: 16))
+            .font(Style.Typography.body())
             .foregroundColor(Style.Color.primaryText)
             .lineSpacing(4)
             .frame(maxWidth: .infinity, alignment: .leading)

@@ -22,7 +22,7 @@ final class EntryRepository {
     func fetchComments(rootId: UUID) async throws -> [Entry] {
         let entries: [Entry] = try await supabase
             .from("entries")
-            .select("id,user_id,parent_id,root_id,content,created_at,pinned_at,is_content_hidden,resurface_count,attachments")
+            .select("id,user_id,parent_id,root_id,depth,content,created_at,pinned_at,is_content_hidden,resurface_count,attachments")
             .eq("root_id", value: rootId)
             .order("created_at", ascending: false)
             .execute()
@@ -102,12 +102,36 @@ final class EntryRepository {
             .execute()
     }
 
+    func insertComment(userId: UUID, parentId: UUID, rootId: UUID, depth: Int, content: String) async throws {
+        let payload = InsertCommentPayload(
+            user_id: userId,
+            parent_id: parentId,
+            root_id: rootId,
+            depth: depth,
+            content: content,
+            is_content_hidden: false
+        )
+        try await supabase
+            .from("entries")
+            .insert(payload)
+            .execute()
+    }
+
     private struct InsertEntryPayload: Encodable {
         let user_id: UUID
         let parent_id: UUID?
         let root_id: UUID?
         let content: String
         let attachments: [EntryAttachment]?
+    }
+
+    private struct InsertCommentPayload: Encodable {
+        let user_id: UUID
+        let parent_id: UUID
+        let root_id: UUID
+        let depth: Int
+        let content: String
+        let is_content_hidden: Bool
     }
 
     private struct PinUpdatePayload: Encodable {
