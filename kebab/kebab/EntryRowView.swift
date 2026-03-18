@@ -57,37 +57,47 @@ struct EntryRowView: View {
     }
 
     private var entryContent: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            headerRow
-
-            Color.clear
-                .frame(height: 4)
-
-            if !entry.content.isEmpty {
-                contentText
-
-                Color.clear
-                    .frame(height: hasLinkCard ? 8 : 12)
+        ZStack(alignment: .leading) {
+            if let feedViewModel = feedViewModel {
+                NavigationLink(destination: EntryDetailView(entry: entry, feedViewModel: feedViewModel)) {
+                    Color.clear
+                        .contentShape(Rectangle())
+                }
+                .simultaneousGesture(TapGesture().onEnded { onResultActivated?() })
             }
 
-            if let link = entry.linkAttachment, !entry.isContentHidden {
-                LinkCardView(urlString: link.url, title: link.title)
+            VStack(alignment: .leading, spacing: 0) {
+                headerRow
 
                 Color.clear
-                    .frame(height: 12)
-            }
+                    .frame(height: 4)
 
-            if entry.content.isEmpty && !hasLinkCard {
+                if !entry.content.isEmpty {
+                    contentText
+
+                    Color.clear
+                        .frame(height: hasLinkCard ? 8 : 12)
+                }
+
+                if let link = entry.linkAttachment, !entry.isContentHidden {
+                    LinkCardView(urlString: link.url, title: link.title)
+
+                    Color.clear
+                        .frame(height: 12)
+                }
+
+                if entry.content.isEmpty && !hasLinkCard {
+                    Color.clear
+                        .frame(height: 12)
+                }
+
+                actionRow
+
                 Color.clear
-                    .frame(height: 12)
+                    .frame(height: 8)
+
+                commentCounter
             }
-
-            actionRow
-
-            Color.clear
-                .frame(height: 8)
-
-            commentCounter
         }
         .padding(.horizontal, Style.Layout.entryContentPadding)
     }
@@ -142,6 +152,7 @@ struct EntryRowView: View {
             .foregroundColor(Style.Color.primaryText)
             .lineSpacing(4)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .allowsHitTesting(false)
     }
 
     @ViewBuilder

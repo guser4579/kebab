@@ -42,24 +42,37 @@ struct CommentRowView: View {
             Color.clear
                 .frame(height: 16)
 
-            VStack(alignment: .leading, spacing: 0) {
-                headerRow
+            ZStack(alignment: .leading) {
+                if let feedViewModel = feedViewModel, let rootId = rootId {
+                    NavigationLink(destination: CommentDetailView(
+                        comment: comment,
+                        rootId: rootId,
+                        feedViewModel: feedViewModel
+                    )) {
+                        Color.clear
+                            .contentShape(Rectangle())
+                    }
+                }
 
-                Color.clear
-                    .frame(height: 4)
+                VStack(alignment: .leading, spacing: 0) {
+                    headerRow
 
-                contentText
-
-                Color.clear
-                    .frame(height: 12)
-
-                actionRow
-
-                if subtreeCount > 0 {
                     Color.clear
-                        .frame(height: 8)
+                        .frame(height: 4)
 
-                    replyCounter
+                    contentText
+
+                    Color.clear
+                        .frame(height: 12)
+
+                    actionRow
+
+                    if subtreeCount > 0 {
+                        Color.clear
+                            .frame(height: 8)
+
+                        replyCounter
+                    }
                 }
             }
             .padding(.leading, 40)
@@ -120,6 +133,7 @@ struct CommentRowView: View {
             .foregroundColor(Style.Color.primaryText)
             .lineSpacing(4)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .allowsHitTesting(false)
     }
 
     private var actionRow: some View {
