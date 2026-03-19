@@ -13,6 +13,7 @@ struct MainAppView: View {
     @State private var isSearchActive: Bool = false
     @State private var scrollToBottomOnChange = false
     @State private var hasScrolledToBottom = false
+    @State private var scrollDistanceFromBottom: CGFloat = 0
 
     let authViewModel: AuthViewModel
 
@@ -83,6 +84,36 @@ struct MainAppView: View {
                                     scrollToBottomOnChange = false
                                     proxy.scrollTo("feed-bottom", anchor: .bottom)
                                 }
+                            }
+                            .onScrollGeometryChange(for: CGFloat.self) { g in
+                                max(0, g.contentSize.height - g.contentOffset.y - g.containerSize.height)
+                            } action: { _, newValue in
+                                scrollDistanceFromBottom = newValue
+                            }
+                            .overlay(alignment: .bottom) {
+                                let shouldShow = hasScrolledToBottom
+                                    && selectedTab == .feed
+                                    && scrollDistanceFromBottom > geometry.size.height
+                                Group {
+                                    if shouldShow {
+                                        Button {
+                                            proxy.scrollTo("feed-bottom", anchor: .bottom)
+                                        } label: {
+                                            ZStack {
+                                                Circle()
+                                                    .fill(Style.Color.composerBackground)
+                                                    .frame(width: 36, height: 36)
+                                                Icon("arrow-up")
+                                                    .rotationEffect(.degrees(180))
+                                                    .foregroundColor(Style.Color.primaryText)
+                                            }
+                                        }
+                                        .buttonStyle(.plain)
+                                        .padding(.bottom, 12)
+                                        .transition(.opacity.combined(with: .scale(scale: 0.85)))
+                                    }
+                                }
+                                .animation(.easeInOut(duration: 0.2), value: shouldShow)
                             }
                         }
                         .opacity(selectedTab == .feed ? 1 : 0)
@@ -213,6 +244,7 @@ struct MainAppView: View {
         }
     }
 }
+
 
 #Preview {
     MainAppView(
