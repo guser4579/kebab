@@ -53,19 +53,38 @@ struct CommentDetailView: View {
                     VStack(alignment: .leading, spacing: 0) {
                         commentContentSection
 
-                        ForEach(directChildren) { child in
-                            CommentRowView(
-                                comment: child,
-                                feedViewModel: feedViewModel,
-                                rootId: rootId,
-                                subtreeCount: threadData?.subtreeCount(for: child.id) ?? 0,
-                                onMoreTapped: {
-                                    activeEntryMenuEntry = child
-                                    withAnimation(.easeOut(duration: 0.25)) {
-                                        isEntryActionSheetVisible = true
+                        if !directChildren.isEmpty {
+                            VStack(spacing: 0) {
+                                ForEach(Array(directChildren.enumerated()), id: \.element.id) { index, child in
+                                    VStack(spacing: 0) {
+                                        if index > 0 {
+                                            Rectangle()
+                                                .fill(Style.Color.separator)
+                                                .frame(height: 1)
+                                                .padding(.leading, 17)
+                                        }
+                                        CommentRowView(
+                                            comment: child,
+                                            feedViewModel: feedViewModel,
+                                            rootId: rootId,
+                                            subtreeCount: threadData?.subtreeCount(for: child.id) ?? 0,
+                                            onMoreTapped: {
+                                                activeEntryMenuEntry = child
+                                                withAnimation(.easeOut(duration: 0.25)) {
+                                                    isEntryActionSheetVisible = true
+                                                }
+                                            }
+                                        )
                                     }
                                 }
-                            )
+                            }
+                            .overlay(alignment: .leading) {
+                                Rectangle()
+                                    .fill(Style.Color.separator)
+                                    .frame(width: 1)
+                                    .frame(maxHeight: .infinity)
+                                    .padding(.leading, 16)
+                            }
                         }
                     }
                 }

@@ -37,8 +37,6 @@ struct CommentRowView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            topSeparator
-
             Color.clear
                 .frame(height: 16)
 
@@ -75,38 +73,13 @@ struct CommentRowView: View {
                     }
                 }
             }
-            .padding(.leading, 40)
+            .padding(.leading, 33)
             .padding(.trailing, 16)
 
             Color.clear
                 .frame(height: 16)
-
-            bottomSeparator
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .overlay(alignment: .leading) {
-            GeometryReader { geometry in
-                Circle()
-                    .frame(width: 8, height: 8)
-                    .foregroundColor(Style.Color.secondary)
-                    .position(x: 20, y: geometry.size.height / 2)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-    }
-
-    private var topSeparator: some View {
-        Rectangle()
-            .fill(Style.Color.separator)
-            .frame(height: 1)
-            .frame(maxWidth: .infinity)
-    }
-
-    private var bottomSeparator: some View {
-        Rectangle()
-            .fill(Style.Color.separator)
-            .frame(height: 1)
-            .frame(maxWidth: .infinity)
     }
 
     private var headerRow: some View {
