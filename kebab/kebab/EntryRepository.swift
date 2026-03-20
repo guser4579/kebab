@@ -69,6 +69,15 @@ final class EntryRepository {
             .execute()
     }
 
+    func updateEntryContent(id: UUID, content: String) async throws {
+        let payload = ContentOnlyUpdatePayload(content: content)
+        try await supabase
+            .from("entries")
+            .update(payload)
+            .eq("id", value: id)
+            .execute()
+    }
+
     func searchEntries(query: String) async throws -> [Entry] {
         let entries: [Entry] = try await supabase
             .rpc("search_entries", params: ["search_query": query])
@@ -153,5 +162,9 @@ final class EntryRepository {
 
     private struct AttachmentUpdatePayload: Encodable {
         let attachments: [EntryAttachment]
+    }
+
+    private struct ContentOnlyUpdatePayload: Encodable {
+        let content: String
     }
 }

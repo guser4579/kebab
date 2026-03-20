@@ -67,3 +67,22 @@ extension Entry: Codable {
         attachments = try c.decodeIfPresent([EntryAttachment].self, forKey: .attachments)
     }
 }
+
+extension Entry {
+    func withContent(_ newContent: String) -> Entry {
+        Entry(
+            id: id,
+            user_id: user_id,
+            parent_id: parent_id,
+            root_id: root_id,
+            depth: depth,
+            content: newContent,
+            created_at: created_at,
+            pinned_at: pinned_at,
+            isContentHidden: isContentHidden,
+            comment_count: comment_count,
+            resurface_count: resurface_count,
+            attachments: attachments
+        )
+    }
+}

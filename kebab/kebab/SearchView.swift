@@ -9,6 +9,8 @@ struct SearchView: View {
 
     @State private var activeEntryMenuEntry: Entry?
     @State private var isEntryActionSheetVisible = false
+    @State private var fullScreenEditEntry: Entry?
+    @State private var isFullScreenEditVisible = false
 
     init(supabase: SupabaseClient, feedViewModel: FeedViewModel, userId: UUID) {
         _searchViewModel = StateObject(wrappedValue: SearchViewModel(supabase: supabase, userId: userId))
@@ -111,13 +113,26 @@ struct SearchView: View {
                                     searchViewModel.refreshResults()
                                 }
                             },
-                            onEdit: {
+                            onToggleContentHidden: {
                                 Task {
                                     await feedViewModel.toggleEntryHidden(
                                         id: entry.id,
                                         currentValue: entry.isContentHidden
                                     )
                                     searchViewModel.refreshResults()
+                                }
+                            },
+                            onBeginTextEdit: {
+                                let toEdit = entry
+                                withAnimation(.easeOut(duration: 0.25)) {
+                                    isEntryActionSheetVisible = false
+                                }
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                                    activeEntryMenuEntry = nil
+                                    fullScreenEditEntry = toEdit
+                                    withAnimation(.easeOut(duration: 0.25)) {
+                                        isFullScreenEditVisible = true
+                                    }
                                 }
                             },
                             onDismiss: {
@@ -133,6 +148,27 @@ struct SearchView: View {
                     }
                 }
                 .ignoresSafeArea(edges: .bottom)
+            }
+        }
+        .overlay {
+            if isFullScreenEditVisible, let editEntry = fullScreenEditEntry {
+                EditEntryFullScreenView(
+                    entry: editEntry,
+                    initialText: editEntry.content,
+                    feedViewModel: feedViewModel,
+                    onDismiss: {
+                        withAnimation(.easeOut(duration: 0.25)) {
+                            isFullScreenEditVisible = false
+                        }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                            fullScreenEditEntry = nil
+                        }
+                    },
+                    onPersistSuccess: {
+                        searchViewModel.refreshResults()
+                    }
+                )
+                .transition(.move(edge: .bottom))
             }
         }
         .navigationBarBackButtonHidden(true)

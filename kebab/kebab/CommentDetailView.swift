@@ -13,13 +13,23 @@ struct CommentDetailView: View {
 
     @Environment(\.dismiss) private var dismiss
 
+    @State private var displayedComment: Entry
     @State private var composerText: String = ""
     @State private var activeEntryMenuEntry: Entry?
     @State private var isEntryActionSheetVisible = false
+    @State private var fullScreenEditEntry: Entry?
+    @State private var isFullScreenEditVisible = false
     @State private var threadData: ThreadData?
 
+    init(comment: Entry, rootId: UUID, feedViewModel: FeedViewModel) {
+        self.comment = comment
+        self.rootId = rootId
+        self.feedViewModel = feedViewModel
+        _displayedComment = State(initialValue: comment)
+    }
+
     private var directChildren: [Entry] {
-        threadData?.directChildren(of: comment.id) ?? []
+        threadData?.directChildren(of: displayedComment.id) ?? []
     }
 
     private static let timestampFormatter: DateFormatter = {
@@ -31,16 +41,16 @@ struct CommentDetailView: View {
     }()
 
     private var formattedTimestamp: String {
-        Self.timestampFormatter.string(from: comment.created_at)
+        Self.timestampFormatter.string(from: displayedComment.created_at)
     }
 
-    private var displayContent: String {
-        if comment.isContentHidden {
-            return comment.content.map { char in
+    private var rootCommentDisplayContent: String {
+        if displayedComment.isContentHidden {
+            return displayedComment.content.map { char in
                 char.isWhitespace ? char : "*"
             }.map(String.init).joined()
         } else {
-            return comment.content
+            return displayedComment.content
         }
     }
 
@@ -105,9 +115,9 @@ struct CommentDetailView: View {
                         Task {
                             await feedViewModel.sendComment(
                                 content: content,
-                                parentId: comment.id,
+                                parentId: displayedComment.id,
                                 rootId: rootId,
-                                depth: comment.depth + 1
+                                depth: displayedComment.depth + 1
                             )
                             await reloadThread()
                         }
@@ -139,20 +149,33 @@ struct CommentDetailView: View {
                                 onDelete: {
                                     Task {
                                         await feedViewModel.deleteEntry(id: sheetEntry.id)
-                                        if sheetEntry.id == comment.id {
+                                        if sheetEntry.id == displayedComment.id {
                                             dismiss()
                                         } else {
                                             await reloadThread()
                                         }
                                     }
                                 },
-                                onEdit: {
+                                onToggleContentHidden: {
                                     Task {
                                         await feedViewModel.toggleEntryHidden(
                                             id: sheetEntry.id,
                                             currentValue: sheetEntry.isContentHidden
                                         )
                                         await reloadThread()
+                                    }
+                                },
+                                onBeginTextEdit: {
+                                    let toEdit = sheetEntry
+                                    withAnimation(.easeOut(duration: 0.25)) {
+                                        isEntryActionSheetVisible = false
+                                    }
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                                        activeEntryMenuEntry = nil
+                                        fullScreenEditEntry = toEdit
+                                        withAnimation(.easeOut(duration: 0.25)) {
+                                            isFullScreenEditVisible = true
+                                        }
                                     }
                                 },
                                 onDismiss: {
@@ -168,6 +191,32 @@ struct CommentDetailView: View {
                         }
                     }
                     .ignoresSafeArea(edges: .bottom)
+                }
+            }
+            .overlay {
+                if isFullScreenEditVisible, let editEntry = fullScreenEditEntry {
+                    EditEntryFullScreenView(
+                        entry: editEntry,
+                        initialText: editEntry.content,
+                        feedViewModel: feedViewModel,
+                        onDismiss: {
+                            withAnimation(.easeOut(duration: 0.25)) {
+                                isFullScreenEditVisible = false
+                            }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                                fullScreenEditEntry = nil
+                            }
+                        },
+                        onPersistSuccess: {
+                            Task { await reloadThread() }
+                        },
+                        onSaveSuccess: { updated in
+                            if updated.id == displayedComment.id {
+                                displayedComment = updated
+                            }
+                        }
+                    )
+                    .transition(.move(edge: .bottom))
                 }
             }
             .background(Style.Color.background)
@@ -208,7 +257,7 @@ struct CommentDetailView: View {
 
     private var headerTopBar: some View {
         ZStack {
-            Text("Comment [\(comment.depth)]")
+            Text("Comment [\(displayedComment.depth)]")
                 .font(.custom("DMSans-Medium", size: 16))
                 .foregroundColor(Style.Color.primaryText)
 
@@ -259,14 +308,14 @@ struct CommentDetailView: View {
             Color.clear
                 .frame(height: 4)
 
-            if !comment.content.isEmpty {
+            if !displayedComment.content.isEmpty {
                 contentText
 
                 Color.clear
                     .frame(height: 12)
             }
 
-            if comment.content.isEmpty {
+            if displayedComment.content.isEmpty {
                 Color.clear
                     .frame(height: 12)
             }
@@ -278,7 +327,7 @@ struct CommentDetailView: View {
 
     @ViewBuilder
     private var commentReplyCounter: some View {
-        let count = threadData?.subtreeCount(for: comment.id) ?? 0
+        let count = threadData?.subtreeCount(for: displayedComment.id) ?? 0
         if count > 0 {
             Text(count == 1 ? "1 reply" : "\(count) replies")
                 .font(.custom("DMSans-Regular", size: 16))
@@ -297,7 +346,7 @@ struct CommentDetailView: View {
 
             Button {
                 UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-                activeEntryMenuEntry = comment
+                activeEntryMenuEntry = displayedComment
                 withAnimation(.easeOut(duration: 0.25)) {
                     isEntryActionSheetVisible = true
                 }
@@ -309,7 +358,7 @@ struct CommentDetailView: View {
     }
 
     private var contentText: some View {
-        Text(displayContent)
+        Text(rootCommentDisplayContent)
             .font(Style.Typography.body())
             .foregroundColor(Style.Color.primaryText)
             .lineSpacing(4)

@@ -133,6 +133,21 @@ final class FeedViewModel: ObservableObject {
         }
     }
 
+    /// Persists new text for an entry/comment/reply. Patches the local entries array immediately
+    /// so callers can defer any authoritative reload until their overlay is fully dismissed,
+    /// avoiding scroll position disruption while the editor is still on screen.
+    func updateEntryContent(id: UUID, content: String) async -> Bool {
+        errorMessage = nil
+        do {
+            try await repository.updateEntryContent(id: id, content: content)
+            entries = entries.map { $0.id == id ? $0.withContent(content) : $0 }
+            return true
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
+        }
+    }
+
     func toggleEntryHidden(id: UUID, currentValue: Bool) async {
         do {
             try await supabase

@@ -8,6 +8,8 @@ struct MainAppView: View {
     @State private var composerText: String = ""
     @State private var activeEntryMenuEntry: Entry?
     @State private var isEntryActionSheetVisible = false
+    @State private var fullScreenEditEntry: Entry?
+    @State private var isFullScreenEditVisible = false
     @State private var selectedTab: StickyHeaderView.Tab = .feed
     @State private var isSettingsOpen: Bool = false
     @State private var isSearchActive: Bool = false
@@ -158,6 +160,12 @@ struct MainAppView: View {
                     }
                 }
                 .ignoresSafeArea(edges: .top)
+                // Keep the same modifier node in the tree at all times - only the edges parameter changes.
+                // A @ViewBuilder conditional (the prior attempt) changed the view type on toggle, causing
+                // SwiftUI to destroy and recreate the ScrollView and reset its offset to zero. A stable
+                // node with edges: [] (semantic no-op) vs edges: .bottom is a parameter update, not a
+                // type change, so the ScrollView position survives both open and close.
+                .ignoresSafeArea(.keyboard, edges: isFullScreenEditVisible ? .bottom : [])
                 .safeAreaInset(edge: .bottom) {
                     if !isSettingsOpen && selectedTab == .feed {
                         ComposerView(
@@ -212,12 +220,25 @@ struct MainAppView: View {
                                 onDelete: {
                                     Task { await feedViewModel.deleteEntry(id: entry.id) }
                                 },
-                                onEdit: {
+                                onToggleContentHidden: {
                                     Task {
                                         await feedViewModel.toggleEntryHidden(
                                             id: entry.id,
                                             currentValue: entry.isContentHidden
                                         )
+                                    }
+                                },
+                                onBeginTextEdit: {
+                                    let toEdit = entry
+                                    withAnimation(.easeOut(duration: 0.25)) {
+                                        isEntryActionSheetVisible = false
+                                    }
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                                        activeEntryMenuEntry = nil
+                                        fullScreenEditEntry = toEdit
+                                        withAnimation(.easeOut(duration: 0.25)) {
+                                            isFullScreenEditVisible = true
+                                        }
                                     }
                                 },
                                 onDismiss: {
@@ -235,6 +256,30 @@ struct MainAppView: View {
                     .ignoresSafeArea(edges: .bottom)
                 }
             }
+            .overlay {
+                if isFullScreenEditVisible, let editEntry = fullScreenEditEntry {
+                    EditEntryFullScreenView(
+                        entry: editEntry,
+                        initialText: editEntry.content,
+                        feedViewModel: feedViewModel,
+                        onDismiss: {
+                            withAnimation(.easeOut(duration: 0.25)) {
+                                isFullScreenEditVisible = false
+                            }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                                fullScreenEditEntry = nil
+                                // Full authoritative reload runs after the overlay is completely gone and
+                                // the keyboard is dismissed, so no overlay or keyboard layout pressure
+                                // is active when entries refreshes. The local patch in updateEntryContent
+                                // already has the correct content, so this reload produces no diff visible
+                                // to the user (same order, same text) and does not shift scroll position.
+                                Task { await feedViewModel.loadEntries() }
+                            }
+                        }
+                    )
+                    .transition(.move(edge: .bottom))
+                }
+            }
             .navigationDestination(isPresented: $isSearchActive) {
                 if let userId = authViewModel.currentUserId {
                     SearchView(supabase: supabase, feedViewModel: feedViewModel, userId: userId)
@@ -244,6 +289,7 @@ struct MainAppView: View {
         }
     }
 }
+
 
 
 #Preview {

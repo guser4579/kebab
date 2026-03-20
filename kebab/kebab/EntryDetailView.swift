@@ -12,13 +12,22 @@ struct EntryDetailView: View {
 
     @Environment(\.dismiss) private var dismiss
 
+    @State private var displayedRootEntry: Entry
     @State private var composerText: String = ""
     @State private var activeEntryMenuEntry: Entry?
     @State private var isEntryActionSheetVisible = false
+    @State private var fullScreenEditEntry: Entry?
+    @State private var isFullScreenEditVisible = false
     @State private var threadData: ThreadData?
 
+    init(entry: Entry, feedViewModel: FeedViewModel) {
+        self.entry = entry
+        self.feedViewModel = feedViewModel
+        _displayedRootEntry = State(initialValue: entry)
+    }
+
     private var directChildren: [Entry] {
-        threadData?.directChildren(of: entry.id) ?? []
+        threadData?.directChildren(of: displayedRootEntry.id) ?? []
     }
 
     private static let timestampFormatter: DateFormatter = {
@@ -30,16 +39,16 @@ struct EntryDetailView: View {
     }()
 
     private var formattedTimestamp: String {
-        Self.timestampFormatter.string(from: entry.created_at)
+        Self.timestampFormatter.string(from: displayedRootEntry.created_at)
     }
 
-    private var displayContent: String {
-        if entry.isContentHidden {
-            return entry.content.map { char in
+    private var rootDisplayContent: String {
+        if displayedRootEntry.isContentHidden {
+            return displayedRootEntry.content.map { char in
                 char.isWhitespace ? char : "*"
             }.map(String.init).joined()
         } else {
-            return entry.content
+            return displayedRootEntry.content
         }
     }
 
@@ -65,7 +74,7 @@ struct EntryDetailView: View {
                                         CommentRowView(
                                             comment: comment,
                                             feedViewModel: feedViewModel,
-                                            rootId: entry.id,
+                                            rootId: displayedRootEntry.id,
                                             subtreeCount: threadData?.subtreeCount(for: comment.id) ?? 0,
                                             onMoreTapped: {
                                                 activeEntryMenuEntry = comment
@@ -104,8 +113,8 @@ struct EntryDetailView: View {
                         Task {
                             await feedViewModel.sendComment(
                                 content: content,
-                                parentId: entry.id,
-                                rootId: entry.id,
+                                parentId: displayedRootEntry.id,
+                                rootId: displayedRootEntry.id,
                                 depth: 1
                             )
                             await reloadThread()
@@ -145,7 +154,7 @@ struct EntryDetailView: View {
                                         }
                                     }
                                 },
-                                onEdit: {
+                                onToggleContentHidden: {
                                     Task {
                                         await feedViewModel.toggleEntryHidden(
                                             id: sheetEntry.id,
@@ -153,6 +162,19 @@ struct EntryDetailView: View {
                                         )
                                         if sheetEntry.parent_id != nil {
                                             await reloadThread()
+                                        }
+                                    }
+                                },
+                                onBeginTextEdit: {
+                                    let toEdit = sheetEntry
+                                    withAnimation(.easeOut(duration: 0.25)) {
+                                        isEntryActionSheetVisible = false
+                                    }
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                                        activeEntryMenuEntry = nil
+                                        fullScreenEditEntry = toEdit
+                                        withAnimation(.easeOut(duration: 0.25)) {
+                                            isFullScreenEditVisible = true
                                         }
                                     }
                                 },
@@ -171,6 +193,32 @@ struct EntryDetailView: View {
                     .ignoresSafeArea(edges: .bottom)
                 }
             }
+            .overlay {
+                if isFullScreenEditVisible, let editEntry = fullScreenEditEntry {
+                    EditEntryFullScreenView(
+                        entry: editEntry,
+                        initialText: editEntry.content,
+                        feedViewModel: feedViewModel,
+                        onDismiss: {
+                            withAnimation(.easeOut(duration: 0.25)) {
+                                isFullScreenEditVisible = false
+                            }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                                fullScreenEditEntry = nil
+                            }
+                        },
+                        onPersistSuccess: {
+                            Task { await reloadThread() }
+                        },
+                        onSaveSuccess: { updated in
+                            if updated.id == displayedRootEntry.id {
+                                displayedRootEntry = updated
+                            }
+                        }
+                    )
+                    .transition(.move(edge: .bottom))
+                }
+            }
             .background(Style.Color.background)
             .ignoresSafeArea(edges: .top)
         }
@@ -182,7 +230,7 @@ struct EntryDetailView: View {
     }
 
     private func reloadThread() async {
-        let entries = await feedViewModel.loadComments(rootId: entry.id)
+        let entries = await feedViewModel.loadComments(rootId: displayedRootEntry.id)
         threadData = ThreadData(entries: entries)
     }
 
@@ -254,7 +302,7 @@ struct EntryDetailView: View {
     }
 
     private var hasLinkCard: Bool {
-        entry.linkAttachment != nil && !entry.isContentHidden
+        displayedRootEntry.linkAttachment != nil && !displayedRootEntry.isContentHidden
     }
 
     private var entryContent: some View {
@@ -264,21 +312,21 @@ struct EntryDetailView: View {
             Color.clear
                 .frame(height: 4)
 
-            if !entry.content.isEmpty {
+            if !displayedRootEntry.content.isEmpty {
                 contentText
 
                 Color.clear
                     .frame(height: hasLinkCard ? 8 : 12)
             }
 
-            if let link = entry.linkAttachment, !entry.isContentHidden {
+            if let link = displayedRootEntry.linkAttachment, !displayedRootEntry.isContentHidden {
                 LinkCardView(urlString: link.url, title: link.title)
 
                 Color.clear
                     .frame(height: 12)
             }
 
-            if entry.content.isEmpty && !hasLinkCard {
+            if displayedRootEntry.content.isEmpty && !hasLinkCard {
                 Color.clear
                     .frame(height: 12)
             }
@@ -290,7 +338,7 @@ struct EntryDetailView: View {
 
     @ViewBuilder
     private var entryCommentCounter: some View {
-        let count = threadData.map(\.totalCount) ?? entry.comment_count ?? 0
+        let count = threadData.map(\.totalCount) ?? displayedRootEntry.comment_count ?? 0
         if count > 0 {
             Text(count == 1 ? "1 comment" : "\(count) comments")
                 .font(.custom("DMSans-Regular", size: 16))
@@ -305,12 +353,12 @@ struct EntryDetailView: View {
                 .font(Style.Typography.meta())
                 .foregroundColor(Style.Color.secondary)
 
-            if entry.resurface_count > 0 {
+            if displayedRootEntry.resurface_count > 0 {
                 HStack(spacing: 0) {
                     Icon("refresh-04", glyphSize: Style.Icon.glyphSmall)
                         .foregroundColor(Style.Color.resurface)
 
-                    Text("\(entry.resurface_count)")
+                    Text("\(displayedRootEntry.resurface_count)")
                         .font(Style.Typography.meta())
                         .foregroundColor(Style.Color.resurface)
                 }
@@ -321,7 +369,7 @@ struct EntryDetailView: View {
 
             Button {
                 UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-                activeEntryMenuEntry = entry
+                activeEntryMenuEntry = displayedRootEntry
                 withAnimation(.easeOut(duration: 0.25)) {
                     isEntryActionSheetVisible = true
                 }
@@ -333,7 +381,7 @@ struct EntryDetailView: View {
     }
 
     private var contentText: some View {
-        Text(displayContent)
+        Text(rootDisplayContent)
             .font(.custom("DMSans-SemiBold", size: 16))
             .foregroundColor(Style.Color.primaryText)
             .lineSpacing(4)

@@ -26,7 +26,7 @@ struct EmptyStateView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             Color.clear
-                .frame(height: Style.Spacing.x2)
+                .frame(height: Style.Spacing.x2 + 4)
 
             Text(secondaryBody)
                 .font(Style.Typography.meta())

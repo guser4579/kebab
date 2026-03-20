@@ -122,7 +122,7 @@ enum Style {
         /// Composer action button inset from edges
         static let composerButtonInset: CGFloat = 6
         /// Empty state container margin (all four sides)
-        static let emptyStateMargin: CGFloat = 40
+        static let emptyStateMargin: CGFloat = 24
     }
 
     // MARK: - Icon

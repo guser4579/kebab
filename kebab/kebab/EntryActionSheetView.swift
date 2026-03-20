@@ -10,7 +10,10 @@ struct EntryActionSheetView: View {
     let entry: Entry
     let isComment: Bool
     let onDelete: () -> Void
-    let onEdit: () -> Void
+    /// Hide / unhide entry or comment body (unchanged behavior).
+    let onToggleContentHidden: () -> Void
+    /// Presents full-screen text editor after the host dismisses this sheet.
+    let onBeginTextEdit: () -> Void
     let onDismiss: () -> Void
 
     private let sheetTopCornerRadius: CGFloat = 32
@@ -35,13 +38,21 @@ struct EntryActionSheetView: View {
                     }
                 )
                 actionRow(
+                    title: "Edit",
+                    iconName: "pencil-edit-02",
+                    color: Style.Color.primaryText,
+                    action: {
+                        onBeginTextEdit()
+                    }
+                )
+                actionRow(
                     title: entry.isContentHidden
                         ? (isComment ? "Unhide comment details" : "Unhide entry content")
                         : (isComment ? "Hide comment details" : "Hide entry content"),
                     iconName: entry.isContentHidden ? "eye" : "eye-closed",
                     color: Style.Color.primaryText,
                     action: {
-                        onEdit()
+                        onToggleContentHidden()
                         onDismiss()
                     }
                 )
