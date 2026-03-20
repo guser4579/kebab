@@ -35,8 +35,6 @@ struct EntryRowView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            topSeparator
-
             Color.clear
                 .frame(height: 16)
 
@@ -100,13 +98,6 @@ struct EntryRowView: View {
             }
         }
         .padding(.horizontal, Style.Layout.entryContentPadding)
-    }
-
-    private var topSeparator: some View {
-        Rectangle()
-            .fill(Style.Color.separator)
-            .frame(height: 1)
-            .frame(maxWidth: .infinity)
     }
 
     private var bottomSeparator: some View {
