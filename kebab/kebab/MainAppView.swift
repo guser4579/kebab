@@ -13,9 +13,11 @@ struct MainAppView: View {
     @State private var selectedTab: StickyHeaderView.Tab = .feed
     @State private var isSettingsOpen: Bool = false
     @State private var isSearchActive: Bool = false
-    @State private var scrollToBottomOnChange = false
-    @State private var hasScrolledToBottom = false
-    @State private var scrollDistanceFromBottom: CGFloat = 0
+    // Toggled to true by onSent; the FeedScrollContent child reads and clears it
+    // to scroll the feed to the bottom after a new entry appears. Keeping this
+    // flag here (not inside FeedScrollContent) lets the onSent closure write it
+    // without needing a captured proxy reference.
+    @State private var scrollToBottomOnSend = false
 
     let authViewModel: AuthViewModel
 
@@ -46,80 +48,27 @@ struct MainAppView: View {
                     )
 
                     ZStack {
-                        ScrollViewReader { proxy in
-                            ScrollView {
-                                if feedViewModel.hasCompletedInitialLoad && feedViewModel.feedEntries.isEmpty {
-                                    EmptyStateView(
-                                        iconName: "bookmark-02",
-                                        title: "Save it here",
-                                        primaryBody: "Kebab is a micro journal for thoughts, links, and things you don't want to lose.\n\nLike a sticky note you'll come back to.",
-                                        secondaryBody: "Recipes, quotes, ideas, movies to watch, random thoughts that come to you at 3am."
-                                    )
-                                    .padding(Style.Spacing.emptyStateMargin)
+                        // Feed tab — isolated into its own child so that
+                        // onScrollGeometryChange state updates don't re-render
+                        // MainAppView (and therefore don't churn the composer).
+                        FeedScrollContent(
+                            feedViewModel: feedViewModel,
+                            selectedTab: selectedTab,
+                            containerHeight: geometry.size.height,
+                            scrollToBottomOnSend: $scrollToBottomOnSend,
+                            onMoreTapped: { entry in
+                                activeEntryMenuEntry = entry
+                                withAnimation(.easeOut(duration: 0.25)) {
+                                    isEntryActionSheetVisible = true
                                 }
-                                LazyVStack(alignment: .leading, spacing: 0) {
-                                    ForEach(feedViewModel.feedEntries) { entry in
-                                        EntryRowView(entry: entry, feedViewModel: feedViewModel, onMoreTapped: {
-                                            activeEntryMenuEntry = entry
-                                            withAnimation(.easeOut(duration: 0.25)) {
-                                                isEntryActionSheetVisible = true
-                                            }
-                                        }, onResurfaceTapped: {
-                                            Task { await feedViewModel.resurfaceEntry(entry: entry) }
-                                        }, onPinTapped: {
-                                            Task { await feedViewModel.togglePin(entry: entry) }
-                                        })
-                                    }
-                                }
-                                .padding(.bottom, 16)
-
-                                Color.clear
-                                    .frame(height: 1)
-                                    .id("feed-bottom")
+                            },
+                            onResurfaceTapped: { entry in
+                                Task { await feedViewModel.resurfaceEntry(entry: entry) }
+                            },
+                            onPinTapped: { entry in
+                                Task { await feedViewModel.togglePin(entry: entry) }
                             }
-                            .scrollDismissesKeyboard(.interactively)
-                            .onChange(of: feedViewModel.entries.count) {
-                                if !hasScrolledToBottom && !feedViewModel.entries.isEmpty {
-                                    hasScrolledToBottom = true
-                                    proxy.scrollTo("feed-bottom", anchor: .bottom)
-                                } else if scrollToBottomOnChange {
-                                    scrollToBottomOnChange = false
-                                    proxy.scrollTo("feed-bottom", anchor: .bottom)
-                                }
-                            }
-                            .onScrollGeometryChange(for: CGFloat.self) { g in
-                                max(0, g.contentSize.height - g.contentOffset.y - g.containerSize.height)
-                            } action: { _, newValue in
-                                scrollDistanceFromBottom = newValue
-                            }
-                            .overlay(alignment: .bottom) {
-                                let shouldShow = hasScrolledToBottom
-                                    && selectedTab == .feed
-                                    && scrollDistanceFromBottom > geometry.size.height
-                                Group {
-                                    if shouldShow {
-                                        Button {
-                                            proxy.scrollTo("feed-bottom", anchor: .bottom)
-                                        } label: {
-                                            ZStack {
-                                                Circle()
-                                                    .fill(Style.Color.composerBackground)
-                                                    .frame(width: 36, height: 36)
-                                                Icon("arrow-up")
-                                                    .rotationEffect(.degrees(180))
-                                                    .foregroundColor(Style.Color.primaryText)
-                                            }
-                                        }
-                                        .buttonStyle(.plain)
-                                        .padding(.bottom, 12)
-                                        .transition(.opacity.combined(with: .scale(scale: 0.85)))
-                                    }
-                                }
-                                .animation(.easeInOut(duration: 0.2), value: shouldShow)
-                            }
-                        }
-                        .opacity(selectedTab == .feed ? 1 : 0)
-                        .allowsHitTesting(selectedTab == .feed)
+                        )
 
                         ScrollView {
                             if feedViewModel.hasCompletedInitialLoad && feedViewModel.pinnedEntries.isEmpty {
@@ -172,7 +121,7 @@ struct MainAppView: View {
                             text: $composerText,
                             maxHeight: geometry.size.height * Style.Layout.composerMaxHeightFraction,
                             onSent: { content in
-                                scrollToBottomOnChange = true
+                                scrollToBottomOnSend = true
                                 Task {
                                     await feedViewModel.sendEntry(content: content)
                                 }
@@ -290,6 +239,98 @@ struct MainAppView: View {
     }
 }
 
+// MARK: - FeedScrollContent
+
+// Owns scrollDistanceFromBottom and hasScrolledToBottom so that the high-frequency
+// onScrollGeometryChange updates re-render only this view — not MainAppView and not
+// the ComposerView subtree in MainAppView's safeAreaInset.
+private struct FeedScrollContent: View {
+
+    @ObservedObject var feedViewModel: FeedViewModel
+    let selectedTab: StickyHeaderView.Tab
+    let containerHeight: CGFloat
+    @Binding var scrollToBottomOnSend: Bool
+    let onMoreTapped: (Entry) -> Void
+    let onResurfaceTapped: (Entry) -> Void
+    let onPinTapped: (Entry) -> Void
+
+    @State private var scrollDistanceFromBottom: CGFloat = 0
+    @State private var hasScrolledToBottom = false
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                if feedViewModel.hasCompletedInitialLoad && feedViewModel.feedEntries.isEmpty {
+                    EmptyStateView(
+                        iconName: "bookmark-02",
+                        title: "Save it here",
+                        primaryBody: "Kebab is a micro journal for thoughts, links, and things you don't want to lose.\n\nLike a sticky note you'll come back to.",
+                        secondaryBody: "Recipes, quotes, ideas, movies to watch, random thoughts that come to you at 3am."
+                    )
+                    .padding(Style.Spacing.emptyStateMargin)
+                }
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    ForEach(feedViewModel.feedEntries) { entry in
+                        EntryRowView(entry: entry, feedViewModel: feedViewModel, onMoreTapped: {
+                            onMoreTapped(entry)
+                        }, onResurfaceTapped: {
+                            onResurfaceTapped(entry)
+                        }, onPinTapped: {
+                            onPinTapped(entry)
+                        })
+                    }
+                }
+                .padding(.bottom, 16)
+
+                Color.clear
+                    .frame(height: 1)
+                    .id("feed-bottom")
+            }
+            .scrollDismissesKeyboard(.interactively)
+            .onChange(of: feedViewModel.entries.count) {
+                if !hasScrolledToBottom && !feedViewModel.entries.isEmpty {
+                    hasScrolledToBottom = true
+                    proxy.scrollTo("feed-bottom", anchor: .bottom)
+                } else if scrollToBottomOnSend {
+                    scrollToBottomOnSend = false
+                    proxy.scrollTo("feed-bottom", anchor: .bottom)
+                }
+            }
+            .onScrollGeometryChange(for: CGFloat.self) { g in
+                max(0, g.contentSize.height - g.contentOffset.y - g.containerSize.height)
+            } action: { _, newValue in
+                scrollDistanceFromBottom = newValue
+            }
+            .overlay(alignment: .bottom) {
+                let shouldShow = hasScrolledToBottom
+                    && selectedTab == .feed
+                    && scrollDistanceFromBottom > containerHeight
+                Group {
+                    if shouldShow {
+                        Button {
+                            proxy.scrollTo("feed-bottom", anchor: .bottom)
+                        } label: {
+                            ZStack {
+                                Circle()
+                                    .fill(Style.Color.composerBackground)
+                                    .frame(width: 36, height: 36)
+                                Icon("arrow-up")
+                                    .rotationEffect(.degrees(180))
+                                    .foregroundColor(Style.Color.primaryText)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.bottom, 12)
+                        .transition(.opacity.combined(with: .scale(scale: 0.85)))
+                    }
+                }
+                .animation(.easeInOut(duration: 0.2), value: shouldShow)
+            }
+        }
+        .opacity(selectedTab == .feed ? 1 : 0)
+        .allowsHitTesting(selectedTab == .feed)
+    }
+}
 
 
 #Preview {
