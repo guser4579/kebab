@@ -5,6 +5,7 @@ struct EntryAttachment: Codable, Sendable, Equatable {
     let url: String
     let title: String?
     let favicon_url: String?
+    let image_url: String?
 
     enum AttachmentType: String {
         case link
@@ -83,6 +84,23 @@ extension Entry {
             comment_count: comment_count,
             resurface_count: resurface_count,
             attachments: attachments
+        )
+    }
+
+    func withAttachments(_ newAttachments: [EntryAttachment]?) -> Entry {
+        Entry(
+            id: id,
+            user_id: user_id,
+            parent_id: parent_id,
+            root_id: root_id,
+            depth: depth,
+            content: content,
+            created_at: created_at,
+            pinned_at: pinned_at,
+            isContentHidden: isContentHidden,
+            comment_count: comment_count,
+            resurface_count: resurface_count,
+            attachments: newAttachments
         )
     }
 

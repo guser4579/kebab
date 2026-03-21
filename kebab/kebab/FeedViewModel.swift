@@ -89,7 +89,8 @@ final class FeedViewModel: ObservableObject {
             type: "link",
             url: url.absoluteString,
             title: nil,
-            favicon_url: nil
+            favicon_url: nil,
+            image_url: nil
         )
 
         return (cleaned, attachment)
@@ -98,29 +99,135 @@ final class FeedViewModel: ObservableObject {
     private func enrichLinkMetadata(entryId: UUID, attachment: EntryAttachment) async {
         guard let url = URL(string: attachment.url) else { return }
 
+        // Run title fetch and og:image extraction concurrently.
+        // Title is required to proceed. Image is strictly best-effort and never blocks title persistence.
+        async let fetchedTitle = fetchPageTitle(url: url)
+        async let fetchedImageURL = fetchOGImageURL(url: url)
+
+        let (title, imageURL) = await (fetchedTitle, fetchedImageURL)
+
+        guard let title else { return }
+
+        let enriched = EntryAttachment(
+            type: attachment.type,
+            url: attachment.url,
+            title: title,
+            favicon_url: attachment.favicon_url,
+            image_url: imageURL
+        )
+
+        do {
+            try await repository.updateAttachments(entryId: entryId, attachments: [enriched])
+            // Patch only this entry in-memory rather than triggering a full feed reload.
+            // A full reload is not safe to fire arbitrarily — it replaces the entire entries
+            // array and can disrupt scroll position. Patching a single array element causes
+            // SwiftUI to re-render only that row, which is safe and minimal.
+            entries = entries.map { entry in
+                entry.id == entryId ? entry.withAttachments([enriched]) : entry
+            }
+        } catch {
+            // Silently ignore — entry keeps its current compact presentation.
+        }
+    }
+
+    // MARK: - Metadata fetch helpers
+
+    private func fetchPageTitle(url: URL) async -> String? {
         do {
             let provider = LPMetadataProvider()
             provider.timeout = 10
-
             let metadata = try await provider.startFetchingMetadata(for: url)
+            let title = metadata.title?.trimmingCharacters(in: .whitespacesAndNewlines)
+            return (title?.isEmpty == false) ? title : nil
+        } catch {
+            return nil
+        }
+    }
 
-            guard let title = metadata.title?.trimmingCharacters(in: .whitespacesAndNewlines),
-                  !title.isEmpty else {
-                return
+    /// Fetches page HTML and extracts the og:image or twitter:image URL.
+    /// Returns nil on any network failure, parse failure, or timeout — never throws.
+    private func fetchOGImageURL(url: URL) async -> String? {
+        var request = URLRequest(url: url, timeoutInterval: 6)
+        request.setValue(
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
+            forHTTPHeaderField: "User-Agent"
+        )
+        request.setValue("text/html,application/xhtml+xml", forHTTPHeaderField: "Accept")
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse,
+                  (200..<300).contains(http.statusCode) else { return nil }
+            let html = String(data: data, encoding: .utf8)
+                ?? String(data: data, encoding: .isoLatin1)
+                ?? ""
+            return extractOGImageURL(from: html, pageURL: url)
+        } catch {
+            return nil
+        }
+    }
+
+    /// Scans HTML for the first <meta> tag that contains og:image (preferred) or
+    /// twitter:image (fallback) and returns the resolved content attribute value.
+    private func extractOGImageURL(from html: String, pageURL: URL) -> String? {
+        var ogRaw: String? = nil
+        var twitterRaw: String? = nil
+        var searchStart = html.startIndex
+
+        while let metaOpen = html.range(of: "<meta", options: .caseInsensitive, range: searchStart..<html.endIndex) {
+            guard let tagClose = html.range(of: ">", range: metaOpen.upperBound..<html.endIndex) else {
+                searchStart = metaOpen.upperBound
+                continue
+            }
+            let tag = String(html[metaOpen.lowerBound..<tagClose.upperBound])
+
+            if ogRaw == nil, tag.range(of: "og:image", options: .caseInsensitive) != nil {
+                ogRaw = extractMetaContentValue(from: tag)
+            } else if twitterRaw == nil, tag.range(of: "twitter:image", options: .caseInsensitive) != nil {
+                twitterRaw = extractMetaContentValue(from: tag)
             }
 
-            let enriched = EntryAttachment(
-                type: attachment.type,
-                url: attachment.url,
-                title: title,
-                favicon_url: attachment.favicon_url
-            )
-
-            try await repository.updateAttachments(entryId: entryId, attachments: [enriched])
-            await loadEntries()
-        } catch {
-            // Silently ignore — entry keeps its current URL-only presentation
+            if ogRaw != nil && twitterRaw != nil { break }
+            searchStart = tagClose.upperBound
         }
+
+        guard let raw = ogRaw ?? twitterRaw else { return nil }
+        return resolvedImageURL(raw, relativeTo: pageURL)
+    }
+
+    /// Extracts the value of the content="..." or content='...' attribute from a meta tag string.
+    private func extractMetaContentValue(from tag: String) -> String? {
+        for quote in ["\"", "'"] {
+            let prefix = "content=\(quote)"
+            let pattern = "\(prefix)([^\(quote)]*)\(quote)"
+            if let range = tag.range(of: pattern, options: .regularExpression) {
+                let value = String(String(tag[range]).dropFirst(prefix.count).dropLast(1))
+                if !value.isEmpty { return value }
+            }
+        }
+        return nil
+    }
+
+    /// Resolves a raw og:image string against the source page URL.
+    /// Handles absolute URLs, protocol-relative URLs, root-relative paths, and relative paths.
+    /// Returns nil for data URIs and unresolvable inputs.
+    private func resolvedImageURL(_ raw: String, relativeTo pageURL: URL) -> String? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        guard !trimmed.lowercased().hasPrefix("data:") else { return nil }
+
+        // Protocol-relative: //cdn.example.com/img.jpg
+        if trimmed.hasPrefix("//") {
+            let scheme = pageURL.scheme ?? "https"
+            return resolvedImageURL("\(scheme):\(trimmed)", relativeTo: pageURL)
+        }
+
+        // Already absolute with a scheme
+        if let url = URL(string: trimmed), url.scheme != nil {
+            return url.absoluteString
+        }
+
+        // Relative path — resolve against the page URL
+        return URL(string: trimmed, relativeTo: pageURL)?.absoluteString
     }
 
     func deleteEntry(id: UUID) async {

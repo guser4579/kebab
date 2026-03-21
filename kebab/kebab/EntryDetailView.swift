@@ -322,7 +322,7 @@ struct EntryDetailView: View {
             }
 
             if let link = displayedRootEntry.linkAttachment, !displayedRootEntry.isContentHidden {
-                LinkCardView(urlString: link.url, title: link.title)
+                RichLinkCardView(urlString: link.url, title: link.title, imageURL: link.image_url)
 
                 Color.clear
                     .frame(height: 12)
