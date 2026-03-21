@@ -6,7 +6,41 @@
 import SwiftUI
 import UIKit
 
-// MARK: - Multiline editor (focus + cursor at end on appear)
+// MARK: - FocusingTextView
+//
+// UITextView subclass that requests first responder exactly once, tied to the
+// UIKit window-attachment lifecycle rather than to SwiftUI update passes.
+//
+// didMoveToWindow() is called by UIKit after the view is inserted into a live
+// window (window != nil) or removed from one (window == nil). Hooking here
+// guarantees that the view already has a committed layout and real bounds before
+// becomeFirstResponder() is called, which eliminates the bounds.width == 0
+// timing race that the old DispatchQueue.main.async-in-updateUIView approach
+// was vulnerable to.
+//
+// The second window != nil check inside the async block closes the teardown
+// window: if the overlay begins its exit animation before the deferred block
+// runs, self.window will be nil and the block is a no-op. This prevents the
+// "keyboard flash on X-close" that occurred when the view was being dismissed
+// before it had ever acquired focus.
+
+private final class FocusingTextView: UITextView {
+    private var didRequestFocus = false
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        guard window != nil, !didRequestFocus else { return }
+        didRequestFocus = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.window != nil else { return }
+            self.becomeFirstResponder()
+            let end = self.endOfDocument
+            self.selectedTextRange = self.textRange(from: end, to: end)
+        }
+    }
+}
+
+// MARK: - Multiline editor
 
 private struct EditEntryTextEditor: UIViewRepresentable {
 
@@ -16,8 +50,8 @@ private struct EditEntryTextEditor: UIViewRepresentable {
         Coordinator(self)
     }
 
-    func makeUIView(context: Context) -> UITextView {
-        let tv = UITextView()
+    func makeUIView(context: Context) -> FocusingTextView {
+        let tv = FocusingTextView()
         tv.backgroundColor = .clear
         tv.font = UIFont(name: "DMSans-Regular", size: 16) ?? .systemFont(ofSize: 16, weight: .regular)
         tv.textColor = UIColor(red: 202 / 255, green: 208 / 255, blue: 219 / 255, alpha: 1)
@@ -30,19 +64,15 @@ private struct EditEntryTextEditor: UIViewRepresentable {
         return tv
     }
 
-    func updateUIView(_ uiView: UITextView, context: Context) {
+    func updateUIView(_ uiView: FocusingTextView, context: Context) {
         context.coordinator.parent = self
         if uiView.text != text {
             uiView.text = text
-        }
-        DispatchQueue.main.async {
-            context.coordinator.primeFocusIfNeeded(uiView)
         }
     }
 
     final class Coordinator: NSObject, UITextViewDelegate {
         var parent: EditEntryTextEditor
-        private var didPrimeFocus = false
 
         init(_ parent: EditEntryTextEditor) {
             self.parent = parent
@@ -50,14 +80,6 @@ private struct EditEntryTextEditor: UIViewRepresentable {
 
         func textViewDidChange(_ textView: UITextView) {
             parent.text = textView.text ?? ""
-        }
-
-        func primeFocusIfNeeded(_ textView: UITextView) {
-            guard !didPrimeFocus, textView.bounds.width > 0 else { return }
-            didPrimeFocus = true
-            textView.becomeFirstResponder()
-            let end = textView.endOfDocument
-            textView.selectedTextRange = textView.textRange(from: end, to: end)
         }
     }
 }
