@@ -66,6 +66,9 @@ struct EntryRowView: View {
 
             VStack(alignment: .leading, spacing: 0) {
                 headerRow
+                    // zIndex(1) ensures the header's extended tap area sits above the card
+                    // in hit-testing order when a link-only entry has no text buffer below it.
+                    .zIndex(1)
 
                 Color.clear
                     .frame(height: 4)
@@ -134,6 +137,12 @@ struct EntryRowView: View {
                 Icon("ellipsis", glyphSize: Style.Icon.glyphSmall)
                     .foregroundColor(Style.Color.secondary)
             }
+            // Expand the hit-test region by 10 pt in each direction without touching layout:
+            // .padding(10) enlarges the frame that contentShape registers against, then
+            // .padding(-10) shrinks the layout contribution back to the icon's natural size.
+            .padding(10)
+            .contentShape(Rectangle())
+            .padding(-10)
         }
     }
 
