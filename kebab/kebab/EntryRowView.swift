@@ -8,6 +8,7 @@ struct EntryRowView: View {
     var onMoreTapped: (() -> Void)?
     var onResurfaceTapped: (() -> Void)?
     var onPinTapped: (() -> Void)?
+    var onFireTapped: (() -> Void)?
 
     @State private var isResurfacing = false
 
@@ -128,6 +129,18 @@ struct EntryRowView: View {
                 .padding(.leading, 2)
             }
 
+            if entry.fire_count > 0 {
+                HStack(spacing: 0) {
+                    Icon("fire-03", glyphSize: Style.Icon.glyphSmall)
+                        .foregroundColor(Style.Color.fire)
+
+                    Text("\(entry.fire_count)")
+                        .font(Style.Typography.meta())
+                        .foregroundColor(Style.Color.fire)
+                }
+                .padding(.leading, 2)
+            }
+
             Spacer(minLength: 0)
 
             Button {
@@ -201,6 +214,14 @@ struct EntryRowView: View {
                 onPinTapped?()
             } label: {
                 Icon(entry.pinned_at != nil ? "pin-filled" : "pin")
+                    .foregroundColor(Style.Color.secondary)
+            }
+
+            Button {
+                UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                onFireTapped?()
+            } label: {
+                Icon("fire-03")
                     .foregroundColor(Style.Color.secondary)
             }
         }

@@ -286,6 +286,23 @@ final class FeedViewModel: ObservableObject {
         }
     }
 
+    /// Increments `fire_count` by 1 with an immediate optimistic patch.
+    /// On backend failure the patch is rolled back using the pre-tap value.
+    /// Does NOT reload the feed or touch `feed_order_at` — no scroll or ordering side effects.
+    @discardableResult
+    func fireEntry(entry: Entry) async -> Bool {
+        guard entry.parent_id == nil else { return false }
+        entries = entries.map { $0.id == entry.id ? $0.withFireCount($0.fire_count + 1) : $0 }
+        do {
+            try await repository.fireEntry(id: entry.id)
+            return true
+        } catch {
+            entries = entries.map { $0.id == entry.id ? $0.withFireCount(entry.fire_count) : $0 }
+            print("Failed to fire entry:", error)
+            return false
+        }
+    }
+
     func togglePin(entry: Entry) async {
         do {
             try await repository.togglePin(id: entry.id, pin: entry.pinned_at == nil)

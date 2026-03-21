@@ -54,6 +54,16 @@ struct SearchView: View {
                                     await feedViewModel.togglePin(entry: entry)
                                     searchViewModel.refreshResults()
                                 }
+                            }, onFireTapped: {
+                                // Optimistic patch in both the search results array and the feed
+                                // entries array simultaneously. Rollback both on failure.
+                                searchViewModel.patchEntry(entry.withFireCount(entry.fire_count + 1))
+                                Task {
+                                    let succeeded = await feedViewModel.fireEntry(entry: entry)
+                                    if !succeeded {
+                                        searchViewModel.patchEntry(entry)
+                                    }
+                                }
                             })
                         }
                     }

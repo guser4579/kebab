@@ -87,6 +87,13 @@ final class SearchViewModel: ObservableObject {
         performSearch(query: trimmedQuery, recordHistory: false)
     }
 
+    /// Replaces a single entry in the current search results array in-place.
+    /// Used for optimistic local patching (e.g. fire_count increment) without
+    /// triggering a full search re-fetch.
+    func patchEntry(_ updated: Entry) {
+        results = results.map { $0.id == updated.id ? updated : $0 }
+    }
+
     private func performSearch(query: String, recordHistory: Bool) {
         searchTask?.cancel()
         spinnerTask?.cancel()

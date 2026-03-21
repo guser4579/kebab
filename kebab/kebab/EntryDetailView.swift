@@ -367,6 +367,18 @@ struct EntryDetailView: View {
                 .padding(.leading, 2)
             }
 
+            if displayedRootEntry.fire_count > 0 {
+                HStack(spacing: 0) {
+                    Icon("fire-03", glyphSize: Style.Icon.glyphSmall)
+                        .foregroundColor(Style.Color.fire)
+
+                    Text("\(displayedRootEntry.fire_count)")
+                        .font(Style.Typography.meta())
+                        .foregroundColor(Style.Color.fire)
+                }
+                .padding(.leading, 2)
+            }
+
             Spacer(minLength: 0)
 
             Button {

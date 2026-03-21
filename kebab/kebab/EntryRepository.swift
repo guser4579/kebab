@@ -12,7 +12,7 @@ final class EntryRepository {
     func fetchRootEntries() async throws -> [Entry] {
         let entries: [Entry] = try await supabase
             .from("entries_with_comment_counts")
-            .select("id,user_id,parent_id,root_id,content,created_at,pinned_at,is_content_hidden,comment_count,resurface_count,attachments")
+            .select("id,user_id,parent_id,root_id,content,created_at,pinned_at,is_content_hidden,comment_count,resurface_count,fire_count,attachments")
             .order("feed_order_at", ascending: true)
             .execute()
             .value
@@ -22,7 +22,7 @@ final class EntryRepository {
     func fetchComments(rootId: UUID) async throws -> [Entry] {
         let entries: [Entry] = try await supabase
             .from("entries")
-            .select("id,user_id,parent_id,root_id,depth,content,created_at,pinned_at,is_content_hidden,resurface_count,attachments")
+            .select("id,user_id,parent_id,root_id,depth,content,created_at,pinned_at,is_content_hidden,resurface_count,fire_count,attachments")
             .eq("root_id", value: rootId)
             .order("created_at", ascending: false)
             .execute()
@@ -89,6 +89,12 @@ final class EntryRepository {
     func resurfaceEntry(id: UUID) async throws {
         try await supabase
             .rpc("resurface_entry", params: ["entry_id": id.uuidString])
+            .execute()
+    }
+
+    func fireEntry(id: UUID) async throws {
+        try await supabase
+            .rpc("fire_entry", params: ["entry_id": id.uuidString])
             .execute()
     }
 

@@ -28,6 +28,8 @@ enum Style {
         static let destructive = SwiftUI.Color(hex: "DD2340")
         /// Resurface indicator
         static let resurface = SwiftUI.Color(hex: "FFC57C")
+        /// Fire indicator
+        static let fire = SwiftUI.Color(hex: "F79CE1")
         /// Auth welcome sticky note
         static let stickyNoteYellow = SwiftUI.Color(hex: "EBCF47")
     }

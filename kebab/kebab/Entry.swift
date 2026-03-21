@@ -29,6 +29,7 @@ struct Entry: Identifiable, Sendable, Equatable {
     let isContentHidden: Bool
     let comment_count: Int?
     let resurface_count: Int
+    let fire_count: Int
     let attachments: [EntryAttachment]?
 
     var linkAttachment: EntryAttachment? {
@@ -47,6 +48,7 @@ struct Entry: Identifiable, Sendable, Equatable {
         case isContentHidden = "is_content_hidden"
         case comment_count
         case resurface_count
+        case fire_count
         case attachments
     }
 }
@@ -65,6 +67,7 @@ extension Entry: Codable {
         isContentHidden = try c.decode(Bool.self, forKey: .isContentHidden)
         comment_count = try c.decodeIfPresent(Int.self, forKey: .comment_count)
         resurface_count = try c.decodeIfPresent(Int.self, forKey: .resurface_count) ?? 0
+        fire_count = try c.decodeIfPresent(Int.self, forKey: .fire_count) ?? 0
         attachments = try c.decodeIfPresent([EntryAttachment].self, forKey: .attachments)
     }
 }
@@ -83,6 +86,7 @@ extension Entry {
             isContentHidden: isContentHidden,
             comment_count: comment_count,
             resurface_count: resurface_count,
+            fire_count: fire_count,
             attachments: attachments
         )
     }
@@ -100,6 +104,7 @@ extension Entry {
             isContentHidden: isContentHidden,
             comment_count: comment_count,
             resurface_count: resurface_count,
+            fire_count: fire_count,
             attachments: newAttachments
         )
     }
@@ -117,6 +122,25 @@ extension Entry {
             isContentHidden: hidden,
             comment_count: comment_count,
             resurface_count: resurface_count,
+            fire_count: fire_count,
+            attachments: attachments
+        )
+    }
+
+    func withFireCount(_ count: Int) -> Entry {
+        Entry(
+            id: id,
+            user_id: user_id,
+            parent_id: parent_id,
+            root_id: root_id,
+            depth: depth,
+            content: content,
+            created_at: created_at,
+            pinned_at: pinned_at,
+            isContentHidden: isContentHidden,
+            comment_count: comment_count,
+            resurface_count: resurface_count,
+            fire_count: count,
             attachments: attachments
         )
     }

@@ -67,6 +67,9 @@ struct MainAppView: View {
                             },
                             onPinTapped: { entry in
                                 Task { await feedViewModel.togglePin(entry: entry) }
+                            },
+                            onFireTapped: { entry in
+                                Task { await feedViewModel.fireEntry(entry: entry) }
                             }
                         )
 
@@ -91,6 +94,8 @@ struct MainAppView: View {
                                         Task { await feedViewModel.resurfaceEntry(entry: entry) }
                                     }, onPinTapped: {
                                         Task { await feedViewModel.togglePin(entry: entry) }
+                                    }, onFireTapped: {
+                                        Task { await feedViewModel.fireEntry(entry: entry) }
                                     })
                                 }
                             }
@@ -253,6 +258,7 @@ private struct FeedScrollContent: View {
     let onMoreTapped: (Entry) -> Void
     let onResurfaceTapped: (Entry) -> Void
     let onPinTapped: (Entry) -> Void
+    let onFireTapped: (Entry) -> Void
 
     @State private var scrollDistanceFromBottom: CGFloat = 0
     @State private var hasScrolledToBottom = false
@@ -272,12 +278,14 @@ private struct FeedScrollContent: View {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach(feedViewModel.feedEntries) { entry in
                         EntryRowView(entry: entry, feedViewModel: feedViewModel, onMoreTapped: {
-                            onMoreTapped(entry)
-                        }, onResurfaceTapped: {
-                            onResurfaceTapped(entry)
-                        }, onPinTapped: {
-                            onPinTapped(entry)
-                        })
+                                onMoreTapped(entry)
+                            }, onResurfaceTapped: {
+                                onResurfaceTapped(entry)
+                            }, onPinTapped: {
+                                onPinTapped(entry)
+                            }, onFireTapped: {
+                                onFireTapped(entry)
+                            })
                     }
                 }
                 .padding(.bottom, 16)
