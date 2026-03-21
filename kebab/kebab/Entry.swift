@@ -85,4 +85,21 @@ extension Entry {
             attachments: attachments
         )
     }
+
+    func withIsContentHidden(_ hidden: Bool) -> Entry {
+        Entry(
+            id: id,
+            user_id: user_id,
+            parent_id: parent_id,
+            root_id: root_id,
+            depth: depth,
+            content: content,
+            created_at: created_at,
+            pinned_at: pinned_at,
+            isContentHidden: hidden,
+            comment_count: comment_count,
+            resurface_count: resurface_count,
+            attachments: attachments
+        )
+    }
 }

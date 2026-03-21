@@ -158,10 +158,13 @@ struct CommentDetailView: View {
                                 },
                                 onToggleContentHidden: {
                                     Task {
-                                        await feedViewModel.toggleEntryHidden(
+                                        let succeeded = await feedViewModel.toggleEntryHidden(
                                             id: sheetEntry.id,
                                             currentValue: sheetEntry.isContentHidden
                                         )
+                                        if succeeded && sheetEntry.id == displayedComment.id {
+                                            displayedComment = displayedComment.withIsContentHidden(!sheetEntry.isContentHidden)
+                                        }
                                         await reloadThread()
                                     }
                                 },

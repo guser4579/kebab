@@ -148,7 +148,12 @@ final class FeedViewModel: ObservableObject {
         }
     }
 
-    func toggleEntryHidden(id: UUID, currentValue: Bool) async {
+    /// Toggles `is_content_hidden` on the given entry and reloads the feed.
+    /// Returns `true` if the backend write succeeded, `false` on any error.
+    /// Callers that display a local copy of the toggled entry should only patch
+    /// their local state when this returns `true`.
+    @discardableResult
+    func toggleEntryHidden(id: UUID, currentValue: Bool) async -> Bool {
         do {
             try await supabase
                 .from("entries")
@@ -157,8 +162,10 @@ final class FeedViewModel: ObservableObject {
                 .execute()
 
             await loadEntries()
+            return true
         } catch {
             print("Failed to toggle entry hidden state:", error)
+            return false
         }
     }
 

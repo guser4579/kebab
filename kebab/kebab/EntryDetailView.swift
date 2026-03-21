@@ -156,12 +156,14 @@ struct EntryDetailView: View {
                                 },
                                 onToggleContentHidden: {
                                     Task {
-                                        await feedViewModel.toggleEntryHidden(
+                                        let succeeded = await feedViewModel.toggleEntryHidden(
                                             id: sheetEntry.id,
                                             currentValue: sheetEntry.isContentHidden
                                         )
                                         if sheetEntry.parent_id != nil {
                                             await reloadThread()
+                                        } else if succeeded {
+                                            displayedRootEntry = displayedRootEntry.withIsContentHidden(!sheetEntry.isContentHidden)
                                         }
                                     }
                                 },
