@@ -161,7 +161,7 @@ struct SearchResultRowView: View {
                 commentHeaderRow
 
                 Color.clear
-                    .frame(height: 4)
+                    .frame(height: 8)
 
                 if let preview = result.parent_preview {
                     Button {
@@ -169,22 +169,32 @@ struct SearchResultRowView: View {
                             isPreviewExpanded.toggle()
                         }
                     } label: {
-                        Text(preview)
-                            .font(.custom("DMSans-MediumItalic", size: 14))
-                            .foregroundColor(Style.Color.secondary)
-                            .lineLimit(isPreviewExpanded ? nil : 1)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.leading, 8)
-                            .padding(.trailing, 8)
-                            .padding(.top, 4)
-                            .padding(.bottom, 4)
-                            .background(Color(hex: "282828"))
-                            .cornerRadius(4)
+                        HStack(alignment: .top, spacing: 0) {
+                            Image("reply")
+                                .renderingMode(.template)
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: Style.Icon.glyphSmall, height: Style.Icon.glyphSmall)
+                                .frame(width: Style.Icon.grid, height: Style.Icon.grid, alignment: .top)
+                                .foregroundColor(Style.Color.secondary)
+                                .padding(.leading, 8)
+
+                            Text(preview)
+                                .font(.custom("DMSans-Medium", size: 14))
+                                .foregroundColor(Style.Color.secondary)
+                                .lineLimit(isPreviewExpanded ? nil : 1)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.trailing, 8)
+                        }
+                        .padding(.top, 4)
+                        .padding(.bottom, 4)
+                        .background(Color(hex: "282828"))
+                        .cornerRadius(4)
                     }
                     .buttonStyle(.plain)
 
                     Color.clear
-                        .frame(height: 4)
+                        .frame(height: 8)
                 }
 
                 contentText
