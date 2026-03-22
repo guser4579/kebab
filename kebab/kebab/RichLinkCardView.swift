@@ -56,6 +56,7 @@ struct RichLinkCardView: View {
 
     private func richButton(url: URL, title: String) -> some View {
         Button {
+            Haptics.lightTap()
             isShowingSafari = true
         } label: {
             if let imgURL = parsedImageURL {

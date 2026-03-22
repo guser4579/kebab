@@ -101,12 +101,7 @@ struct CommentRowView: View {
     }
 
     private var contentText: some View {
-        Text(displayContent)
-            .font(Style.Typography.body())
-            .foregroundColor(Style.Color.primaryText)
-            .lineSpacing(4)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .allowsHitTesting(false)
+        CommentLinkText(text: displayContent)
     }
 
     private var actionRow: some View {

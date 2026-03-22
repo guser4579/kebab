@@ -197,7 +197,7 @@ struct SearchResultRowView: View {
                         .frame(height: 8)
                 }
 
-                contentText
+                commentContentText
             }
         }
         .padding(.horizontal, Style.Layout.entryContentPadding)
@@ -215,6 +215,13 @@ struct SearchResultRowView: View {
 
     // MARK: - Shared
 
+    /// Comment body text with detected URLs rendered as link cards below the text,
+    /// matching the lightweight LinkCardView style used for root-entry URL attachments.
+    private var commentContentText: some View {
+        CommentLinkText(text: displayContent)
+    }
+
+    /// Plain body text used for root entry results (no inline link detection).
     private var contentText: some View {
         Text(displayContent)
             .font(Style.Typography.body())

@@ -361,10 +361,6 @@ struct CommentDetailView: View {
     }
 
     private var contentText: some View {
-        Text(rootCommentDisplayContent)
-            .font(Style.Typography.body())
-            .foregroundColor(Style.Color.primaryText)
-            .lineSpacing(4)
-            .frame(maxWidth: .infinity, alignment: .leading)
+        CommentLinkText(text: rootCommentDisplayContent)
     }
 }

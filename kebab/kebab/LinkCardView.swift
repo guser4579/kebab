@@ -18,6 +18,7 @@ struct LinkCardView: View {
     var body: some View {
         if let url = URL(string: urlString) {
             Button {
+                Haptics.lightTap()
                 isShowingSafari = true
             } label: {
                 cardContent

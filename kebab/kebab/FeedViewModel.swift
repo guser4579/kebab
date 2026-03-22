@@ -235,6 +235,7 @@ final class FeedViewModel: ObservableObject {
         errorMessage = nil
         do {
             try await repository.deleteEntry(id: id)
+            Haptics.destructiveTap()
             await loadEntries()
         } catch {
             errorMessage = error.localizedDescription
@@ -310,6 +311,7 @@ final class FeedViewModel: ObservableObject {
     func togglePin(entry: Entry) async {
         do {
             try await repository.togglePin(id: entry.id, pin: entry.pinned_at == nil)
+            Haptics.lightTap()
             await loadEntries()
         } catch {
             print("Failed to toggle pin:", error)
