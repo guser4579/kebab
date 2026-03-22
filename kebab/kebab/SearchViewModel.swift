@@ -8,7 +8,7 @@ final class SearchViewModel: ObservableObject {
     @Published var query: String = "" {
         didSet { queryDidChange() }
     }
-    @Published private(set) var results: [Entry] = []
+    @Published private(set) var results: [SearchResult] = []
     @Published private(set) var isSearching: Bool = false
     @Published private(set) var showSpinner: Bool = false
     @Published private(set) var hasCompletedSearch: Bool = false
@@ -87,13 +87,6 @@ final class SearchViewModel: ObservableObject {
         performSearch(query: trimmedQuery, recordHistory: false)
     }
 
-    /// Replaces a single entry in the current search results array in-place.
-    /// Used for optimistic local patching (e.g. fire_count increment) without
-    /// triggering a full search re-fetch.
-    func patchEntry(_ updated: Entry) {
-        results = results.map { $0.id == updated.id ? updated : $0 }
-    }
-
     private func performSearch(query: String, recordHistory: Bool) {
         searchTask?.cancel()
         spinnerTask?.cancel()
@@ -114,7 +107,7 @@ final class SearchViewModel: ObservableObject {
 
         searchTask = Task {
             do {
-                let entries = try await self.repository.searchEntries(query: query)
+                let entries = try await self.repository.searchEntriesV2(query: query)
                 guard !Task.isCancelled, generation == self.searchGeneration else { return }
                 self.results = entries
                 self.isSearching = false

@@ -86,6 +86,14 @@ final class EntryRepository {
         return entries
     }
 
+    func searchEntriesV2(query: String) async throws -> [SearchResult] {
+        let results: [SearchResult] = try await supabase
+            .rpc("search_entries_v2", params: ["search_query": query])
+            .execute()
+            .value
+        return results
+    }
+
     func resurfaceEntry(id: UUID) async throws {
         try await supabase
             .rpc("resurface_entry", params: ["entry_id": id.uuidString])

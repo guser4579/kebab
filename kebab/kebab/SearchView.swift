@@ -7,11 +7,6 @@ struct SearchView: View {
     @ObservedObject var feedViewModel: FeedViewModel
     @Environment(\.dismiss) private var dismiss
 
-    @State private var activeEntryMenuEntry: Entry?
-    @State private var isEntryActionSheetVisible = false
-    @State private var fullScreenEditEntry: Entry?
-    @State private var isFullScreenEditVisible = false
-
     init(supabase: SupabaseClient, feedViewModel: FeedViewModel, userId: UUID) {
         _searchViewModel = StateObject(wrappedValue: SearchViewModel(supabase: supabase, userId: userId))
         self.feedViewModel = feedViewModel
@@ -36,35 +31,14 @@ struct SearchView: View {
             if isActiveQuery {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
-                        ForEach(searchViewModel.results) { entry in
-                            EntryRowView(entry: entry, feedViewModel: feedViewModel, onResultActivated: {
-                                searchViewModel.recordDisplayedResultActivation()
-                            }, onMoreTapped: {
-                                activeEntryMenuEntry = entry
-                                withAnimation(.easeOut(duration: 0.25)) {
-                                    isEntryActionSheetVisible = true
+                        ForEach(searchViewModel.results) { result in
+                            SearchResultRowView(
+                                result: result,
+                                feedViewModel: feedViewModel,
+                                onResultActivated: {
+                                    searchViewModel.recordDisplayedResultActivation()
                                 }
-                            }, onResurfaceTapped: {
-                                Task {
-                                    await feedViewModel.resurfaceEntry(entry: entry)
-                                    searchViewModel.refreshResults()
-                                }
-                            }, onPinTapped: {
-                                Task {
-                                    await feedViewModel.togglePin(entry: entry)
-                                    searchViewModel.refreshResults()
-                                }
-                            }, onFireTapped: {
-                                // Optimistic patch in both the search results array and the feed
-                                // entries array simultaneously. Rollback both on failure.
-                                searchViewModel.patchEntry(entry.withFireCount(entry.fire_count + 1))
-                                Task {
-                                    let succeeded = await feedViewModel.fireEntry(entry: entry)
-                                    if !succeeded {
-                                        searchViewModel.patchEntry(entry)
-                                    }
-                                }
-                            })
+                            )
                         }
                     }
                     .padding(.bottom, 16)
@@ -96,91 +70,6 @@ struct SearchView: View {
         .foregroundColor(Style.Color.primaryText)
         .ignoresSafeArea(edges: .top)
         .background(Style.Color.background.ignoresSafeArea())
-        .overlay(alignment: .bottom) {
-            if activeEntryMenuEntry != nil {
-                ZStack(alignment: .bottom) {
-                    Color.black.opacity(0.4)
-                        .ignoresSafeArea()
-                        .transaction { transaction in
-                            transaction.animation = nil
-                        }
-                        .onTapGesture {
-                            withAnimation(.easeOut(duration: 0.25)) {
-                                isEntryActionSheetVisible = false
-                            }
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                                activeEntryMenuEntry = nil
-                            }
-                        }
-
-                    if isEntryActionSheetVisible, let entry = activeEntryMenuEntry {
-                        EntryActionSheetView(
-                            entry: entry,
-                            isComment: false,
-                            onDelete: {
-                                Task {
-                                    await feedViewModel.deleteEntry(id: entry.id)
-                                    searchViewModel.refreshResults()
-                                }
-                            },
-                            onToggleContentHidden: {
-                                Task {
-                                    await feedViewModel.toggleEntryHidden(
-                                        id: entry.id,
-                                        currentValue: entry.isContentHidden
-                                    )
-                                    searchViewModel.refreshResults()
-                                }
-                            },
-                            onBeginTextEdit: {
-                                let toEdit = entry
-                                withAnimation(.easeOut(duration: 0.25)) {
-                                    isEntryActionSheetVisible = false
-                                }
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                                    activeEntryMenuEntry = nil
-                                    fullScreenEditEntry = toEdit
-                                    withAnimation(.easeOut(duration: 0.25)) {
-                                        isFullScreenEditVisible = true
-                                    }
-                                }
-                            },
-                            onDismiss: {
-                                withAnimation(.easeOut(duration: 0.25)) {
-                                    isEntryActionSheetVisible = false
-                                }
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                                    activeEntryMenuEntry = nil
-                                }
-                            }
-                        )
-                        .transition(.move(edge: .bottom))
-                    }
-                }
-                .ignoresSafeArea(edges: .bottom)
-            }
-        }
-        .overlay {
-            if isFullScreenEditVisible, let editEntry = fullScreenEditEntry {
-                EditEntryFullScreenView(
-                    entry: editEntry,
-                    initialText: editEntry.content,
-                    feedViewModel: feedViewModel,
-                    onDismiss: {
-                        withAnimation(.easeOut(duration: 0.25)) {
-                            isFullScreenEditVisible = false
-                        }
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                            fullScreenEditEntry = nil
-                        }
-                    },
-                    onPersistSuccess: {
-                        searchViewModel.refreshResults()
-                    }
-                )
-                .transition(.move(edge: .bottom))
-            }
-        }
         .navigationBarBackButtonHidden(true)
     }
 
