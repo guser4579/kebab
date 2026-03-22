@@ -220,6 +220,7 @@ struct EditEntryFullScreenView: View {
         guard tickInteractive else { return }
         if !needsBackendSave {
             UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+            Haptics.mediumTap()
             onDismiss()
             return
         }
@@ -230,6 +231,7 @@ struct EditEntryFullScreenView: View {
 
         if ok {
             UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+            Haptics.mediumTap()
             onPersistSuccess?()
             onSaveSuccess?(entry.withContent(trimmedDraft))
             onDismiss()

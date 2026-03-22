@@ -110,6 +110,7 @@ struct MainAppView: View {
                     .background(Style.Color.background)
                     .foregroundColor(Style.Color.primaryText)
                     .task {
+                        Haptics.prepare()
                         await feedViewModel.loadEntries()
                     }
                 }

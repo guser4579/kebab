@@ -55,6 +55,7 @@ final class FeedViewModel: ObservableObject {
                 content: cleanedContent,
                 attachments: attachment.map { [$0] }
             )
+            Haptics.mediumTap()
             await loadEntries()
 
             if let attachment = attachment, attachment.title == nil {
@@ -268,6 +269,7 @@ final class FeedViewModel: ObservableObject {
                 .eq("id", value: id)
                 .execute()
 
+            Haptics.lightTap()
             await loadEntries()
             return true
         } catch {
@@ -280,6 +282,7 @@ final class FeedViewModel: ObservableObject {
         guard entry.pinned_at == nil, entry.parent_id == nil else { return }
         do {
             try await repository.resurfaceEntry(id: entry.id)
+            Haptics.lightTap()
             await loadEntries()
         } catch {
             print("Failed to resurface entry:", error)
@@ -293,6 +296,7 @@ final class FeedViewModel: ObservableObject {
     func fireEntry(entry: Entry) async -> Bool {
         guard entry.parent_id == nil else { return false }
         entries = entries.map { $0.id == entry.id ? $0.withFireCount($0.fire_count + 1) : $0 }
+        Haptics.lightTap()
         do {
             try await repository.fireEntry(id: entry.id)
             return true
@@ -333,6 +337,7 @@ final class FeedViewModel: ObservableObject {
                 depth: depth,
                 content: trimmed
             )
+            Haptics.mediumTap()
         } catch {
             print("Failed to send comment:", error)
         }
