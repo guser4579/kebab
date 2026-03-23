@@ -10,6 +10,8 @@ final class AuthViewModel: ObservableObject {
     @Published var isLoading: Bool = false
     @Published var errorMessage: String?
     @Published var isAuthenticated: Bool = false
+    /// `true` after the first `checkSession()` finishes (success or failure).
+    @Published private(set) var hasResolvedInitialSession: Bool = false
     @Published var codeSent: Bool = false
     @Published private(set) var currentUserId: UUID?
     @Published var currentUserEmail: String?
@@ -22,6 +24,7 @@ final class AuthViewModel: ObservableObject {
     }
 
     func checkSession() async {
+        defer { hasResolvedInitialSession = true }
         do {
             let session = try await supabase.auth.session
             currentUserId = session.user.id

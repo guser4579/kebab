@@ -38,10 +38,25 @@ struct RootView: View {
     }
 
     var body: some View {
-        if authViewModel.isAuthenticated {
-            MainAppView(supabase: supabase, authViewModel: authViewModel)
-        } else {
-            AuthView(viewModel: authViewModel)
+        Group {
+            if !authViewModel.hasResolvedInitialSession {
+                InitialSessionLoadingView()
+            } else if authViewModel.isAuthenticated {
+                MainAppView(supabase: supabase, authViewModel: authViewModel)
+            } else {
+                AuthView(viewModel: authViewModel)
+            }
+        }
+    }
+}
+
+private struct InitialSessionLoadingView: View {
+    var body: some View {
+        ZStack {
+            Style.Color.background
+                .ignoresSafeArea()
+            ProgressView()
+                .tint(Style.Color.secondary)
         }
     }
 }
