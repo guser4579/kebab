@@ -10,8 +10,6 @@ struct EntryRowView: View {
     var onPinTapped: (() -> Void)?
     var onFireTapped: (() -> Void)?
 
-    @State private var isResurfacing = false
-
     private static let timestampFormatter: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "MM/dd/yy • h:mma"
@@ -45,9 +43,6 @@ struct EntryRowView: View {
                 .frame(height: 16)
 
             bottomSeparator
-        }
-        .onChange(of: entry.resurface_count) {
-            isResurfacing = false
         }
     }
 
@@ -179,52 +174,14 @@ struct EntryRowView: View {
     }
 
     private var actionRow: some View {
-        HStack(spacing: Style.Spacing.x4) {
-            Group {
-                if let feedViewModel = feedViewModel {
-                    NavigationLink(destination: EntryDetailView(entry: entry, feedViewModel: feedViewModel)) {
-                        Icon("message-circle")
-                            .foregroundColor(Style.Color.secondary)
-                    }
-                    .simultaneousGesture(TapGesture().onEnded { onResultActivated?() })
-                } else {
-                    Button {
-                        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-                    } label: {
-                        Icon("message-circle")
-                            .foregroundColor(Style.Color.secondary)
-                    }
-                }
-            }
-
-            if entry.pinned_at == nil {
-                Button {
-                    guard !isResurfacing else { return }
-                    isResurfacing = true
-                    UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-                    onResurfaceTapped?()
-                } label: {
-                    Icon("refresh-04")
-                        .foregroundColor(Style.Color.secondary)
-                }
-            }
-
-            Button {
-                UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-                onPinTapped?()
-            } label: {
-                Icon(entry.pinned_at != nil ? "pin-filled" : "pin")
-                    .foregroundColor(Style.Color.secondary)
-            }
-
-            Button {
-                UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-                onFireTapped?()
-            } label: {
-                Icon("fire-03")
-                    .foregroundColor(Style.Color.secondary)
-            }
-        }
-        .frame(minHeight: 24, alignment: .leading)
+        EntryRootActionRow(
+            entry: entry,
+            feedViewModel: feedViewModel,
+            includeChat: true,
+            onResultActivated: onResultActivated,
+            onResurfaceTapped: onResurfaceTapped,
+            onPinTapped: onPinTapped,
+            onFireTapped: onFireTapped
+        )
     }
 }

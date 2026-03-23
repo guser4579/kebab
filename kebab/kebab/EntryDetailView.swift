@@ -100,6 +100,7 @@ struct EntryDetailView: View {
                 .frame(maxWidth: .infinity)
                 .onAppear {
                     Task { await reloadThread() }
+                    syncDisplayedRootFromFeedIfPresent()
                 }
                 .background(Style.Color.background)
                 .foregroundColor(Style.Color.primaryText)
@@ -222,6 +223,9 @@ struct EntryDetailView: View {
             }
             .background(Style.Color.background)
             .ignoresSafeArea(edges: .top)
+            .onChange(of: feedViewModel.entries) { _, _ in
+                syncDisplayedRootFromFeedIfPresent()
+            }
         }
         .background(Style.Color.background.ignoresSafeArea())
         .navigationBarBackButtonHidden(true)
@@ -233,6 +237,13 @@ struct EntryDetailView: View {
     private func reloadThread() async {
         let entries = await feedViewModel.loadComments(rootId: displayedRootEntry.id)
         threadData = ThreadData(entries: entries)
+    }
+
+    /// Keeps local root state aligned with `feedViewModel.entries` after pin/resurface/fire (and initial open from search/pinned).
+    private func syncDisplayedRootFromFeedIfPresent() {
+        if let updated = feedViewModel.entries.first(where: { $0.id == displayedRootEntry.id }) {
+            displayedRootEntry = updated
+        }
     }
 
     // MARK: - Header
@@ -331,6 +342,33 @@ struct EntryDetailView: View {
                 Color.clear
                     .frame(height: 12)
             }
+
+            EntryRootActionRow(
+                entry: displayedRootEntry,
+                feedViewModel: feedViewModel,
+                includeChat: false,
+                onResurfaceTapped: {
+                    let current = displayedRootEntry
+                    Task {
+                        await feedViewModel.resurfaceEntry(entry: current)
+                    }
+                },
+                onPinTapped: {
+                    let current = displayedRootEntry
+                    Task {
+                        await feedViewModel.togglePin(entry: current)
+                    }
+                },
+                onFireTapped: {
+                    let current = displayedRootEntry
+                    Task {
+                        await feedViewModel.fireEntry(entry: current)
+                    }
+                }
+            )
+
+            Color.clear
+                .frame(height: 8)
 
             entryCommentCounter
         }
