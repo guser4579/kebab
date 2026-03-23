@@ -129,7 +129,7 @@ struct CommentRowView: View {
 
     @ViewBuilder
     private var replyCounter: some View {
-        Text(subtreeCount == 1 ? "1 reply" : "\(subtreeCount) replies")
+        Text(subtreeCount == 1 ? "1 comment" : "\(subtreeCount) comments")
             .font(.custom("DMSans-Regular", size: 16))
             .foregroundColor(Style.Color.secondary)
             .frame(height: 24, alignment: .leading)

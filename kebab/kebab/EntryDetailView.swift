@@ -143,7 +143,6 @@ struct EntryDetailView: View {
                         if isEntryActionSheetVisible, let sheetEntry = activeEntryMenuEntry {
                             EntryActionSheetView(
                                 entry: sheetEntry,
-                                isComment: sheetEntry.parent_id != nil,
                                 onDelete: {
                                     Task {
                                         await feedViewModel.deleteEntry(id: sheetEntry.id)

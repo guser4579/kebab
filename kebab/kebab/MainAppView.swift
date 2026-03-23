@@ -171,7 +171,6 @@ struct MainAppView: View {
                         if isEntryActionSheetVisible, let entry = activeEntryMenuEntry {
                             EntryActionSheetView(
                                 entry: entry,
-                                isComment: false,
                                 onDelete: {
                                     Task { await feedViewModel.deleteEntry(id: entry.id) }
                                 },

@@ -8,7 +8,6 @@ import SwiftUI
 struct EntryActionSheetView: View {
 
     let entry: Entry
-    let isComment: Bool
     let onDelete: () -> Void
     /// Hide / unhide entry or comment body (unchanged behavior).
     let onToggleContentHidden: () -> Void
@@ -29,15 +28,6 @@ struct EntryActionSheetView: View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: actionRowSpacing) {
                 actionRow(
-                    title: isComment ? "Delete comment" : "Delete entry",
-                    iconName: "trash-2",
-                    color: Style.Color.destructive,
-                    action: {
-                        onDelete()
-                        onDismiss()
-                    }
-                )
-                actionRow(
                     title: "Edit",
                     iconName: "pencil-edit-02",
                     color: Style.Color.primaryText,
@@ -46,13 +36,20 @@ struct EntryActionSheetView: View {
                     }
                 )
                 actionRow(
-                    title: entry.isContentHidden
-                        ? (isComment ? "Unhide comment details" : "Unhide entry content")
-                        : (isComment ? "Hide comment details" : "Hide entry content"),
+                    title: entry.isContentHidden ? "Unhide" : "Hide",
                     iconName: entry.isContentHidden ? "eye" : "eye-closed",
                     color: Style.Color.primaryText,
                     action: {
                         onToggleContentHidden()
+                        onDismiss()
+                    }
+                )
+                actionRow(
+                    title: "Delete",
+                    iconName: "trash-2",
+                    color: Style.Color.destructive,
+                    action: {
+                        onDelete()
                         onDismiss()
                     }
                 )

@@ -110,7 +110,7 @@ struct CommentDetailView: View {
                 ComposerView(
                     text: $composerText,
                     maxHeight: geometry.size.height * Style.Layout.composerMaxHeightFraction,
-                    placeholder: "Add reply",
+                    placeholder: "Add comment",
                     onSent: { content in
                         Task {
                             await feedViewModel.sendComment(
@@ -145,7 +145,6 @@ struct CommentDetailView: View {
                         if isEntryActionSheetVisible, let sheetEntry = activeEntryMenuEntry {
                             EntryActionSheetView(
                                 entry: sheetEntry,
-                                isComment: true,
                                 onDelete: {
                                     Task {
                                         await feedViewModel.deleteEntry(id: sheetEntry.id)
@@ -332,7 +331,7 @@ struct CommentDetailView: View {
     private var commentReplyCounter: some View {
         let count = threadData?.subtreeCount(for: displayedComment.id) ?? 0
         if count > 0 {
-            Text(count == 1 ? "1 reply" : "\(count) replies")
+            Text(count == 1 ? "1 comment" : "\(count) comments")
                 .font(.custom("DMSans-Regular", size: 16))
                 .foregroundColor(Style.Color.secondary)
                 .frame(height: 24, alignment: .leading)
