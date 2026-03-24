@@ -85,18 +85,6 @@ private struct CollectionRowView: View {
     let feedViewModel: FeedViewModel
     let supabase: SupabaseClient
 
-    private static let updatedAtFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "MM/dd/yy • h:mma"
-        f.amSymbol = "am"
-        f.pmSymbol = "pm"
-        return f
-    }()
-
-    private var formattedUpdatedAt: String {
-        "LU | \(Self.updatedAtFormatter.string(from: collection.updatedAt))"
-    }
-
     private var itemCountLabel: String {
         collection.itemCount == 1 ? "1 item" : "\(collection.itemCount) items"
     }
@@ -127,9 +115,11 @@ private struct CollectionRowView: View {
                         .frame(height: 4)
 
                     HStack(spacing: 0) {
-                        Text(formattedUpdatedAt)
-                            .font(Style.Typography.meta())
-                            .foregroundColor(Style.Color.secondary)
+                        TimelineView(.periodic(from: .now, by: 60)) { context in
+                            Text(Style.Timestamp.relative(for: collection.updatedAt, relativeTo: context.date))
+                                .font(Style.Typography.meta())
+                                .foregroundColor(Style.Color.secondary)
+                        }
 
                         Spacer(minLength: 0)
 

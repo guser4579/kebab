@@ -13,18 +13,6 @@ struct CommentRowView: View {
     var subtreeCount: Int = 0
     var onMoreTapped: (() -> Void)?
 
-    private static let timestampFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "MM/dd/yy • h:mma"
-        f.amSymbol = "am"
-        f.pmSymbol = "pm"
-        return f
-    }()
-
-    private var formattedTimestamp: String {
-        Self.timestampFormatter.string(from: comment.created_at)
-    }
-
     private var displayContent: String {
         if comment.isContentHidden {
             return comment.content.map { char in
@@ -84,9 +72,11 @@ struct CommentRowView: View {
 
     private var headerRow: some View {
         HStack {
-            Text(formattedTimestamp)
-                .font(Style.Typography.meta())
-                .foregroundColor(Style.Color.secondary)
+            TimelineView(.periodic(from: .now, by: 60)) { context in
+                Text(Style.Timestamp.relative(for: comment.created_at, relativeTo: context.date))
+                    .font(Style.Typography.meta())
+                    .foregroundColor(Style.Color.secondary)
+            }
 
             Spacer(minLength: 0)
 

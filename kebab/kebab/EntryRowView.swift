@@ -14,18 +14,6 @@ struct EntryRowView: View {
     /// Passed through to EntryDetailView when the entry is opened from collection context.
     var onRemoveFromGroup: (() async -> Void)? = nil
 
-    private static let timestampFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "MM/dd/yy • h:mma"
-        f.amSymbol = "am"
-        f.pmSymbol = "pm"
-        return f
-    }()
-
-    private var formattedTimestamp: String {
-        Self.timestampFormatter.string(from: entry.created_at)
-    }
-
     private var displayContent: String {
         if entry.isContentHidden {
             return entry.content.map { char in
@@ -116,9 +104,11 @@ struct EntryRowView: View {
 
     private var headerRow: some View {
         HStack {
-            Text(formattedTimestamp)
-                .font(Style.Typography.meta())
-                .foregroundColor(Style.Color.secondary)
+            TimelineView(.periodic(from: .now, by: 60)) { context in
+                Text(Style.Timestamp.relative(for: entry.created_at, relativeTo: context.date))
+                    .font(Style.Typography.meta())
+                    .foregroundColor(Style.Color.secondary)
+            }
 
             if entry.resurface_count > 0 {
                 HStack(spacing: 0) {

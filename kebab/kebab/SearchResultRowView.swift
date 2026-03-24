@@ -11,18 +11,6 @@ struct SearchResultRowView: View {
 
     @State private var isPreviewExpanded: Bool = false
 
-    private static let timestampFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "MM/dd/yy • h:mma"
-        f.amSymbol = "am"
-        f.pmSymbol = "pm"
-        return f
-    }()
-
-    private var formattedTimestamp: String {
-        Self.timestampFormatter.string(from: result.created_at)
-    }
-
     /// Masks content behind `*` characters when the entry is marked hidden,
     /// preserving whitespace. Mirrors the treatment in `EntryRowView`.
     private var displayContent: String {
@@ -104,9 +92,11 @@ struct SearchResultRowView: View {
 
     private var rootHeaderRow: some View {
         HStack {
-            Text(formattedTimestamp)
-                .font(Style.Typography.meta())
-                .foregroundColor(Style.Color.secondary)
+            TimelineView(.periodic(from: .now, by: 60)) { context in
+                Text(Style.Timestamp.relative(for: result.created_at, relativeTo: context.date))
+                    .font(Style.Typography.meta())
+                    .foregroundColor(Style.Color.secondary)
+            }
 
             if result.resurface_count > 0 {
                 HStack(spacing: 0) {
@@ -169,27 +159,15 @@ struct SearchResultRowView: View {
                             isPreviewExpanded.toggle()
                         }
                     } label: {
-                        HStack(alignment: .top, spacing: 0) {
-                            Image("reply")
-                                .renderingMode(.template)
-                                .resizable()
-                                .scaledToFit()
-                                .frame(width: Style.Icon.glyphSmall, height: Style.Icon.glyphSmall)
-                                .frame(width: Style.Icon.grid, height: Style.Icon.grid, alignment: .top)
-                                .foregroundColor(Style.Color.secondary)
-                                .padding(.leading, 8)
-
-                            Text(preview)
-                                .font(.custom("DMSans-Medium", size: 14))
-                                .foregroundColor(Style.Color.secondary)
-                                .lineLimit(isPreviewExpanded ? nil : 1)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.trailing, 8)
-                        }
-                        .padding(.top, 4)
-                        .padding(.bottom, 4)
-                        .background(Color(hex: "282828"))
-                        .cornerRadius(4)
+                        Text("RE: \(preview)")
+                            .font(.custom("DMSans-Medium", size: 14))
+                            .foregroundColor(Style.Color.secondary)
+                            .lineLimit(isPreviewExpanded ? nil : 1)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color(hex: "282828"))
+                            .cornerRadius(4)
                     }
                     .buttonStyle(.plain)
 
@@ -205,9 +183,11 @@ struct SearchResultRowView: View {
 
     private var commentHeaderRow: some View {
         HStack {
-            Text(formattedTimestamp)
-                .font(Style.Typography.meta())
-                .foregroundColor(Style.Color.secondary)
+            TimelineView(.periodic(from: .now, by: 60)) { context in
+                Text(Style.Timestamp.relative(for: result.created_at, relativeTo: context.date))
+                    .font(Style.Typography.meta())
+                    .foregroundColor(Style.Color.secondary)
+            }
 
             Spacer(minLength: 0)
         }

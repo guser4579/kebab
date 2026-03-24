@@ -42,18 +42,6 @@ struct EntryDetailView: View {
         threadData?.directChildren(of: displayedRootEntry.id) ?? []
     }
 
-    private static let timestampFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "MM/dd/yy • h:mma"
-        f.amSymbol = "am"
-        f.pmSymbol = "pm"
-        return f
-    }()
-
-    private var formattedTimestamp: String {
-        Self.timestampFormatter.string(from: displayedRootEntry.created_at)
-    }
-
     private var rootDisplayContent: String {
         if displayedRootEntry.isContentHidden {
             return displayedRootEntry.content.map { char in
@@ -441,7 +429,7 @@ struct EntryDetailView: View {
 
     private var headerRow: some View {
         HStack {
-            Text(formattedTimestamp)
+            Text(Style.Timestamp.absolute(for: displayedRootEntry.created_at))
                 .font(Style.Typography.meta())
                 .foregroundColor(Style.Color.secondary)
 

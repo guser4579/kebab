@@ -222,6 +222,7 @@ struct AddToCollectionFullScreenView: View {
                 }
                 .padding(.vertical, Style.Spacing.x4)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
 

@@ -180,6 +180,49 @@ enum Style {
             .easeInOut(duration: composerStateDuration)
         }
     }
+
+    // MARK: - Timestamp
+
+    enum Timestamp {
+        private static let absoluteFormatter: DateFormatter = {
+            let f = DateFormatter()
+            f.dateFormat = "MM/dd/yy • h:mma"
+            f.amSymbol = "am"
+            f.pmSymbol = "pm"
+            return f
+        }()
+
+        /// Full absolute string for `date` using the app-standard format.
+        /// Use on dedicated detail screens where a static, precise timestamp is preferred.
+        static func absolute(for date: Date) -> String {
+            absoluteFormatter.string(from: date)
+        }
+
+        /// Compact relative string for `date`.
+        /// Pass `relativeTo` from a `TimelineView` context for live updates;
+        /// defaults to `Date()` for one-shot use.
+        ///
+        /// - < 1 min  → "right now"
+        /// - 1–59 min → "1m" … "59m"
+        /// - 1–23 h   → "1h" … "23h"
+        /// - 1–9 d    → "1d" … "9d"
+        /// - ≥ 10 d   → existing absolute "MM/dd/yy • h:mma"
+        static func relative(for date: Date, relativeTo now: Date = Date()) -> String {
+            let age = max(0, now.timeIntervalSince(date))
+            switch age {
+            case ..<60:
+                return "right now"
+            case ..<3_600:
+                return "\(Int(age / 60))m"
+            case ..<86_400:
+                return "\(Int(age / 3_600))h"
+            case ..<(86_400 * 10):
+                return "\(Int(age / 86_400))d"
+            default:
+                return absoluteFormatter.string(from: date)
+            }
+        }
+    }
 }
 
 // MARK: - Color hex initializer

@@ -32,18 +32,6 @@ struct CommentDetailView: View {
         threadData?.directChildren(of: displayedComment.id) ?? []
     }
 
-    private static let timestampFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "MM/dd/yy • h:mma"
-        f.amSymbol = "am"
-        f.pmSymbol = "pm"
-        return f
-    }()
-
-    private var formattedTimestamp: String {
-        Self.timestampFormatter.string(from: displayedComment.created_at)
-    }
-
     private var rootCommentDisplayContent: String {
         if displayedComment.isContentHidden {
             return displayedComment.content.map { char in
@@ -340,7 +328,7 @@ struct CommentDetailView: View {
 
     private var headerRow: some View {
         HStack {
-            Text(formattedTimestamp)
+            Text(Style.Timestamp.absolute(for: displayedComment.created_at))
                 .font(Style.Typography.meta())
                 .foregroundColor(Style.Color.secondary)
 

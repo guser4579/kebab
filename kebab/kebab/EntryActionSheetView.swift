@@ -32,7 +32,7 @@ struct EntryActionSheetView: View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: actionRowSpacing) {
                 actionRow(
-                    title: "Edit",
+                    title: entry.parent_id == nil ? "Edit entry" : "Edit comment",
                     iconName: "pencil-edit-02",
                     color: Style.Color.primaryText,
                     action: {
@@ -61,7 +61,9 @@ struct EntryActionSheetView: View {
                     }
                 }
                 actionRow(
-                    title: entry.isContentHidden ? "Unhide" : "Hide",
+                    title: entry.parent_id == nil
+                        ? (entry.isContentHidden ? "Unhide entry" : "Hide entry")
+                        : (entry.isContentHidden ? "Unhide comment" : "Hide comment"),
                     iconName: entry.isContentHidden ? "eye" : "eye-closed",
                     color: Style.Color.primaryText,
                     action: {
