@@ -9,7 +9,7 @@ struct StickyHeaderView: View {
 
     enum Tab: String, CaseIterable, Hashable {
         case feed
-        case pinned
+        case collections
     }
 
     @Binding var selectedTab: StickyHeaderView.Tab
@@ -109,7 +109,7 @@ struct StickyHeaderView: View {
     private func tabTitle(_ tab: StickyHeaderView.Tab) -> String {
         switch tab {
         case .feed: return "feed"
-        case .pinned: return "pinned"
+        case .collections: return "collections"
         }
     }
 }

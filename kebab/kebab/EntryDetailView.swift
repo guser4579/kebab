@@ -4,13 +4,19 @@
 //
 
 import SwiftUI
+import Supabase
 
 struct EntryDetailView: View {
 
     let entry: Entry
     @ObservedObject var feedViewModel: FeedViewModel
+    /// When non-nil, the view is in collection context: resurface is hidden,
+    /// the action sheet shows "Remove from group" instead of "Add to collection",
+    /// and tapping it calls this closure then dismisses.
+    var onRemoveFromGroup: (() async -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.supabase) private var supabase: SupabaseClient?
 
     @State private var displayedRootEntry: Entry
     @State private var composerText: String = ""
@@ -18,11 +24,17 @@ struct EntryDetailView: View {
     @State private var isEntryActionSheetVisible = false
     @State private var fullScreenEditEntry: Entry?
     @State private var isFullScreenEditVisible = false
+    @State private var isAddToCollectionVisible = false
     @State private var threadData: ThreadData?
 
-    init(entry: Entry, feedViewModel: FeedViewModel) {
+    init(
+        entry: Entry,
+        feedViewModel: FeedViewModel,
+        onRemoveFromGroup: (() async -> Void)? = nil
+    ) {
         self.entry = entry
         self.feedViewModel = feedViewModel
+        self.onRemoveFromGroup = onRemoveFromGroup
         _displayedRootEntry = State(initialValue: entry)
     }
 
@@ -180,6 +192,29 @@ struct EntryDetailView: View {
                                         }
                                     }
                                 },
+                                onAddToCollection: onRemoveFromGroup != nil ? nil : {
+                                    withAnimation(.easeOut(duration: 0.25)) {
+                                        isEntryActionSheetVisible = false
+                                    }
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                                        activeEntryMenuEntry = nil
+                                        withAnimation(.easeOut(duration: 0.25)) {
+                                            isAddToCollectionVisible = true
+                                        }
+                                    }
+                                },
+                                onRemoveFromGroup: onRemoveFromGroup == nil ? nil : {
+                                    withAnimation(.easeOut(duration: 0.25)) {
+                                        isEntryActionSheetVisible = false
+                                    }
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                                        activeEntryMenuEntry = nil
+                                        Task {
+                                            await onRemoveFromGroup?()
+                                            dismiss()
+                                        }
+                                    }
+                                },
                                 onDismiss: {
                                     withAnimation(.easeOut(duration: 0.25)) {
                                         isEntryActionSheetVisible = false
@@ -216,6 +251,23 @@ struct EntryDetailView: View {
                             if updated.id == displayedRootEntry.id {
                                 displayedRootEntry = updated
                             }
+                        }
+                    )
+                    .transition(.move(edge: .bottom))
+                }
+            }
+            .overlay {
+                if isAddToCollectionVisible, let supabase {
+                    AddToCollectionFullScreenView(
+                        entry: displayedRootEntry,
+                        supabase: supabase,
+                        onDismiss: {
+                            withAnimation(.easeOut(duration: 0.25)) {
+                                isAddToCollectionVisible = false
+                            }
+                        },
+                        onSuccess: {
+                            Task { await feedViewModel.loadEntries() }
                         }
                     )
                     .transition(.move(edge: .bottom))
@@ -347,6 +399,7 @@ struct EntryDetailView: View {
                 entry: displayedRootEntry,
                 feedViewModel: feedViewModel,
                 includeChat: false,
+                showResurface: onRemoveFromGroup == nil,
                 onResurfaceTapped: {
                     let current = displayedRootEntry
                     Task {

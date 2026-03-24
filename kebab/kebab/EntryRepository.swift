@@ -9,11 +9,21 @@ final class EntryRepository {
         self.supabase = supabase
     }
 
+    /// Returns root entries that are NOT assigned to any collection, ordered by feed_order_at.
+    /// Requires the `get_feed_entries` Postgres function (see backend/query contract notes).
     func fetchRootEntries() async throws -> [Entry] {
         let entries: [Entry] = try await supabase
-            .from("entries_with_comment_counts")
-            .select("id,user_id,parent_id,root_id,content,created_at,pinned_at,is_content_hidden,comment_count,resurface_count,fire_count,attachments")
-            .order("feed_order_at", ascending: true)
+            .rpc("get_feed_entries")
+            .execute()
+            .value
+        return entries
+    }
+
+    /// Returns entries belonging to `collectionId` ordered by when they were added to the collection.
+    /// Requires the `get_collection_entries` Postgres function (see backend/query contract notes).
+    func fetchCollectionEntries(collectionId: UUID) async throws -> [Entry] {
+        let entries: [Entry] = try await supabase
+            .rpc("get_collection_entries", params: ["p_collection_id": collectionId.uuidString])
             .execute()
             .value
         return entries

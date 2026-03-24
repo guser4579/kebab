@@ -7,6 +7,7 @@ struct EntryRootActionRow: View {
     let entry: Entry
     var feedViewModel: FeedViewModel?
     var includeChat: Bool
+    var showResurface: Bool = true
     var onResultActivated: (() -> Void)?
     var onResurfaceTapped: (() -> Void)?
     var onPinTapped: (() -> Void)?
@@ -35,7 +36,7 @@ struct EntryRootActionRow: View {
                 }
             }
 
-            if entry.pinned_at == nil {
+            if showResurface {
                 Button {
                     guard !isResurfacing else { return }
                     isResurfacing = true
@@ -45,14 +46,6 @@ struct EntryRootActionRow: View {
                     Icon("refresh-04")
                         .foregroundColor(Style.Color.secondary)
                 }
-            }
-
-            Button {
-                UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-                onPinTapped?()
-            } label: {
-                Icon(entry.pinned_at != nil ? "pin-filled" : "pin")
-                    .foregroundColor(Style.Color.secondary)
             }
 
             Button {

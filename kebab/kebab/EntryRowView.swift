@@ -4,11 +4,15 @@ struct EntryRowView: View {
 
     let entry: Entry
     var feedViewModel: FeedViewModel?
+    /// When false the resurface button is hidden (collection context).
+    var showResurface: Bool = true
     var onResultActivated: (() -> Void)?
     var onMoreTapped: (() -> Void)?
     var onResurfaceTapped: (() -> Void)?
     var onPinTapped: (() -> Void)?
     var onFireTapped: (() -> Void)?
+    /// Passed through to EntryDetailView when the entry is opened from collection context.
+    var onRemoveFromGroup: (() async -> Void)? = nil
 
     private static let timestampFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -53,7 +57,11 @@ struct EntryRowView: View {
     private var entryContent: some View {
         ZStack(alignment: .leading) {
             if let feedViewModel = feedViewModel {
-                NavigationLink(destination: EntryDetailView(entry: entry, feedViewModel: feedViewModel)) {
+                NavigationLink(destination: EntryDetailView(
+                    entry: entry,
+                    feedViewModel: feedViewModel,
+                    onRemoveFromGroup: onRemoveFromGroup
+                )) {
                     Color.clear
                         .contentShape(Rectangle())
                 }
@@ -178,6 +186,7 @@ struct EntryRowView: View {
             entry: entry,
             feedViewModel: feedViewModel,
             includeChat: true,
+            showResurface: showResurface,
             onResultActivated: onResultActivated,
             onResurfaceTapped: onResurfaceTapped,
             onPinTapped: onPinTapped,

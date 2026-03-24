@@ -5,6 +5,7 @@ struct MainAppView: View {
 
     private let supabase: SupabaseClient
     @StateObject private var feedViewModel: FeedViewModel
+    @StateObject private var collectionsViewModel: CollectionsViewModel
     @State private var composerText: String = ""
     @State private var activeEntryMenuEntry: Entry?
     @State private var isEntryActionSheetVisible = false
@@ -13,6 +14,9 @@ struct MainAppView: View {
     @State private var selectedTab: StickyHeaderView.Tab = .feed
     @State private var isSettingsOpen: Bool = false
     @State private var isSearchActive: Bool = false
+    @State private var isNewCollectionVisible: Bool = false
+    @State private var addToCollectionEntry: Entry?
+    @State private var isAddToCollectionVisible: Bool = false
     // Toggled to true by onSent; the FeedScrollContent child reads and clears it
     // to scroll the feed to the bottom after a new entry appears. Keeping this
     // flag here (not inside FeedScrollContent) lets the onSent closure write it
@@ -24,6 +28,7 @@ struct MainAppView: View {
     init(supabase: SupabaseClient, authViewModel: AuthViewModel) {
         self.supabase = supabase
         _feedViewModel = StateObject(wrappedValue: FeedViewModel(supabase: supabase))
+        _collectionsViewModel = StateObject(wrappedValue: CollectionsViewModel(supabase: supabase))
         self.authViewModel = authViewModel
     }
 
@@ -73,38 +78,18 @@ struct MainAppView: View {
                             }
                         )
 
-                        ScrollView {
-                            if feedViewModel.hasCompletedInitialLoad && feedViewModel.pinnedEntries.isEmpty {
-                                EmptyStateView(
-                                    iconName: "pin-filled",
-                                    title: "Come back to it",
-                                    primaryBody: "Keep your most important thoughts and threads close by pinning them here.",
-                                    secondaryBody: "For ideas in progress, links to revisit, and anything you want top of mind."
-                                )
-                                .padding(Style.Spacing.emptyStateMargin)
-                            }
-                            LazyVStack(alignment: .leading, spacing: 0) {
-                                ForEach(feedViewModel.pinnedEntries) { entry in
-                                    EntryRowView(entry: entry, feedViewModel: feedViewModel, onMoreTapped: {
-                                        activeEntryMenuEntry = entry
-                                        withAnimation(.easeOut(duration: 0.25)) {
-                                            isEntryActionSheetVisible = true
-                                        }
-                                    }, onResurfaceTapped: {
-                                        Task { await feedViewModel.resurfaceEntry(entry: entry) }
-                                    }, onPinTapped: {
-                                        Task { await feedViewModel.togglePin(entry: entry) }
-                                    }, onFireTapped: {
-                                        Task { await feedViewModel.fireEntry(entry: entry) }
-                                    })
+                        CollectionsView(
+                            collectionsViewModel: collectionsViewModel,
+                            feedViewModel: feedViewModel,
+                            supabase: supabase,
+                            onNewCollectionTapped: {
+                                withAnimation(.easeOut(duration: 0.25)) {
+                                    isNewCollectionVisible = true
                                 }
                             }
-                            .padding(.bottom, 16)
-                        }
-                        .defaultScrollAnchor(.top)
-                        .scrollDismissesKeyboard(.interactively)
-                        .opacity(selectedTab == .pinned ? 1 : 0)
-                        .allowsHitTesting(selectedTab == .pinned)
+                        )
+                        .opacity(selectedTab == .collections ? 1 : 0)
+                        .allowsHitTesting(selectedTab == .collections)
                     }
                     .frame(maxWidth: .infinity)
                     .background(Style.Color.background)
@@ -112,6 +97,7 @@ struct MainAppView: View {
                     .task {
                         Haptics.prepare()
                         await feedViewModel.loadEntries()
+                        await collectionsViewModel.loadCollections()
                     }
                 }
                 .ignoresSafeArea(edges: .top)
@@ -195,6 +181,19 @@ struct MainAppView: View {
                                         }
                                     }
                                 },
+                                onAddToCollection: {
+                                    let toAdd = entry
+                                    withAnimation(.easeOut(duration: 0.25)) {
+                                        isEntryActionSheetVisible = false
+                                    }
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                                        activeEntryMenuEntry = nil
+                                        addToCollectionEntry = toAdd
+                                        withAnimation(.easeOut(duration: 0.25)) {
+                                            isAddToCollectionVisible = true
+                                        }
+                                    }
+                                },
                                 onDismiss: {
                                     withAnimation(.easeOut(duration: 0.25)) {
                                         isEntryActionSheetVisible = false
@@ -228,6 +227,42 @@ struct MainAppView: View {
                                 // already has the correct content, so this reload produces no diff visible
                                 // to the user (same order, same text) and does not shift scroll position.
                                 Task { await feedViewModel.loadEntries() }
+                            }
+                        }
+                    )
+                    .transition(.move(edge: .bottom))
+                }
+            }
+            .overlay {
+                if isNewCollectionVisible {
+                    NewCollectionFullScreenView(
+                        collectionsViewModel: collectionsViewModel,
+                        onDismiss: {
+                            withAnimation(.easeOut(duration: 0.25)) {
+                                isNewCollectionVisible = false
+                            }
+                        }
+                    )
+                    .transition(.move(edge: .bottom))
+                }
+            }
+            .overlay {
+                if isAddToCollectionVisible, let entry = addToCollectionEntry {
+                    AddToCollectionFullScreenView(
+                        entry: entry,
+                        supabase: supabase,
+                        onDismiss: {
+                            withAnimation(.easeOut(duration: 0.25)) {
+                                isAddToCollectionVisible = false
+                            }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                                addToCollectionEntry = nil
+                            }
+                        },
+                        onSuccess: {
+                            Task {
+                                await collectionsViewModel.loadCollections()
+                                await feedViewModel.loadEntries()
                             }
                         }
                     )

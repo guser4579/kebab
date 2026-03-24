@@ -13,6 +13,10 @@ struct EntryActionSheetView: View {
     let onToggleContentHidden: () -> Void
     /// Presents full-screen text editor after the host dismisses this sheet.
     let onBeginTextEdit: () -> Void
+    /// Presents the add-to-collection flow. Only shown for root entries (parent_id == nil).
+    var onAddToCollection: (() -> Void)? = nil
+    /// Removes the entry from its current collection. When non-nil, shown instead of onAddToCollection.
+    var onRemoveFromGroup: (() -> Void)? = nil
     let onDismiss: () -> Void
 
     private let sheetTopCornerRadius: CGFloat = 32
@@ -35,6 +39,27 @@ struct EntryActionSheetView: View {
                         onBeginTextEdit()
                     }
                 )
+                if entry.parent_id == nil {
+                    if let onRemoveFromGroup {
+                        actionRow(
+                            title: "Remove from group",
+                            iconName: "folder-minus",
+                            color: Style.Color.primaryText,
+                            action: {
+                                onRemoveFromGroup()
+                            }
+                        )
+                    } else {
+                        actionRow(
+                            title: "Add to collection",
+                            iconName: "folder",
+                            color: Style.Color.primaryText,
+                            action: {
+                                onAddToCollection?()
+                            }
+                        )
+                    }
+                }
                 actionRow(
                     title: entry.isContentHidden ? "Unhide" : "Hide",
                     iconName: entry.isContentHidden ? "eye" : "eye-closed",
