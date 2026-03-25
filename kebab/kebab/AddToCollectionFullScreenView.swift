@@ -13,6 +13,8 @@ struct AddToCollectionFullScreenView: View {
 
     @State private var selectedCollectionId: UUID?
     @State private var initialCollectionId: UUID?
+    /// The parent collection currently expanded in the picker; nil = all collapsed.
+    @State private var expandedCollectionId: UUID?
     @State private var isConfirming = false
     @State private var confirmError: String?
     @State private var isNewCollectionVisible = false
@@ -38,6 +40,24 @@ struct AddToCollectionFullScreenView: View {
         hasChange && !isConfirming
     }
 
+    // MARK: - Helpers
+
+    private var parentCollections: [Collection] {
+        collectionsVM.collections.filter { $0.parentId == nil }
+    }
+
+    private func subCollections(for parentId: UUID) -> [Collection] {
+        collectionsVM.collections
+            .filter { $0.parentId == parentId }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    private func itemLabel(_ count: Int) -> String {
+        count == 1 ? "1 item" : "\(count) items"
+    }
+
+    // MARK: - Body
+
     var body: some View {
         VStack(spacing: 0) {
             addToCollectionHeader
@@ -57,8 +77,24 @@ struct AddToCollectionFullScreenView: View {
                             .frame(height: 1)
                             .frame(maxWidth: .infinity)
 
-                        ForEach(collectionsVM.collections) { collection in
-                            collectionSelectionRow(collection)
+                        ForEach(parentCollections) { parent in
+                            parentRow(parent)
+
+                            let subs = subCollections(for: parent.id)
+                            if expandedCollectionId == parent.id && !subs.isEmpty {
+                                VStack(spacing: 0) {
+                                    ForEach(Array(subs.enumerated()), id: \.element.id) { idx, sub in
+                                        subRow(sub, isLast: idx == subs.count - 1)
+                                    }
+                                }
+                                .overlay(alignment: .leading) {
+                                    Rectangle()
+                                        .fill(Style.Color.separator)
+                                        .frame(width: 1)
+                                        .frame(maxHeight: .infinity)
+                                        .padding(.leading, 16)
+                                }
+                            }
                         }
                     }
                 }
@@ -86,10 +122,8 @@ struct AddToCollectionFullScreenView: View {
                         withAnimation(.easeOut(duration: 0.25)) {
                             isNewCollectionVisible = false
                         }
-                        // Auto-select the newly created collection.
-                        // loadCollections() has already completed before onDismiss fires,
-                        // and collections are sorted by updated_at desc, so the new one is first.
-                        if let newest = collectionsVM.collections.first {
+                        // Auto-select the newly created top-level collection.
+                        if let newest = collectionsVM.collections.first(where: { $0.parentId == nil }) {
                             selectedCollectionId = newest.id
                         }
                     }
@@ -102,6 +136,11 @@ struct AddToCollectionFullScreenView: View {
             if let id = try? await repository.getCollectionIdForEntry(entryId: entry.id) {
                 initialCollectionId = id
                 selectedCollectionId = id
+                // If destination is a sub-collection, expand its parent automatically.
+                if let current = collectionsVM.collections.first(where: { $0.id == id }),
+                   let parentId = current.parentId {
+                    expandedCollectionId = parentId
+                }
             }
         }
     }
@@ -181,19 +220,16 @@ struct AddToCollectionFullScreenView: View {
         .buttonStyle(.plain)
     }
 
-    // MARK: - Collection Selection Row
+    // MARK: - Parent Row
 
-    private func collectionSelectionRow(_ collection: Collection) -> some View {
+    private func parentRow(_ collection: Collection) -> some View {
         let isSelected = selectedCollectionId == collection.id
+        let subs = subCollections(for: collection.id)
 
         return VStack(spacing: 0) {
             Button {
                 withAnimation(.easeOut(duration: 0.2)) {
-                    if selectedCollectionId == collection.id {
-                        selectedCollectionId = nil
-                    } else {
-                        selectedCollectionId = collection.id
-                    }
+                    handleParentTap(collection, hasSubs: !subs.isEmpty)
                 }
             } label: {
                 HStack(spacing: 0) {
@@ -213,7 +249,7 @@ struct AddToCollectionFullScreenView: View {
                             .foregroundColor(Style.Color.primaryText)
                             .lineLimit(1)
 
-                        Text(collection.itemCount == 1 ? "1 item" : "\(collection.itemCount) items")
+                        Text(itemLabel(collection.itemCount))
                             .font(Style.Typography.meta())
                             .foregroundColor(Style.Color.secondary)
                     }
@@ -230,6 +266,75 @@ struct AddToCollectionFullScreenView: View {
                 .fill(Style.Color.separator)
                 .frame(height: 1)
                 .frame(maxWidth: .infinity)
+        }
+    }
+
+    // MARK: - Sub-Collection Row
+
+    /// Indented using the same leading/trailing values as CommentRowView (33pt / 16pt),
+    /// with a vertical separator line overlay at 16pt from leading — matching EntryDetailView's
+    /// comment-section line pattern exactly.
+    /// `isLast` controls the separator inset:
+    /// - intermediate rows: indent to the spine (16pt) so the line abuts the vertical thread line
+    /// - last row: full-width separator, matching the parent row style
+    private func subRow(_ sub: Collection, isLast: Bool) -> some View {
+        let isSelected = selectedCollectionId == sub.id
+
+        return VStack(spacing: 0) {
+            Button {
+                withAnimation(.easeOut(duration: 0.2)) {
+                    selectedCollectionId = sub.id
+                    // Parent remains expanded (expandedCollectionId stays unchanged).
+                }
+            } label: {
+                HStack(spacing: 0) {
+                    Color.clear
+                        .frame(width: 33)
+
+                    if isSelected {
+                        Icon("tick-02")
+                            .foregroundColor(Style.Color.composerSend)
+                        Color.clear
+                            .frame(width: 8)
+                    }
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(sub.name)
+                            .font(Style.Typography.body())
+                            .foregroundColor(Style.Color.primaryText)
+                            .lineLimit(1)
+
+                        Text(itemLabel(sub.itemCount))
+                            .font(Style.Typography.meta())
+                            .foregroundColor(Style.Color.secondary)
+                    }
+
+                    Spacer(minLength: Style.Layout.entryContentPadding)
+                }
+                .padding(.vertical, Style.Spacing.x4)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            Rectangle()
+                .fill(Style.Color.separator)
+                .frame(height: 1)
+                .padding(.leading, isLast ? 0 : 16)
+        }
+    }
+
+    // MARK: - Tap Logic
+
+    private func handleParentTap(_ collection: Collection, hasSubs: Bool) {
+        if selectedCollectionId == collection.id {
+            // Already selected → deselect and collapse.
+            selectedCollectionId = nil
+            expandedCollectionId = nil
+        } else {
+            // Select and expand if it has sub-collections; collapse previous.
+            selectedCollectionId = collection.id
+            expandedCollectionId = hasSubs ? collection.id : nil
         }
     }
 

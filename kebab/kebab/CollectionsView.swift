@@ -22,7 +22,7 @@ struct CollectionsView: View {
                 }
 
                 if collectionsViewModel.hasCompletedInitialLoad
-                    && collectionsViewModel.collections.isEmpty
+                    && collectionsViewModel.parentCollections.isEmpty
                     && collectionsViewModel.errorMessage == nil
                 {
                     EmptyStateView(
@@ -34,7 +34,7 @@ struct CollectionsView: View {
                     .padding(Style.Spacing.emptyStateMargin)
                 }
 
-                ForEach(collectionsViewModel.collections) { collection in
+                ForEach(collectionsViewModel.parentCollections) { collection in
                     CollectionRowView(
                         collection: collection,
                         collectionsViewModel: collectionsViewModel,

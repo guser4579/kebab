@@ -6,9 +6,24 @@ struct NewCollectionFullScreenView: View {
     @ObservedObject var collectionsViewModel: CollectionsViewModel
     let onDismiss: () -> Void
 
+    /// Overrides the sheet header title (e.g. "New sub-collection").
+    var title: String = "New collection"
+    /// When non-nil, creates a sub-collection under this parent instead of a top-level collection.
+    var parentId: UUID? = nil
+    /// Sibling sub-collection names used for live duplicate validation (case-insensitive).
+    /// Leave empty for top-level collection creation (no duplicate check).
+    var existingSiblingNames: [String] = []
+    /// Called with the newly created sub-collection after a successful create (sub-collection path only).
+    var onSuccess: ((Collection) -> Void)? = nil
+
     @State private var name: String = ""
     @State private var isCreating = false
     @State private var createErrorMessage: String?
+    /// Set to true immediately before `isCreating` is cleared on the success path.
+    /// Prevents a re-render triggered by `isCreating = false` from briefly evaluating
+    /// `isDuplicate = true` against the freshly reloaded sibling list — before
+    /// `onDismiss()` has had a chance to close the sheet.
+    @State private var hasSubmittedSuccessfully = false
 
     @FocusState private var isFocused: Bool
 
@@ -16,21 +31,40 @@ struct NewCollectionFullScreenView: View {
         name.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// True when trimmed name matches a sibling, case-insensitively.
+    /// Suppressed during submission (`isCreating`) and after a successful submit
+    /// (`hasSubmittedSuccessfully`) so the re-render caused by clearing `isCreating`
+    /// cannot flash a false duplicate against the freshly reloaded sibling list.
+    private var isDuplicate: Bool {
+        guard !trimmedName.isEmpty, !isCreating, !hasSubmittedSuccessfully else { return false }
+        let lower = trimmedName.lowercased()
+        return existingSiblingNames.contains { $0.lowercased() == lower }
+    }
+
     private var tickInteractive: Bool {
-        !trimmedName.isEmpty && !isCreating
+        !trimmedName.isEmpty && !isDuplicate && !isCreating
     }
 
     var body: some View {
         VStack(spacing: 0) {
             createHeader
 
-            TextField("Collection name", text: $name)
+            TextField(parentId == nil ? "Collection name" : "Sub-collection name", text: $name)
                 .font(Style.Typography.body())
                 .foregroundColor(Style.Color.primaryText)
                 .tint(Style.Color.composerSend)
                 .padding(.horizontal, Style.Layout.entryContentPadding)
                 .padding(.top, 16)
                 .focused($isFocused)
+
+            if isDuplicate {
+                Text("A sub-collection with this name already exists.")
+                    .font(Style.Typography.meta())
+                    .foregroundColor(Style.Color.destructive)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, Style.Layout.entryContentPadding)
+                    .padding(.top, 8)
+            }
 
             Spacer()
         }
@@ -50,9 +84,6 @@ struct NewCollectionFullScreenView: View {
             }
         }
         .onAppear {
-            // Small delay lets the slide-up transition settle before the
-            // keyboard appears, matching the FocusingTextView deferred-focus
-            // approach used in EditEntryFullScreenView.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                 isFocused = true
             }
@@ -65,7 +96,7 @@ struct NewCollectionFullScreenView: View {
                 .frame(height: 60)
 
             ZStack {
-                Text("New collection")
+                Text(title)
                     .font(.custom("DMSans-Medium", size: 16))
                     .foregroundColor(Style.Color.primaryText)
 
@@ -119,18 +150,44 @@ struct NewCollectionFullScreenView: View {
         guard tickInteractive else { return }
 
         isCreating = true
-        let ok = await collectionsViewModel.createCollection(name: trimmedName)
-        isCreating = false
 
-        if ok {
-            UIApplication.shared.sendAction(
-                #selector(UIResponder.resignFirstResponder),
-                to: nil, from: nil, for: nil
-            )
-            Haptics.mediumTap()
-            onDismiss()
+        if let parentId {
+            // Sub-collection creation path
+            if let created = await collectionsViewModel.createSubcollection(
+                parentId: parentId,
+                name: trimmedName
+            ) {
+                // Raise the success flag BEFORE clearing isCreating so the re-render
+                // that isCreating = false triggers cannot briefly evaluate isDuplicate
+                // against the freshly reloaded sibling list.
+                hasSubmittedSuccessfully = true
+                isCreating = false
+                UIApplication.shared.sendAction(
+                    #selector(UIResponder.resignFirstResponder),
+                    to: nil, from: nil, for: nil
+                )
+                Haptics.mediumTap()
+                onSuccess?(created)
+                onDismiss()
+            } else {
+                isCreating = false
+                createErrorMessage = collectionsViewModel.errorMessage ?? "Something went wrong."
+            }
         } else {
-            createErrorMessage = collectionsViewModel.errorMessage ?? "Something went wrong."
+            // Top-level collection creation path
+            let ok = await collectionsViewModel.createCollection(name: trimmedName)
+            isCreating = false
+
+            if ok {
+                UIApplication.shared.sendAction(
+                    #selector(UIResponder.resignFirstResponder),
+                    to: nil, from: nil, for: nil
+                )
+                Haptics.mediumTap()
+                onDismiss()
+            } else {
+                createErrorMessage = collectionsViewModel.errorMessage ?? "Something went wrong."
+            }
         }
     }
 }

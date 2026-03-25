@@ -57,6 +57,19 @@ final class CollectionRepository {
             .execute()
     }
 
+    /// Creates a sub-collection under `parentId`.
+    /// Returns Void — the raw row returned by `create_subcollection` does not carry
+    /// `item_count`, so decoding it into `Collection` would always fail.
+    /// Callers should reload via `get_my_collections()` to obtain the full model.
+    func createSubcollection(parentId: UUID, name: String) async throws {
+        try await supabase
+            .rpc("create_subcollection", params: [
+                "p_parent_id": parentId.uuidString,
+                "p_name": name
+            ])
+            .execute()
+    }
+
     /// Returns the collection ID the entry currently belongs to, or nil if unassigned.
     func getCollectionIdForEntry(entryId: UUID) async throws -> UUID? {
         let rows: [CollectionEntryRow] = try await supabase

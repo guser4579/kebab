@@ -12,7 +12,7 @@ struct EntryRowView: View {
     var onPinTapped: (() -> Void)?
     var onFireTapped: (() -> Void)?
     /// Passed through to EntryDetailView when the entry is opened from collection context.
-    var onRemoveFromGroup: (() async -> Void)? = nil
+    var onRemoveFromCollection: (() async -> Void)? = nil
 
     private var displayContent: String {
         if entry.isContentHidden {
@@ -48,7 +48,7 @@ struct EntryRowView: View {
                 NavigationLink(destination: EntryDetailView(
                     entry: entry,
                     feedViewModel: feedViewModel,
-                    onRemoveFromGroup: onRemoveFromGroup
+                    onRemoveFromCollection: onRemoveFromCollection
                 )) {
                     Color.clear
                         .contentShape(Rectangle())

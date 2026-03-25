@@ -6,9 +6,12 @@ struct RenameCollectionFullScreenView: View {
     let collection: Collection
     @ObservedObject var collectionsViewModel: CollectionsViewModel
     let onDismiss: () -> Void
-    /// Called with the new trimmed name immediately after a successful server rename,
-    /// so the detail header can update before the overlay finishes its exit transition.
+    /// Called with the new trimmed name immediately after a successful server rename.
     let onSuccess: (String) -> Void
+
+    /// Sibling names (excluding self) for live duplicate validation.
+    /// Pass non-empty only for sub-collection rename; leave empty for top-level collections.
+    var existingSiblingNames: [String] = []
 
     @State private var name: String
     @State private var isRenaming = false
@@ -19,11 +22,13 @@ struct RenameCollectionFullScreenView: View {
     init(
         collection: Collection,
         collectionsViewModel: CollectionsViewModel,
+        existingSiblingNames: [String] = [],
         onDismiss: @escaping () -> Void,
         onSuccess: @escaping (String) -> Void
     ) {
         self.collection = collection
         self.collectionsViewModel = collectionsViewModel
+        self.existingSiblingNames = existingSiblingNames
         self.onDismiss = onDismiss
         self.onSuccess = onSuccess
         _name = State(initialValue: collection.name)
@@ -37,9 +42,21 @@ struct RenameCollectionFullScreenView: View {
         collection.name.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// Disabled when empty, unchanged, or a rename is in flight.
+    /// True when the trimmed name matches a sibling (not self), case-insensitively.
+    private var isDuplicate: Bool {
+        guard !trimmedName.isEmpty else { return false }
+        let lower = trimmedName.lowercased()
+        // A case-only change of the original name is never a duplicate of self.
+        guard lower != trimmedOriginal.lowercased() else { return false }
+        return existingSiblingNames.contains { $0.lowercased() == lower }
+    }
+
+    /// Disabled when empty, unchanged (by value), duplicate, or a rename is in flight.
     private var tickInteractive: Bool {
-        !trimmedName.isEmpty && trimmedName != trimmedOriginal && !isRenaming
+        !trimmedName.isEmpty
+            && trimmedName != trimmedOriginal
+            && !isDuplicate
+            && !isRenaming
     }
 
     var body: some View {
@@ -53,6 +70,14 @@ struct RenameCollectionFullScreenView: View {
                 .padding(.horizontal, Style.Layout.entryContentPadding)
                 .padding(.top, 16)
                 .focused($isFocused)
+
+            if isDuplicate {
+                Text("A sub-collection with this name already exists.")
+                    .font(Style.Typography.meta())
+                    .foregroundColor(Style.Color.destructive)
+                    .padding(.horizontal, Style.Layout.entryContentPadding)
+                    .padding(.top, 8)
+            }
 
             Spacer()
         }

@@ -91,6 +91,8 @@ final class CollectionFeedViewModel: ObservableObject {
 
     // MARK: - Remove from collection
 
+    /// Removes the entry from the collection system entirely, returning it to the primary feed.
+    /// This is correct for both parent-collection and sub-collection contexts.
     @discardableResult
     func removeFromCollection(entryId: UUID) async -> Bool {
         do {
@@ -106,6 +108,31 @@ final class CollectionFeedViewModel: ObservableObject {
         } catch {
             errorMessage = error.localizedDescription
             return false
+        }
+    }
+
+    // MARK: - Send entry (sub-collection context)
+
+    /// Creates a new root entry and immediately assigns it to this collection.
+    /// Used when composing from a sub-collection detail screen so the entry
+    /// is never transiently visible in the primary feed.
+    func sendEntry(content: String) async {
+        let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        errorMessage = nil
+        do {
+            let entryId = try await entryRepository.insertEntry(content: trimmed)
+            try await collectionRepository.addEntryToCollection(
+                entryId: entryId,
+                collectionId: collection.id
+            )
+            Haptics.mediumTap()
+            await feedViewModel.loadEntries()
+            await collectionsViewModel.loadCollections()
+            await loadEntries()
+        } catch {
+            errorMessage = error.localizedDescription
         }
     }
 }

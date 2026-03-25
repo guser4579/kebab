@@ -1,22 +1,20 @@
-//
-//  EntryActionSheetView.swift
-//  kebab
-//
-
 import SwiftUI
 
 struct EntryActionSheetView: View {
 
     let entry: Entry
     let onDelete: () -> Void
-    /// Hide / unhide entry or comment body (unchanged behavior).
+    /// Hide / unhide entry or comment body.
     let onToggleContentHidden: () -> Void
     /// Presents full-screen text editor after the host dismisses this sheet.
     let onBeginTextEdit: () -> Void
-    /// Presents the add-to-collection flow. Only shown for root entries (parent_id == nil).
+    /// Presents the add-to-collection flow. Only shown for root entries not currently in a collection.
     var onAddToCollection: (() -> Void)? = nil
-    /// Removes the entry from its current collection. When non-nil, shown instead of onAddToCollection.
-    var onRemoveFromGroup: (() -> Void)? = nil
+    /// Opens the move-entry destination picker. Shown for root entries already in a collection/sub-collection.
+    var onMoveEntry: (() -> Void)? = nil
+    /// Removes the entry from the collection system entirely (back to primary feed).
+    /// Shown for root entries already in a collection/sub-collection.
+    var onRemoveFromCollection: (() -> Void)? = nil
     let onDismiss: () -> Void
 
     private let sheetTopCornerRadius: CGFloat = 32
@@ -35,31 +33,36 @@ struct EntryActionSheetView: View {
                     title: entry.parent_id == nil ? "Edit entry" : "Edit comment",
                     iconName: "pencil-edit-02",
                     color: Style.Color.primaryText,
-                    action: {
-                        onBeginTextEdit()
-                    }
+                    action: { onBeginTextEdit() }
                 )
+
                 if entry.parent_id == nil {
-                    if let onRemoveFromGroup {
+                    if let onMoveEntry {
                         actionRow(
-                            title: "Remove from group",
+                            title: "Move entry",
+                            iconName: "doub-arrows",
+                            color: Style.Color.primaryText,
+                            action: { onMoveEntry() }
+                        )
+                    }
+
+                    if let onRemoveFromCollection {
+                        actionRow(
+                            title: "Remove from collection",
                             iconName: "folder-minus",
                             color: Style.Color.primaryText,
-                            action: {
-                                onRemoveFromGroup()
-                            }
+                            action: { onRemoveFromCollection() }
                         )
-                    } else {
+                    } else if let onAddToCollection {
                         actionRow(
                             title: "Add to collection",
                             iconName: "folder",
                             color: Style.Color.primaryText,
-                            action: {
-                                onAddToCollection?()
-                            }
+                            action: { onAddToCollection() }
                         )
                     }
                 }
+
                 actionRow(
                     title: entry.parent_id == nil
                         ? (entry.isContentHidden ? "Unhide entry" : "Hide entry")

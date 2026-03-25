@@ -11,9 +11,8 @@ struct EntryDetailView: View {
     let entry: Entry
     @ObservedObject var feedViewModel: FeedViewModel
     /// When non-nil, the view is in collection context: resurface is hidden,
-    /// the action sheet shows "Remove from group" instead of "Add to collection",
-    /// and tapping it calls this closure then dismisses.
-    var onRemoveFromGroup: (() async -> Void)? = nil
+    /// the action sheet shows "Move entry" + "Remove from collection" instead of "Add to collection".
+    var onRemoveFromCollection: (() async -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.supabase) private var supabase: SupabaseClient?
@@ -30,11 +29,11 @@ struct EntryDetailView: View {
     init(
         entry: Entry,
         feedViewModel: FeedViewModel,
-        onRemoveFromGroup: (() async -> Void)? = nil
+        onRemoveFromCollection: (() async -> Void)? = nil
     ) {
         self.entry = entry
         self.feedViewModel = feedViewModel
-        self.onRemoveFromGroup = onRemoveFromGroup
+        self.onRemoveFromCollection = onRemoveFromCollection
         _displayedRootEntry = State(initialValue: entry)
     }
 
@@ -180,7 +179,7 @@ struct EntryDetailView: View {
                                         }
                                     }
                                 },
-                                onAddToCollection: onRemoveFromGroup != nil ? nil : {
+                                onAddToCollection: onRemoveFromCollection != nil ? nil : {
                                     withAnimation(.easeOut(duration: 0.25)) {
                                         isEntryActionSheetVisible = false
                                     }
@@ -191,18 +190,29 @@ struct EntryDetailView: View {
                                         }
                                     }
                                 },
-                                onRemoveFromGroup: onRemoveFromGroup == nil ? nil : {
+                                onMoveEntry: onRemoveFromCollection != nil ? {
+                                    withAnimation(.easeOut(duration: 0.25)) {
+                                        isEntryActionSheetVisible = false
+                                    }
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                                        activeEntryMenuEntry = nil
+                                        withAnimation(.easeOut(duration: 0.25)) {
+                                            isAddToCollectionVisible = true
+                                        }
+                                    }
+                                } : nil,
+                                onRemoveFromCollection: onRemoveFromCollection != nil ? {
                                     withAnimation(.easeOut(duration: 0.25)) {
                                         isEntryActionSheetVisible = false
                                     }
                                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
                                         activeEntryMenuEntry = nil
                                         Task {
-                                            await onRemoveFromGroup?()
+                                            await onRemoveFromCollection?()
                                             dismiss()
                                         }
                                     }
-                                },
+                                } : nil,
                                 onDismiss: {
                                     withAnimation(.easeOut(duration: 0.25)) {
                                         isEntryActionSheetVisible = false
@@ -279,7 +289,7 @@ struct EntryDetailView: View {
         threadData = ThreadData(entries: entries)
     }
 
-    /// Keeps local root state aligned with `feedViewModel.entries` after pin/resurface/fire (and initial open from search/pinned).
+    /// Keeps local root state aligned with `feedViewModel.entries` after pin/resurface/fire.
     private func syncDisplayedRootFromFeedIfPresent() {
         if let updated = feedViewModel.entries.first(where: { $0.id == displayedRootEntry.id }) {
             displayedRootEntry = updated
@@ -387,7 +397,7 @@ struct EntryDetailView: View {
                 entry: displayedRootEntry,
                 feedViewModel: feedViewModel,
                 includeChat: false,
-                showResurface: onRemoveFromGroup == nil,
+                showResurface: onRemoveFromCollection == nil,
                 onResurfaceTapped: {
                     let current = displayedRootEntry
                     Task {
