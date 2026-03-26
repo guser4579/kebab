@@ -12,9 +12,6 @@ struct EntryActionSheetView: View {
     var onAddToCollection: (() -> Void)? = nil
     /// Opens the move-entry destination picker. Shown for root entries already in a collection/sub-collection.
     var onMoveEntry: (() -> Void)? = nil
-    /// Removes the entry from the collection system entirely (back to primary feed).
-    /// Shown for root entries already in a collection/sub-collection.
-    var onRemoveFromCollection: (() -> Void)? = nil
     let onDismiss: () -> Void
 
     private let sheetTopCornerRadius: CGFloat = 32
@@ -46,14 +43,7 @@ struct EntryActionSheetView: View {
                         )
                     }
 
-                    if let onRemoveFromCollection {
-                        actionRow(
-                            title: "Remove from collection",
-                            iconName: "folder-minus",
-                            color: Style.Color.primaryText,
-                            action: { onRemoveFromCollection() }
-                        )
-                    } else if let onAddToCollection {
+                    if let onAddToCollection {
                         actionRow(
                             title: "Add to collection",
                             iconName: "folder",

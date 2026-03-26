@@ -11,7 +11,7 @@ struct EntryDetailView: View {
     let entry: Entry
     @ObservedObject var feedViewModel: FeedViewModel
     /// When non-nil, the view is in collection context: resurface is hidden,
-    /// the action sheet shows "Move entry" + "Remove from collection" instead of "Add to collection".
+    /// the action sheet shows "Move entry" instead of "Add to collection".
     var onRemoveFromCollection: (() async -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
@@ -201,18 +201,6 @@ struct EntryDetailView: View {
                                         }
                                     }
                                 } : nil,
-                                onRemoveFromCollection: onRemoveFromCollection != nil ? {
-                                    withAnimation(.easeOut(duration: 0.25)) {
-                                        isEntryActionSheetVisible = false
-                                    }
-                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                                        activeEntryMenuEntry = nil
-                                        Task {
-                                            await onRemoveFromCollection?()
-                                            dismiss()
-                                        }
-                                    }
-                                } : nil,
                                 onDismiss: {
                                     withAnimation(.easeOut(duration: 0.25)) {
                                         isEntryActionSheetVisible = false
@@ -258,6 +246,7 @@ struct EntryDetailView: View {
                 if isAddToCollectionVisible, let supabase {
                     AddToCollectionFullScreenView(
                         entry: displayedRootEntry,
+                        title: onRemoveFromCollection != nil ? "Move entry" : "Add to collection",
                         supabase: supabase,
                         onDismiss: {
                             withAnimation(.easeOut(duration: 0.25)) {

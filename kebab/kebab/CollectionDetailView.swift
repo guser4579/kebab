@@ -291,17 +291,6 @@ struct CollectionDetailView: View {
                                     }
                                 }
                             },
-                            onRemoveFromCollection: {
-                                withAnimation(.easeOut(duration: 0.25)) {
-                                    isEntryActionSheetVisible = false
-                                }
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                                    activeEntryMenuEntry = nil
-                                    Task {
-                                        await collectionFeedVM.removeFromCollection(entryId: sheetEntry.id)
-                                    }
-                                }
-                            },
                             onDismiss: {
                                 withAnimation(.easeOut(duration: 0.25)) {
                                     isEntryActionSheetVisible = false
@@ -509,7 +498,7 @@ struct CollectionDetailView: View {
                                 .frame(maxHeight: .infinity)
                             // Width = viewport − HStack trailing padding (16pt) − slot (newSubTileWidth) − separator (1pt)
                                 // This gives exact centering in the remaining area on any device.
-                            Text("get more specific with sub-collections.")
+                            Text("Get more specific with sub-collections.")
                                 .font(Style.Typography.meta())
                                 .foregroundColor(Style.Color.secondary)
                                 .multilineTextAlignment(.center)

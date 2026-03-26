@@ -81,6 +81,15 @@ struct AddToCollectionFullScreenView: View {
                             .frame(height: 1)
                             .frame(maxWidth: .infinity)
 
+                        if title == "Move entry" {
+                            primaryFeedRow
+
+                            Rectangle()
+                                .fill(Style.Color.separator)
+                                .frame(height: 1)
+                                .frame(maxWidth: .infinity)
+                        }
+
                         ForEach(parentCollections) { parent in
                             parentRow(parent)
 
@@ -220,6 +229,41 @@ struct AddToCollectionFullScreenView: View {
             }
             .padding(.horizontal, Style.Layout.entryContentPadding)
             .padding(.vertical, Style.Spacing.x4)
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Primary Feed Row
+
+    private var primaryFeedRow: some View {
+        let isSelected = selectedCollectionId == nil
+        return Button {
+            withAnimation(.easeOut(duration: 0.2)) {
+                selectedCollectionId = nil
+                expandedCollectionId = nil
+            }
+        } label: {
+            HStack(spacing: 0) {
+                Color.clear
+                    .frame(width: 16)
+
+                if isSelected {
+                    Icon("tick-02")
+                        .foregroundColor(Style.Color.composerSend)
+                    Color.clear
+                        .frame(width: 8)
+                }
+
+                Text("Primary feed")
+                    .font(.custom("DMSans-SemiBold", size: 16))
+                    .foregroundColor(Style.Color.primaryText)
+                    .lineLimit(1)
+
+                Spacer(minLength: Style.Layout.entryContentPadding)
+            }
+            .padding(.vertical, Style.Spacing.x4)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
