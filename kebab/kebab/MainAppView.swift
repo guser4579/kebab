@@ -297,6 +297,10 @@ private struct FeedScrollContent: View {
 
     @State private var scrollDistanceFromBottom: CGFloat = 0
     @State private var hasScrolledToBottom = false
+    /// Guards the FAB against the initial-load blink: set to true only after the
+    /// programmatic scroll-to-bottom has had time to update the scroll geometry,
+    /// so scrollDistanceFromBottom is already near 0 before FAB can evaluate.
+    @State private var fabEnabled = false
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -334,6 +338,12 @@ private struct FeedScrollContent: View {
                 if !hasScrolledToBottom && !feedViewModel.entries.isEmpty {
                     hasScrolledToBottom = true
                     proxy.scrollTo("feed-bottom", anchor: .bottom)
+                    // Delay FAB eligibility so the scroll geometry can update first,
+                    // preventing the one-frame blink where scrollDistanceFromBottom is
+                    // still large while hasScrolledToBottom just became true.
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        fabEnabled = true
+                    }
                 } else if scrollToBottomOnSend {
                     scrollToBottomOnSend = false
                     proxy.scrollTo("feed-bottom", anchor: .bottom)
@@ -345,24 +355,25 @@ private struct FeedScrollContent: View {
                 scrollDistanceFromBottom = newValue
             }
             .overlay(alignment: .bottom) {
-                let shouldShow = hasScrolledToBottom
+                let shouldShow = fabEnabled
                     && selectedTab == .feed
                     && scrollDistanceFromBottom > containerHeight
                 Group {
                     if shouldShow {
-                        Button {
-                            proxy.scrollTo("feed-bottom", anchor: .bottom)
-                        } label: {
-                            ZStack {
-                                Circle()
-                                    .fill(Style.Color.composerBackground)
-                                    .frame(width: 36, height: 36)
-                                Icon("arrow-up")
-                                    .rotationEffect(.degrees(180))
-                                    .foregroundColor(Style.Color.primaryText)
-                            }
+                        ZStack {
+                            Circle()
+                                .fill(Style.Color.composerBackground)
+                                .frame(width: 36, height: 36)
+                                .overlay(Circle().stroke(Color(hex: "CAD0DB"), lineWidth: 1))
+                            Icon("arrow-up")
+                                .rotationEffect(.degrees(180))
+                                .foregroundColor(Style.Color.primaryText)
                         }
-                        .buttonStyle(.plain)
+                        .contentShape(Circle())
+                        .simultaneousGesture(TapGesture().onEnded {
+                            Haptics.lightTap()
+                            proxy.scrollTo("feed-bottom", anchor: .bottom)
+                        })
                         .padding(.bottom, 12)
                         .transition(.opacity.combined(with: .scale(scale: 0.85)))
                     }

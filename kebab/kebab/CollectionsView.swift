@@ -26,7 +26,7 @@ struct CollectionsView: View {
                     && collectionsViewModel.errorMessage == nil
                 {
                     EmptyStateView(
-                        iconName: "add-collection",
+                        iconName: "add-circle",
                         title: "No collections yet",
                         primaryBody: "Create a collection to organize your top entries.",
                         secondaryBody: "Tap \"New collection\" above to get started."
@@ -54,7 +54,7 @@ struct CollectionsView: View {
                 onNewCollectionTapped()
             } label: {
                 HStack(spacing: Style.Spacing.x3) {
-                    Icon("add-collection")
+                    Icon("add-circle")
                         .foregroundColor(Style.Color.primaryText)
 
                     Text("New collection")

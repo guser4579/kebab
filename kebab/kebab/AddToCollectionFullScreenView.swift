@@ -4,6 +4,8 @@ import Supabase
 struct AddToCollectionFullScreenView: View {
 
     let entry: Entry
+    /// Sticky header title. Defaults to "Add to collection"; pass "Move entry" for the move flow.
+    let title: String
     let onDismiss: () -> Void
     /// Called after a successful mutation so the caller can reload shared collection state.
     let onSuccess: () -> Void
@@ -21,11 +23,13 @@ struct AddToCollectionFullScreenView: View {
 
     init(
         entry: Entry,
+        title: String = "Add to collection",
         supabase: SupabaseClient,
         onDismiss: @escaping () -> Void,
         onSuccess: @escaping () -> Void
     ) {
         self.entry = entry
+        self.title = title
         self.onDismiss = onDismiss
         self.onSuccess = onSuccess
         self.repository = CollectionRepository(supabase: supabase)
@@ -153,7 +157,7 @@ struct AddToCollectionFullScreenView: View {
                 .frame(height: 60)
 
             ZStack {
-                Text("Add to collection")
+                Text(title)
                     .font(.custom("DMSans-Medium", size: 16))
                     .foregroundColor(Style.Color.primaryText)
 
@@ -205,7 +209,7 @@ struct AddToCollectionFullScreenView: View {
             isNewCollectionVisible = true
         } label: {
             HStack(spacing: Style.Spacing.x3) {
-                Icon("add-collection")
+                Icon("add-circle")
                     .foregroundColor(Style.Color.primaryText)
 
                 Text("New collection")

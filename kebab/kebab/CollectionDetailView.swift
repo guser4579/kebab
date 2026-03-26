@@ -431,6 +431,7 @@ struct CollectionDetailView: View {
             if isMoveEntryVisible, let entry = moveEntryEntry {
                 AddToCollectionFullScreenView(
                     entry: entry,
+                    title: "Move entry",
                     supabase: supabase,
                     onDismiss: {
                         withAnimation(.easeOut(duration: 0.25)) {
@@ -506,14 +507,14 @@ struct CollectionDetailView: View {
                                 .fill(Style.Color.separator)
                                 .frame(width: 1)
                                 .frame(maxHeight: .infinity)
-                            // Width = viewport − HStack padding (32pt) − slot (newSubTileWidth) − separator (1pt)
-                            // This gives exact centering in the remaining area on any device.
+                            // Width = viewport − HStack trailing padding (16pt) − slot (newSubTileWidth) − separator (1pt)
+                                // This gives exact centering in the remaining area on any device.
                             Text("get more specific with sub-collections.")
                                 .font(Style.Typography.meta())
                                 .foregroundColor(Style.Color.secondary)
                                 .multilineTextAlignment(.center)
                                 .frame(
-                                    width: max(0, geo.size.width - 32 - newSubTileWidth - 1),
+                                    width: max(0, geo.size.width - 16 - newSubTileWidth - 1),
                                     alignment: .center
                                 )
                                 .allowsHitTesting(false)
@@ -540,8 +541,15 @@ struct CollectionDetailView: View {
                             }
                             .id(sub.id)
                         }
+                        // Trailing 1pt separator closes the rightmost tile visually.
+                        if !currentSubCollections.isEmpty {
+                            Rectangle()
+                                .fill(Style.Color.separator)
+                                .frame(width: 1)
+                                .frame(maxHeight: .infinity)
+                        }
                     }
-                    .padding(.horizontal, 16)
+                    .padding(.trailing, 16)
                     .frame(height: stripTotalHeight - 1)
                 }
                 .onChange(of: scrollToSubId) { _, id in
@@ -570,19 +578,21 @@ struct CollectionDetailView: View {
         Button {
             isNewSubVisible = true
         } label: {
-            VStack(spacing: 6) {
+            VStack(alignment: .center, spacing: 6) {
                 Icon("add-circle", glyphSize: Style.Icon.glyph)
                     .foregroundColor(Style.Color.primaryText)
                 Text("Sub-collection")
                     .font(Style.Typography.meta())
                     .foregroundColor(Style.Color.primaryText)
                     .lineLimit(1)
-                    .multilineTextAlignment(.center)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .frame(width: newSubTileWidth)
         }
         .buttonStyle(.plain)
+        // Fixed width at the button level so the HStack sees a rigid 110pt view and
+        // the button itself offers that exact space to the label, guaranteeing that
+        // VStack(alignment: .center) truly centers within the tile.
+        .frame(width: newSubTileWidth)
     }
 
     private func subTileContent(_ sub: Collection) -> some View {

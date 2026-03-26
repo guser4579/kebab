@@ -205,8 +205,7 @@ enum Style {
         /// - < 1 min  → "right now"
         /// - 1–59 min → "1m" … "59m"
         /// - 1–23 h   → "1h" … "23h"
-        /// - 1–9 d    → "1d" … "9d"
-        /// - ≥ 10 d   → existing absolute "MM/dd/yy • h:mma"
+        /// - ≥ 1 d    → "1d", "2d", … (counts up indefinitely)
         static func relative(for date: Date, relativeTo now: Date = Date()) -> String {
             let age = max(0, now.timeIntervalSince(date))
             switch age {
@@ -216,10 +215,8 @@ enum Style {
                 return "\(Int(age / 60))m"
             case ..<86_400:
                 return "\(Int(age / 3_600))h"
-            case ..<(86_400 * 10):
-                return "\(Int(age / 86_400))d"
             default:
-                return absoluteFormatter.string(from: date)
+                return "\(Int(age / 86_400))d"
             }
         }
     }
