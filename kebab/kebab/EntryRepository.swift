@@ -191,4 +191,5 @@ final class EntryRepository {
     private struct ContentOnlyUpdatePayload: Encodable {
         let content: String
     }
+
 }

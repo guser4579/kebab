@@ -81,7 +81,14 @@ final class FeedViewModel: ObservableObject {
         }
 
         var cleaned = text
-        cleaned.removeSubrange(matchRange)
+        // Extend the removal range forward past any non-whitespace characters.
+        // NSDataDetector can stop before certain characters (e.g. '|', '{') in long
+        // tracked URLs, which would leave a querystring tail fragment as bare text.
+        var extendedEnd = matchRange.upperBound
+        while extendedEnd < text.endIndex, !text[extendedEnd].isWhitespace {
+            extendedEnd = text.index(after: extendedEnd)
+        }
+        cleaned.removeSubrange(matchRange.lowerBound..<extendedEnd)
         cleaned = cleaned.replacingOccurrences(of: "\\n([ \\t]*\\n)+", with: "\n", options: .regularExpression)
         cleaned = cleaned.replacingOccurrences(of: " {2,}", with: " ", options: .regularExpression)
         cleaned = cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
