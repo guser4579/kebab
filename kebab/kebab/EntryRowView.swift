@@ -6,6 +6,8 @@ struct EntryRowView: View {
     var feedViewModel: FeedViewModel?
     /// When false the resurface button is hidden (collection context).
     var showResurface: Bool = true
+    /// When false the collection breadcrumb is hidden (collection context).
+    var showBreadcrumb: Bool = true
     var onResultActivated: (() -> Void)?
     var onMoreTapped: (() -> Void)?
     var onResurfaceTapped: (() -> Void)?
@@ -48,7 +50,8 @@ struct EntryRowView: View {
                 NavigationLink(destination: EntryDetailView(
                     entry: entry,
                     feedViewModel: feedViewModel,
-                    onRemoveFromCollection: onRemoveFromCollection
+                    onRemoveFromCollection: onRemoveFromCollection,
+                    showBreadcrumb: showBreadcrumb
                 )) {
                     Color.clear
                         .contentShape(Rectangle())
@@ -132,6 +135,14 @@ struct EntryRowView: View {
                         .foregroundColor(Style.Color.fire)
                 }
                 .padding(.leading, 2)
+            }
+
+            if showBreadcrumb {
+                EntryBreadcrumbView(
+                    collectionName: entry.collection_name,
+                    collectionParentName: entry.collection_parent_name
+                )
+                .padding(.leading, 4)
             }
 
             Spacer(minLength: 0)

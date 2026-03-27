@@ -31,6 +31,10 @@ struct Entry: Identifiable, Sendable, Equatable {
     let resurface_count: Int
     let fire_count: Int
     let attachments: [EntryAttachment]?
+    let collection_id: UUID?
+    let collection_name: String?
+    let collection_parent_id: UUID?
+    let collection_parent_name: String?
 
     var linkAttachment: EntryAttachment? {
         attachments?.first { $0.attachmentType == .link }
@@ -50,6 +54,10 @@ struct Entry: Identifiable, Sendable, Equatable {
         case resurface_count
         case fire_count
         case attachments
+        case collection_id
+        case collection_name
+        case collection_parent_id
+        case collection_parent_name
     }
 }
 
@@ -69,6 +77,10 @@ extension Entry: Codable {
         resurface_count = try c.decodeIfPresent(Int.self, forKey: .resurface_count) ?? 0
         fire_count = try c.decodeIfPresent(Int.self, forKey: .fire_count) ?? 0
         attachments = try c.decodeIfPresent([EntryAttachment].self, forKey: .attachments)
+        collection_id = try c.decodeIfPresent(UUID.self, forKey: .collection_id)
+        collection_name = try c.decodeIfPresent(String.self, forKey: .collection_name)
+        collection_parent_id = try c.decodeIfPresent(UUID.self, forKey: .collection_parent_id)
+        collection_parent_name = try c.decodeIfPresent(String.self, forKey: .collection_parent_name)
     }
 }
 
@@ -87,7 +99,11 @@ extension Entry {
             comment_count: comment_count,
             resurface_count: resurface_count,
             fire_count: fire_count,
-            attachments: attachments
+            attachments: attachments,
+            collection_id: collection_id,
+            collection_name: collection_name,
+            collection_parent_id: collection_parent_id,
+            collection_parent_name: collection_parent_name
         )
     }
 
@@ -105,7 +121,11 @@ extension Entry {
             comment_count: comment_count,
             resurface_count: resurface_count,
             fire_count: fire_count,
-            attachments: newAttachments
+            attachments: newAttachments,
+            collection_id: collection_id,
+            collection_name: collection_name,
+            collection_parent_id: collection_parent_id,
+            collection_parent_name: collection_parent_name
         )
     }
 
@@ -123,7 +143,11 @@ extension Entry {
             comment_count: comment_count,
             resurface_count: resurface_count,
             fire_count: fire_count,
-            attachments: attachments
+            attachments: attachments,
+            collection_id: collection_id,
+            collection_name: collection_name,
+            collection_parent_id: collection_parent_id,
+            collection_parent_name: collection_parent_name
         )
     }
 
@@ -141,7 +165,11 @@ extension Entry {
             comment_count: comment_count,
             resurface_count: resurface_count,
             fire_count: count,
-            attachments: attachments
+            attachments: attachments,
+            collection_id: collection_id,
+            collection_name: collection_name,
+            collection_parent_id: collection_parent_id,
+            collection_parent_name: collection_parent_name
         )
     }
 }

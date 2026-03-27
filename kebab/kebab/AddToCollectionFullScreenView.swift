@@ -81,8 +81,8 @@ struct AddToCollectionFullScreenView: View {
                             .frame(height: 1)
                             .frame(maxWidth: .infinity)
 
-                        if title == "Move entry" {
-                            primaryFeedRow
+                        if initialCollectionId != nil {
+                            noCollectionRow
 
                             Rectangle()
                                 .fill(Style.Color.separator)
@@ -149,10 +149,17 @@ struct AddToCollectionFullScreenView: View {
             if let id = try? await repository.getCollectionIdForEntry(entryId: entry.id) {
                 initialCollectionId = id
                 selectedCollectionId = id
-                // If destination is a sub-collection, expand its parent automatically.
-                if let current = collectionsVM.collections.first(where: { $0.id == id }),
-                   let parentId = current.parentId {
-                    expandedCollectionId = parentId
+                if let current = collectionsVM.collections.first(where: { $0.id == id }) {
+                    if let parentId = current.parentId {
+                        // Sub-collection: expand its parent so the current sub is visible.
+                        expandedCollectionId = parentId
+                    } else {
+                        // Top-level collection: expand itself so its sub-collections are visible.
+                        let hasSubs = collectionsVM.collections.contains { $0.parentId == current.id }
+                        if hasSubs {
+                            expandedCollectionId = current.id
+                        }
+                    }
                 }
             }
         }
@@ -233,9 +240,9 @@ struct AddToCollectionFullScreenView: View {
         .buttonStyle(.plain)
     }
 
-    // MARK: - Primary Feed Row
+    // MARK: - No Collection Row
 
-    private var primaryFeedRow: some View {
+    private var noCollectionRow: some View {
         let isSelected = selectedCollectionId == nil
         return Button {
             withAnimation(.easeOut(duration: 0.2)) {
@@ -254,8 +261,8 @@ struct AddToCollectionFullScreenView: View {
                         .frame(width: 8)
                 }
 
-                Text("Primary feed")
-                    .font(.custom("DMSans-SemiBold", size: 16))
+                Text("No collection")
+                    .font(Style.Typography.body())
                     .foregroundColor(Style.Color.primaryText)
                     .lineLimit(1)
 

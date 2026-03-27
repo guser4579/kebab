@@ -52,8 +52,9 @@ struct CollectionDetailView: View {
     @State private var moveEntryEntry: Entry?
     @State private var isMoveEntryVisible = false
 
-    // Composer state (sub-collection context only)
+    // Composer state
     @State private var composerText: String = ""
+    @State private var scrollToBottomOnSend = false
 
     // Scroll-to-bottom control
     @State private var hasScrolledToBottom = false
@@ -126,8 +127,8 @@ struct CollectionDetailView: View {
                                     EmptyStateView(
                                         iconName: "folder",
                                         title: "No entries yet",
-                                        primaryBody: "Add entries to this collection from the feed.",
-                                        secondaryBody: "Tap the ••• menu on any entry and choose \"Add to collection\"."
+                                        primaryBody: "New entries typed below are added to this collection.",
+                                        secondaryBody: "You can also move entries here using the ••• menu on any entry."
                                     )
                                     .padding(Style.Spacing.emptyStateMargin)
                                 }
@@ -138,6 +139,7 @@ struct CollectionDetailView: View {
                                     entry: entry,
                                     feedViewModel: collectionFeedVM.feedViewModel,
                                     showResurface: false,
+                                    showBreadcrumb: false,
                                     onMoreTapped: {
                                         activeEntryMenuEntry = entry
                                         withAnimation(.easeOut(duration: 0.25)) {
@@ -193,6 +195,9 @@ struct CollectionDetailView: View {
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                                 scrollingProgrammatically = false
                             }
+                        } else if scrollToBottomOnSend {
+                            scrollToBottomOnSend = false
+                            proxy.scrollTo("collection-feed-bottom", anchor: .bottom)
                         }
                     }
                 }
@@ -221,17 +226,16 @@ struct CollectionDetailView: View {
             .background(Style.Color.background)
             .ignoresSafeArea(edges: .top)
             .safeAreaInset(edge: .bottom) {
-                if isSubCollection {
-                    ComposerView(
-                        text: $composerText,
-                        maxHeight: geometry.size.height * Style.Layout.composerMaxHeightFraction,
-                        placeholder: "Add entry",
-                        onSent: { content in
-                            Task { await collectionFeedVM.sendEntry(content: content) }
-                        },
-                        onFocus: { }
-                    )
-                }
+                ComposerView(
+                    text: $composerText,
+                    maxHeight: geometry.size.height * Style.Layout.composerMaxHeightFraction,
+                    placeholder: "Add entry",
+                    onSent: { content in
+                        scrollToBottomOnSend = true
+                        Task { await collectionFeedVM.sendEntry(content: content) }
+                    },
+                    onFocus: { }
+                )
             }
         }
         .background(Style.Color.background.ignoresSafeArea())
@@ -571,10 +575,11 @@ struct CollectionDetailView: View {
                 Icon("add-circle", glyphSize: Style.Icon.glyph)
                     .foregroundColor(Style.Color.primaryText)
                 Text("Sub-collection")
-                    .font(Style.Typography.meta())
+                    .font(.custom("DMSans-Medium", size: 14))
                     .foregroundColor(Style.Color.primaryText)
                     .lineLimit(1)
             }
+            .padding(.horizontal, 16)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .buttonStyle(.plain)
@@ -590,7 +595,7 @@ struct CollectionDetailView: View {
             Icon("folder", glyphSize: Style.Icon.glyph)
                 .foregroundColor(Style.Color.secondary)
             Text(sub.name)
-                .font(Style.Typography.meta())
+                .font(.custom("DMSans-Medium", size: 14))
                 .foregroundColor(Style.Color.primaryText)
                 .lineLimit(1)
                 .multilineTextAlignment(.center)
@@ -599,7 +604,7 @@ struct CollectionDetailView: View {
                 .foregroundColor(Style.Color.secondary)
                 .lineLimit(1)
         }
-        .padding(.horizontal, 4)
+        .padding(.horizontal, 8)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .frame(width: 150)
     }

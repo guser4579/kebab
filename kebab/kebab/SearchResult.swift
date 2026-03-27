@@ -20,6 +20,10 @@ struct SearchResult: Identifiable, Codable, Sendable {
     let fire_count: Int
     /// Populated by the backend only for comment results; nil for root results.
     let parent_preview: String?
+    let collection_id: UUID?
+    let collection_name: String?
+    let collection_parent_id: UUID?
+    let collection_parent_name: String?
 
     /// True when this result represents a comment (has a parent).
     var isComment: Bool { parent_id != nil }
@@ -44,6 +48,10 @@ struct SearchResult: Identifiable, Codable, Sendable {
         case resurface_count
         case fire_count
         case parent_preview
+        case collection_id
+        case collection_name
+        case collection_parent_id
+        case collection_parent_name
     }
 }
 
@@ -61,9 +69,13 @@ extension SearchResult {
         isContentHidden  = try c.decode(Bool.self,   forKey: .isContentHidden)
         comment_count    = try c.decodeIfPresent(Int.self,    forKey: .comment_count)
         attachments      = try c.decodeIfPresent([EntryAttachment].self, forKey: .attachments)
-        resurface_count  = try c.decodeIfPresent(Int.self,    forKey: .resurface_count) ?? 0
-        fire_count       = try c.decodeIfPresent(Int.self,    forKey: .fire_count)      ?? 0
-        parent_preview   = try c.decodeIfPresent(String.self, forKey: .parent_preview)
+        resurface_count      = try c.decodeIfPresent(Int.self,    forKey: .resurface_count)      ?? 0
+        fire_count           = try c.decodeIfPresent(Int.self,    forKey: .fire_count)           ?? 0
+        parent_preview       = try c.decodeIfPresent(String.self, forKey: .parent_preview)
+        collection_id        = try c.decodeIfPresent(UUID.self,   forKey: .collection_id)
+        collection_name      = try c.decodeIfPresent(String.self, forKey: .collection_name)
+        collection_parent_id = try c.decodeIfPresent(UUID.self,   forKey: .collection_parent_id)
+        collection_parent_name = try c.decodeIfPresent(String.self, forKey: .collection_parent_name)
     }
 }
 
@@ -87,7 +99,11 @@ extension SearchResult {
             comment_count: comment_count,
             resurface_count: resurface_count,
             fire_count: fire_count,
-            attachments: attachments
+            attachments: attachments,
+            collection_id: collection_id,
+            collection_name: collection_name,
+            collection_parent_id: collection_parent_id,
+            collection_parent_name: collection_parent_name
         )
     }
 }

@@ -122,6 +122,12 @@ struct SearchResultRowView: View {
                 .padding(.leading, 2)
             }
 
+            EntryBreadcrumbView(
+                collectionName: result.collection_name,
+                collectionParentName: result.collection_parent_name
+            )
+            .padding(.leading, 4)
+
             Spacer(minLength: 0)
         }
     }
@@ -188,6 +194,12 @@ struct SearchResultRowView: View {
                     .font(Style.Typography.meta())
                     .foregroundColor(Style.Color.secondary)
             }
+
+            EntryBreadcrumbView(
+                collectionName: result.collection_name,
+                collectionParentName: result.collection_parent_name
+            )
+            .padding(.leading, 4)
 
             Spacer(minLength: 0)
         }
