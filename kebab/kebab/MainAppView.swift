@@ -109,16 +109,37 @@ struct MainAppView: View {
                 .ignoresSafeArea(.keyboard, edges: isFullScreenEditVisible ? .bottom : [])
                 .safeAreaInset(edge: .bottom) {
                     if !isSettingsOpen && selectedTab == .feed {
-                        ComposerView(
-                            text: $composerText,
-                            maxHeight: geometry.size.height * Style.Layout.composerMaxHeightFraction,
-                            onSent: { content in
-                                scrollToBottomOnSend = true
-                                Task {
-                                    await feedViewModel.sendEntry(content: content)
+                        VStack(spacing: 0) {
+                            ChipFilterBarView(
+                                collectionChips: feedViewModel.availableCollectionFilters,
+                                activeFilters: feedViewModel.activeFilters,
+                                onToggle: { filter in
+                                    withAnimation(Style.Animation.composerState) {
+                                        feedViewModel.toggleFilter(filter)
+                                    }
                                 }
-                            },
-                            onFocus: { }
+                            )
+                            .padding(.bottom, 8)
+
+                            ComposerView(
+                                text: $composerText,
+                                maxHeight: geometry.size.height * Style.Layout.composerMaxHeightFraction,
+                                onSent: { content in
+                                    scrollToBottomOnSend = true
+                                    Task {
+                                        await feedViewModel.sendEntry(content: content)
+                                    }
+                                },
+                                onFocus: { }
+                            )
+                        }
+                        // Opaque fill behind the whole chips+composer inset so feed
+                        // content can't show through it while scrolling. ignoresSafeArea
+                        // extends the fill down through the home-indicator area to the
+                        // bottom screen edge.
+                        .background(
+                            Style.Color.background
+                                .ignoresSafeArea(edges: .bottom)
                         )
                     } else {
                         EmptyView()
@@ -305,7 +326,7 @@ private struct FeedScrollContent: View {
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                if feedViewModel.hasCompletedInitialLoad && feedViewModel.feedEntries.isEmpty {
+                if feedViewModel.hasCompletedInitialLoad && feedViewModel.filteredFeedEntries.isEmpty {
                     EmptyStateView(
                         iconName: "bookmark-02",
                         title: "Save it here",
@@ -315,7 +336,7 @@ private struct FeedScrollContent: View {
                     .padding(Style.Spacing.emptyStateMargin)
                 }
                 LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(feedViewModel.feedEntries) { entry in
+                    ForEach(feedViewModel.filteredFeedEntries) { entry in
                         EntryRowView(entry: entry, feedViewModel: feedViewModel, onMoreTapped: {
                                 onMoreTapped(entry)
                             }, onResurfaceTapped: {
