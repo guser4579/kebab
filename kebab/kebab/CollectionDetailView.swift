@@ -140,6 +140,10 @@ struct CollectionDetailView: View {
                                     feedViewModel: collectionFeedVM.feedViewModel,
                                     showResurface: false,
                                     showBreadcrumb: false,
+                                    // Newest entry sits flush above the composer — no bottom
+                                    // hairline — unless it's the only entry (top of screen).
+                                    showBottomSeparator: entry.id != collectionFeedVM.entries.last?.id
+                                        || collectionFeedVM.entries.count == 1,
                                     onMoreTapped: {
                                         activeEntryMenuEntry = entry
                                         withAnimation(.easeOut(duration: 0.25)) {
@@ -155,7 +159,6 @@ struct CollectionDetailView: View {
                                 )
                             }
                         }
-                        .padding(.bottom, 16)
 
                         Color.clear
                             .frame(height: 1)
@@ -190,7 +193,14 @@ struct CollectionDetailView: View {
                             hasScrolledToBottom = true
                             scrollingProgrammatically = true
                             proxy.scrollTo("collection-feed-bottom", anchor: .bottom)
-                            // Give the scroll animation time to settle before re-enabling
+                            // Settle pass: the first scroll lands on estimated LazyVStack
+                            // row heights; re-anchoring after rows materialize keeps the
+                            // newest entry flush above the composer. Runs inside the
+                            // scrollingProgrammatically window so the strip stays put.
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                                proxy.scrollTo("collection-feed-bottom", anchor: .bottom)
+                            }
+                            // Give the scroll time to settle before re-enabling
                             // strip hide/show decisions from real user interactions.
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                                 scrollingProgrammatically = false

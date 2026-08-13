@@ -8,6 +8,10 @@ struct EntryRowView: View {
     var showResurface: Bool = true
     /// When false the collection breadcrumb is hidden (collection context).
     var showBreadcrumb: Bool = true
+    /// When false the bottom hairline is omitted — the newest (last) entry in a
+    /// feed list sits flush above the composer with no stray line. Kept true for
+    /// a sole entry, which rests at the top of the screen and needs closure.
+    var showBottomSeparator: Bool = true
     var onResultActivated: (() -> Void)?
     var onMoreTapped: (() -> Void)?
     var onResurfaceTapped: (() -> Void)?
@@ -36,7 +40,9 @@ struct EntryRowView: View {
             Color.clear
                 .frame(height: 16)
 
-            bottomSeparator
+            if showBottomSeparator {
+                bottomSeparator
+            }
         }
     }
 

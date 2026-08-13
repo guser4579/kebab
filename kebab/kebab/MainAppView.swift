@@ -554,9 +554,16 @@ private struct FeedScrollContent: View {
                     )
                     .padding(Style.Spacing.emptyStateMargin)
                 }
+                let entries = feedViewModel.filteredFeedEntries
                 LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(feedViewModel.filteredFeedEntries) { entry in
-                        EntryRowView(entry: entry, feedViewModel: feedViewModel, onMoreTapped: {
+                    ForEach(entries) { entry in
+                        EntryRowView(
+                            entry: entry,
+                            feedViewModel: feedViewModel,
+                            // Newest entry sits flush above the composer — no bottom
+                            // hairline — unless it's the only entry (top of screen).
+                            showBottomSeparator: entry.id != entries.last?.id || entries.count == 1,
+                            onMoreTapped: {
                                 onMoreTapped(entry)
                             }, onResurfaceTapped: {
                                 onResurfaceTapped(entry)
@@ -567,7 +574,6 @@ private struct FeedScrollContent: View {
                             })
                     }
                 }
-                .padding(.bottom, 16)
 
                 Color.clear
                     .frame(height: 1)
@@ -577,17 +583,25 @@ private struct FeedScrollContent: View {
             .onChange(of: feedViewModel.entries.count) {
                 if !hasScrolledToBottom && !feedViewModel.entries.isEmpty {
                     hasScrolledToBottom = true
-                    proxy.scrollTo("feed-bottom", anchor: .bottom)
-                    // Delay FAB eligibility so the scroll geometry can update first,
-                    // preventing the one-frame blink where scrollDistanceFromBottom is
-                    // still large while hasScrolledToBottom just became true.
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    scrollToBottom(proxy)
+                    // Delay FAB eligibility past the settle pass so the scroll
+                    // geometry is final, preventing the one-frame blink where
+                    // scrollDistanceFromBottom is still large.
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
                         fabEnabled = true
                     }
                 } else if scrollToBottomOnSend {
                     scrollToBottomOnSend = false
-                    proxy.scrollTo("feed-bottom", anchor: .bottom)
+                    scrollToBottom(proxy)
                 }
+            }
+            // Any filter change (select, switch, or clear) re-anchors the feed at
+            // the newest entry — never leaves the user stranded mid-history.
+            .onChange(of: feedViewModel.activeCollectionFilter) { _, _ in
+                DispatchQueue.main.async { scrollToBottom(proxy) }
+            }
+            .onChange(of: feedViewModel.hasLinkFilterActive) { _, _ in
+                DispatchQueue.main.async { scrollToBottom(proxy) }
             }
             .onScrollGeometryChange(for: CGFloat.self) { g in
                 max(0, g.contentSize.height - g.contentOffset.y - g.containerSize.height)
@@ -623,6 +637,17 @@ private struct FeedScrollContent: View {
         }
         .opacity(selectedTab == .feed ? 1 : 0)
         .allowsHitTesting(selectedTab == .feed)
+    }
+
+    /// Scrolls to the newest entry, then runs a settle pass. The first scroll
+    /// lands on LazyVStack's *estimated* row heights; once real rows materialize
+    /// the content is slightly taller and the newest entry ends up tucked under
+    /// the composer. The follow-up scroll corrects the residual offset.
+    private func scrollToBottom(_ proxy: ScrollViewProxy) {
+        proxy.scrollTo("feed-bottom", anchor: .bottom)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+            proxy.scrollTo("feed-bottom", anchor: .bottom)
+        }
     }
 }
 
