@@ -161,7 +161,7 @@ struct AuthView: View {
 
             Spacer(minLength: 0)
 
-            Button("Next") {
+            primaryCTA("Next") {
                 Task {
                     await viewModel.sendOTP()
                     if viewModel.errorMessage == nil {
@@ -169,12 +169,6 @@ struct AuthView: View {
                     }
                 }
             }
-            .font(Style.Typography.authButton())
-            .foregroundColor(Style.Color.background)
-            .frame(height: Style.Layout.composerSingleLineHeight)
-            .frame(maxWidth: .infinity)
-            .background(.white, in: Capsule())
-            .disabled(viewModel.isLoading)
             .padding(.bottom, bottomButtonPadding)
         }
         .ignoresSafeArea(.container, edges: .bottom)
@@ -271,24 +265,13 @@ struct AuthView: View {
             Spacer(minLength: 0)
 
             VStack(spacing: 0) {
-                Button("Submit") {
+                primaryCTA("Submit") {
                     Task { await viewModel.verifyOTP() }
                 }
-                .font(Style.Typography.authButton())
-                .foregroundColor(Style.Color.background)
-                .frame(height: Style.Layout.composerSingleLineHeight)
-                .frame(maxWidth: .infinity)
-                .background(.white, in: Capsule())
-                .disabled(viewModel.isLoading)
 
-                Button("I didn\u{2019}t receive a code") {
+                secondaryCTA("I didn\u{2019}t receive a code") {
                     Task { await viewModel.sendOTP() }
                 }
-                .font(Style.Typography.authButton())
-                .foregroundColor(.white)
-                .frame(height: Style.Layout.composerSingleLineHeight)
-                .frame(maxWidth: .infinity)
-                .background(Style.Color.composerBackground, in: Capsule())
                 .padding(.top, 16)
 
                 Button("Use different email") {
@@ -341,7 +324,9 @@ struct AuthView: View {
                 return
             }
             // Auto-submit once the sixth digit lands (typed or autofilled).
+            // Light haptic signals "submitted" since no button was pressed.
             if filtered.count == 6 && !viewModel.isLoading {
+                Haptics.lightTap()
                 Task { await viewModel.verifyOTP() }
             }
         }
@@ -369,14 +354,52 @@ struct AuthView: View {
 
     // MARK: - Shared
 
-    private func primaryButton(title: String, action: @escaping () -> Void) -> some View {
-        Button(title, action: action)
-            .font(.system(size: 16, weight: .medium))
-            .foregroundColor(Style.Color.primaryText)
+    /// Full-width primary CTA. The frame, background, and contentShape live
+    /// INSIDE the button label so the entire capsule is the touch target —
+    /// with the default `Button("title")` form only the text itself was
+    /// tappable, which read as an unresponsive button. Shows a spinner and
+    /// disables while an auth request is in flight; haptic confirms the tap.
+    private func primaryCTA(_ title: String, action: @escaping () -> Void) -> some View {
+        Button {
+            Haptics.mediumTap()
+            action()
+        } label: {
+            ZStack {
+                if viewModel.isLoading {
+                    ProgressView()
+                        .tint(Style.Color.background)
+                } else {
+                    Text(title)
+                        .font(Style.Typography.authButton())
+                        .foregroundColor(Style.Color.background)
+                }
+            }
             .frame(height: Style.Layout.composerSingleLineHeight)
             .frame(maxWidth: .infinity)
-            .background(Style.Color.composerSend, in: Capsule())
-            .disabled(viewModel.isLoading)
+            .background(.white, in: Capsule())
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .disabled(viewModel.isLoading)
+    }
+
+    /// Full-width secondary CTA (dark capsule); same full-capsule touch target.
+    private func secondaryCTA(_ title: String, action: @escaping () -> Void) -> some View {
+        Button {
+            Haptics.lightTap()
+            action()
+        } label: {
+            Text(title)
+                .font(Style.Typography.authButton())
+                .foregroundColor(.white)
+                .opacity(viewModel.isLoading ? 0.4 : 1)
+                .frame(height: Style.Layout.composerSingleLineHeight)
+                .frame(maxWidth: .infinity)
+                .background(Style.Color.composerBackground, in: Capsule())
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .disabled(viewModel.isLoading)
     }
 
     private var legalText: some View {
