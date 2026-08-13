@@ -107,9 +107,12 @@ final class FeedViewModel: ObservableObject {
         }
     }
 
-    func sendEntry(content: String) async {
+    /// Returns `true` when the entry was persisted. Callers should restore the
+    /// composer draft on `false` so a failed send never destroys typed text.
+    @discardableResult
+    func sendEntry(content: String) async -> Bool {
         let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
+        guard !trimmed.isEmpty else { return false }
 
         let (cleanedContent, attachment) = Self.extractFirstLink(from: trimmed)
 
@@ -127,8 +130,10 @@ final class FeedViewModel: ObservableObject {
                     await self.enrichLinkMetadata(entryId: entryId, attachment: attachment)
                 }
             }
+            return true
         } catch {
             errorMessage = error.localizedDescription
+            return false
         }
     }
 

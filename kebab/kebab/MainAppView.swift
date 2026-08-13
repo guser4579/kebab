@@ -3,10 +3,15 @@ import Supabase
 
 struct MainAppView: View {
 
+    /// UserDefaults key backing the feed composer draft, so an in-progress
+    /// message survives app termination and failed sends.
+    private static let feedDraftKey = "composer.draft.feed"
+
     private let supabase: SupabaseClient
     @StateObject private var feedViewModel: FeedViewModel
     @StateObject private var collectionsViewModel: CollectionsViewModel
-    @State private var composerText: String = ""
+    @State private var composerText: String =
+        UserDefaults.standard.string(forKey: MainAppView.feedDraftKey) ?? ""
     @State private var activeEntryMenuEntry: Entry?
     @State private var isEntryActionSheetVisible = false
     @State private var fullScreenEditEntry: Entry?
@@ -127,7 +132,16 @@ struct MainAppView: View {
                                 onSent: { content in
                                     scrollToBottomOnSend = true
                                     Task {
-                                        await feedViewModel.sendEntry(content: content)
+                                        let sent = await feedViewModel.sendEntry(content: content)
+                                        if !sent {
+                                            // Restore the draft so a failed send never destroys
+                                            // typed text — but only into an empty composer, so a
+                                            // message the user has already started is not stomped.
+                                            if composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                                composerText = content
+                                            }
+                                            Haptics.destructiveTap()
+                                        }
                                     }
                                 },
                                 onFocus: { }
@@ -294,6 +308,9 @@ struct MainAppView: View {
                 if let userId = authViewModel.currentUserId {
                     SearchView(supabase: supabase, feedViewModel: feedViewModel, userId: userId)
                 }
+            }
+            .onChange(of: composerText) { _, newValue in
+                UserDefaults.standard.set(newValue, forKey: Self.feedDraftKey)
             }
         }
         }

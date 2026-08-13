@@ -232,7 +232,17 @@ struct CollectionDetailView: View {
                     placeholder: "Add entry",
                     onSent: { content in
                         scrollToBottomOnSend = true
-                        Task { await collectionFeedVM.sendEntry(content: content) }
+                        Task {
+                            let sent = await collectionFeedVM.sendEntry(content: content)
+                            if !sent {
+                                // Restore the draft so a failed send never destroys typed
+                                // text — only into an empty composer.
+                                if composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                    composerText = content
+                                }
+                                Haptics.destructiveTap()
+                            }
+                        }
                     },
                     onFocus: { }
                 )

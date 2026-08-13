@@ -116,9 +116,12 @@ final class CollectionFeedViewModel: ObservableObject {
     /// Creates a new root entry and immediately assigns it to this collection.
     /// Used when composing from a sub-collection detail screen so the entry
     /// is never transiently visible in the primary feed.
-    func sendEntry(content: String) async {
+    /// Returns `true` when the entry was persisted. Callers should restore the
+    /// composer draft on `false` so a failed send never destroys typed text.
+    @discardableResult
+    func sendEntry(content: String) async -> Bool {
         let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
+        guard !trimmed.isEmpty else { return false }
 
         errorMessage = nil
         do {
@@ -131,8 +134,10 @@ final class CollectionFeedViewModel: ObservableObject {
             await feedViewModel.loadEntries()
             await collectionsViewModel.loadCollections()
             await loadEntries()
+            return true
         } catch {
             errorMessage = error.localizedDescription
+            return false
         }
     }
 }
