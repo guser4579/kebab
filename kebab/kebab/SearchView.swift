@@ -71,6 +71,7 @@ struct SearchView: View {
         .ignoresSafeArea(edges: .top)
         .background(Style.Color.background.ignoresSafeArea())
         .navigationBarBackButtonHidden(true)
+        .enablesSwipeBack()
     }
 
     // MARK: - Header
