@@ -299,7 +299,6 @@ struct AddToCollectionFullScreenView: View {
 
     private func parentRow(_ collection: Collection) -> some View {
         let isSelected = selectedCollectionId == collection.id
-        let subs = subCollections(for: collection.id)
 
         return VStack(spacing: 0) {
             Button {

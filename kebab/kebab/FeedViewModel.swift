@@ -10,7 +10,11 @@ final class FeedViewModel: ObservableObject {
     @Published var isLoading: Bool = false
     @Published var hasCompletedInitialLoad: Bool = false
     @Published var errorMessage: String?
-    @Published var activeFilters: Set<FeedFilter> = []
+    /// Independent toggle; combines with any collection filter.
+    @Published var hasLinkFilterActive: Bool = false
+    /// Single-select collection scope. Also drives composer targeting: while
+    /// active, new entries are added to `targetCollectionId`.
+    @Published var activeCollectionFilter: CollectionFilter?
 
     var feedEntries: [Entry] {
         entries.filter { $0.pinned_at == nil }
@@ -21,74 +25,37 @@ final class FeedViewModel: ObservableObject {
                .sorted { $0.pinned_at! > $1.pinned_at! }
     }
 
-    /// Unique collections present in the unpinned feed, sorted alphabetically.
-    var availableCollectionFilters: [FeedFilter] {
-        var seen = Set<UUID>()
-        var result: [FeedFilter] = []
-        for entry in entries where entry.pinned_at == nil {
-            guard let id = entry.collection_id,
-                  let name = entry.collection_name,
-                  !seen.contains(id) else { continue }
-            seen.insert(id)
-            result.append(.collection(id: id, name: name))
-        }
-        return result.sorted {
-            guard case .collection(_, let a) = $0,
-                  case .collection(_, let b) = $1 else { return false }
-            return a.localizedCaseInsensitiveCompare(b) == .orderedAscending
-        }
-    }
-
     /// Feed entries with active filters applied. Views should consume this instead of feedEntries.
     var filteredFeedEntries: [Entry] {
-        if activeFilters.contains(.random) { return feedEntries.shuffled() }
-        guard !activeFilters.isEmpty else { return feedEntries }
-
         var result = feedEntries
-        for filter in activeFilters {
-            switch filter {
-            case .hasLink:
-                result = result.filter { $0.linkAttachment != nil }
-            case .mostFlames:
-                result = result.filter { $0.fire_count > 0 }
-            case .mostComments:
-                result = result.filter { ($0.comment_count ?? 0) > 0 }
-            case .mostResurfaced:
-                result = result.filter { $0.resurface_count > 0 }
-            case .collection(let id, _):
-                result = result.filter { $0.collection_id == id }
-            case .random:
-                break
-            }
+        if hasLinkFilterActive {
+            result = result.filter { $0.linkAttachment != nil }
         }
-        if activeFilters.contains(.mostFlames) {
-            result.sort { $0.fire_count > $1.fire_count }
-        } else if activeFilters.contains(.mostComments) {
-            result.sort { ($0.comment_count ?? 0) > ($1.comment_count ?? 0) }
-        } else if activeFilters.contains(.mostResurfaced) {
-            result.sort { $0.resurface_count > $1.resurface_count }
+        switch activeCollectionFilter {
+        case .all(let parentId):
+            result = result.filter {
+                $0.collection_id == parentId || $0.collection_parent_id == parentId
+            }
+        case .single(let id):
+            result = result.filter { $0.collection_id == id }
+        case nil:
+            break
         }
         return result
     }
 
-    func toggleFilter(_ filter: FeedFilter) {
-        if filter == .random {
-            activeFilters = activeFilters.contains(.random) ? [] : [.random]
-            return
-        }
-        activeFilters.remove(.random)
-        if activeFilters.contains(filter) {
-            activeFilters.remove(filter)
-        } else {
-            activeFilters.insert(filter)
-        }
+    /// Sets the collection filter, or clears it when `filter` is already active.
+    func toggleCollectionFilter(_ filter: CollectionFilter) {
+        activeCollectionFilter = (activeCollectionFilter == filter) ? nil : filter
     }
 
     private let repository: EntryRepository
+    private let collectionRepository: CollectionRepository
     private let supabase: SupabaseClient
 
     init(supabase: SupabaseClient) {
         self.repository = EntryRepository(supabase: supabase)
+        self.collectionRepository = CollectionRepository(supabase: supabase)
         self.supabase = supabase
     }
 
@@ -109,8 +76,13 @@ final class FeedViewModel: ObservableObject {
 
     /// Returns `true` when the entry was persisted. Callers should restore the
     /// composer draft on `false` so a failed send never destroys typed text.
+    ///
+    /// When `collectionId` is non-nil (an active collection filter), the new
+    /// entry is assigned to that collection. Assignment is best-effort: if it
+    /// fails the entry still exists in the main feed, so the send is not
+    /// reported as failed (restoring the draft would duplicate the entry).
     @discardableResult
-    func sendEntry(content: String) async -> Bool {
+    func sendEntry(content: String, collectionId: UUID? = nil) async -> Bool {
         let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return false }
 
@@ -122,6 +94,16 @@ final class FeedViewModel: ObservableObject {
                 content: cleanedContent,
                 attachments: attachment.map { [$0] }
             )
+            if let collectionId {
+                do {
+                    try await collectionRepository.addEntryToCollection(
+                        entryId: entryId,
+                        collectionId: collectionId
+                    )
+                } catch {
+                    print("Failed to add new entry to collection:", error)
+                }
+            }
             Haptics.mediumTap()
             await loadEntries()
 
