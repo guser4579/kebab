@@ -135,24 +135,29 @@ struct MainAppView: View {
                 // node with edges: [] (semantic no-op) vs edges: .bottom is a parameter update, not a
                 // type change, so the ScrollView position survives both open and close.
                 .ignoresSafeArea(.keyboard, edges: isFullScreenEditVisible ? .bottom : [])
-                // Left-edge swipe opens settings ("swipe between screens").
-                // highPriority so a recognized drag defeats the row's
-                // NavigationLink tap (simultaneousGesture fired both, pushing
-                // the entry AND opening settings). Edge gating in onEnded keeps
-                // the no-op cost of unrelated drags at zero.
-                .highPriorityGesture(
-                    DragGesture(minimumDistance: 20)
-                        .onEnded { value in
-                            guard !isSettingsOpen else { return }
-                            let t = value.translation
-                            if value.startLocation.x < 44,
-                               t.width > 60,
-                               abs(t.width) > abs(t.height) {
-                                withAnimation(.easeInOut(duration: 0.28)) {
-                                    isSettingsOpen = true
-                                }
+                // Left-edge swipe opens settings ("swipe between screens"),
+                // via a window-level UIScreenEdgePanGestureRecognizer so feed
+                // scrolling stays fully native — see EdgeSwipeRecognizer.
+                .background(
+                    EdgeSwipeRecognizer(
+                        canBegin: {
+                            !isSettingsOpen
+                                && activeEntryMenuEntry == nil
+                                && chipSheetParent == nil
+                                && chipManageParent == nil
+                                && !isFullScreenEditVisible
+                                && !isAddToCollectionVisible
+                                && !isRenameChipVisible
+                                && !isNewSubChipVisible
+                                // On pushed screens the left edge means "back".
+                                && (PopGestureDelegate.shared.navigationController?.viewControllers.count ?? 1) <= 1
+                        },
+                        onSwipe: {
+                            withAnimation(.easeInOut(duration: 0.28)) {
+                                isSettingsOpen = true
                             }
                         }
+                    )
                 )
                 .safeAreaInset(edge: .bottom) {
                     if !isSettingsOpen {
