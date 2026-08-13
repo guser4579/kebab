@@ -6,8 +6,8 @@ import SwiftUI
 /// Renders nothing when `collectionName` is nil. When a parent name is present it
 /// formats as "Parent / Child"; otherwise just "Name".
 ///
-/// Color is `Style.Color.secondary` (#575B61) for both the icon and the text,
-/// matching the timestamp and counter meta color.
+/// Color is `Style.Color.secondary` (#575B61), matching the timestamp and
+/// counter meta color.
 struct EntryBreadcrumbView: View {
 
     let collectionName: String?
@@ -23,15 +23,11 @@ struct EntryBreadcrumbView: View {
 
     var body: some View {
         if let label {
-            HStack(spacing: 3) {
-                Icon("folder", glyphSize: Style.Icon.glyphSmall)
-                    .foregroundColor(Style.Color.secondary)
-                Text(label)
-                    .font(Style.Typography.meta())
-                    .foregroundColor(Style.Color.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-            }
+            Text(label)
+                .font(Style.Typography.meta())
+                .foregroundColor(Style.Color.secondary)
+                .lineLimit(1)
+                .truncationMode(.tail)
         }
     }
 }
