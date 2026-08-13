@@ -160,8 +160,11 @@ struct ComposerView: View {
             sendButtonColumn
                 .padding(.trailing, buttonInset)
         }
-        .background(
-            Style.Color.composerBackground,
+        // Liquid Glass capsule: feed content scrolls visibly behind the
+        // composer. The subtle tint keeps placeholder/text contrast on the
+        // dark theme without going opaque.
+        .glassEffect(
+            .regular.tint(Style.Color.composerBackground.opacity(0.5)),
             in: RoundedRectangle(cornerRadius: Style.Layout.composerCapsuleRadius)
         )
         .padding(.horizontal, composerOuterPadding)

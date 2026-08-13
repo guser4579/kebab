@@ -25,52 +25,35 @@ struct ChipFilterBarView: View {
     let onClearCollectionFilter: () -> Void
 
     var body: some View {
-        VStack(spacing: 0) {
-            Rectangle()
-                .fill(Style.Color.separator)
-                .frame(height: 1)
-                .frame(maxWidth: .infinity)
+        // GlassEffectContainer lets the chip capsules share one glass pass —
+        // required when several glassEffect views sit close together.
+        GlassEffectContainer {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: Style.Spacing.x2) {
+                    ChipButton(
+                        label: "has link",
+                        isActive: hasLinkActive,
+                        onTap: onToggleHasLink
+                    )
 
-            ZStack(alignment: .trailing) {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: Style.Spacing.x2) {
+                    ForEach(parentCollections) { parent in
+                        let active = isActive(parent)
+                        let hasSubs = !subCollections(parent.id).isEmpty
                         ChipButton(
-                            label: "has link",
-                            isActive: hasLinkActive,
-                            onTap: onToggleHasLink
+                            label: chipLabel(for: parent),
+                            isActive: active,
+                            // Chevron chips swap the glyph by state: chevron invites
+                            // opening the sheet; × on an active chip clears the filter
+                            // without relaunching the sheet. Label tap still reopens
+                            // the sheet to switch scope.
+                            trailing: hasSubs ? (active ? .clear : .chevron) : .none,
+                            onTap: { onParentTapped(parent) },
+                            onClearTap: onClearCollectionFilter
                         )
-
-                        ForEach(parentCollections) { parent in
-                            let active = isActive(parent)
-                            let hasSubs = !subCollections(parent.id).isEmpty
-                            ChipButton(
-                                label: chipLabel(for: parent),
-                                isActive: active,
-                                // Chevron chips swap the glyph by state: chevron invites
-                                // opening the sheet; × on an active chip clears the filter
-                                // without relaunching the sheet. Label tap still reopens
-                                // the sheet to switch scope.
-                                trailing: hasSubs ? (active ? .clear : .chevron) : .none,
-                                onTap: { onParentTapped(parent) },
-                                onClearTap: onClearCollectionFilter
-                            )
-                        }
                     }
-                    .padding(.horizontal, Style.Spacing.x4)
-                    .padding(.vertical, Style.Spacing.x3)
                 }
-
-                LinearGradient(
-                    gradient: Gradient(stops: [
-                        .init(color: Style.Color.background.opacity(0), location: 0),
-                        .init(color: Style.Color.background.opacity(0.85), location: 0.6),
-                        .init(color: Style.Color.background, location: 1.0)
-                    ]),
-                    startPoint: .leading,
-                    endPoint: .trailing
-                )
-                .frame(width: 40)
-                .allowsHitTesting(false)
+                .padding(.horizontal, Style.Spacing.x4)
+                .padding(.vertical, Style.Spacing.x3)
             }
         }
         // A horizontal ScrollView claims all vertical height it's offered. Inside
@@ -79,7 +62,6 @@ struct ChipFilterBarView: View {
         // up with a large void below the chips. Pinning to the ideal vertical size
         // keeps the bar a single compact row.
         .fixedSize(horizontal: false, vertical: true)
-        .background(Style.Color.background)
     }
 
     /// A parent chip is active when the filter targets the parent itself
@@ -162,9 +144,11 @@ private struct ChipButton: View {
                 .buttonStyle(.plain)
             }
         }
-        .background(
-            Capsule()
-                .fill(isActive ? Style.Color.composerSend : Style.Color.composerBackground)
+        .glassEffect(
+            isActive
+                ? .regular.tint(Style.Color.composerSend)
+                : .regular.tint(Style.Color.composerBackground.opacity(0.5)),
+            in: Capsule()
         )
         .animation(Style.Animation.composerState, value: isActive)
     }

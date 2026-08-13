@@ -217,13 +217,19 @@ struct MainAppView: View {
                                 onFocus: { }
                             )
                         }
-                        // Opaque fill behind the whole chips+composer inset so feed
-                        // content can't show through it while scrolling. ignoresSafeArea
-                        // extends the fill down through the home-indicator area to the
-                        // bottom screen edge.
+                        // No opaque fill: the chips and glass composer float over
+                        // the feed, which scrolls visibly behind them. A soft
+                        // fade keeps the very bottom edge legible.
                         .background(
-                            Style.Color.background
-                                .ignoresSafeArea(edges: .bottom)
+                            LinearGradient(
+                                gradient: Gradient(stops: [
+                                    .init(color: Style.Color.background.opacity(0), location: 0),
+                                    .init(color: Style.Color.background.opacity(0.85), location: 1.0)
+                                ]),
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                            .ignoresSafeArea(edges: .bottom)
                         )
                     } else {
                         EmptyView()
@@ -615,16 +621,15 @@ private struct FeedScrollContent: View {
                     && scrollDistanceFromBottom > containerHeight
                 Group {
                     if shouldShow {
-                        ZStack {
-                            Circle()
-                                .fill(Style.Color.composerBackground)
-                                .frame(width: 36, height: 36)
-                                .overlay(Circle().stroke(Color(hex: "CAD0DB"), lineWidth: 1))
-                            Icon("arrow-up")
-                                .rotationEffect(.degrees(180))
-                                .foregroundColor(Style.Color.primaryText)
-                        }
-                        .contentShape(Circle())
+                        Icon("arrow-up")
+                            .rotationEffect(.degrees(180))
+                            .foregroundColor(Style.Color.primaryText)
+                            .frame(width: 36, height: 36)
+                            .glassEffect(
+                                .regular.tint(Style.Color.composerBackground.opacity(0.5)),
+                                in: Circle()
+                            )
+                            .contentShape(Circle())
                         .simultaneousGesture(TapGesture().onEnded {
                             Haptics.lightTap()
                             proxy.scrollTo("feed-bottom", anchor: .bottom)
