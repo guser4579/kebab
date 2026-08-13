@@ -379,7 +379,7 @@ struct EntryDetailView: View {
             }
 
             if hasImages {
-                EntryImageGridView(attachments: displayedRootEntry.imageAttachments)
+                EntryImageStripView(attachments: displayedRootEntry.imageAttachments)
 
                 Color.clear
                     .frame(height: 12)

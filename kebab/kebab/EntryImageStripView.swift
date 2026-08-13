@@ -5,10 +5,10 @@
 
 import SwiftUI
 
-/// Renders an entry's image attachments: one image full-width, two side by
-/// side, three or four in a two-column grid. Tapping any image opens a
-/// full-screen pager.
-struct EntryImageGridView: View {
+/// Renders an entry's image attachments as a horizontal strip of uniform
+/// cards (never a grid), scrolling sideways when they overflow the row.
+/// Tapping any image opens a full-screen pager.
+struct EntryImageStripView: View {
 
     let attachments: [EntryAttachment]
 
@@ -19,41 +19,28 @@ struct EntryImageGridView: View {
     @State private var viewer: ViewerState?
 
     private let cornerRadius: CGFloat = 12
-    private let gridSpacing: CGFloat = 4
+    private let cellSpacing: CGFloat = 8
+    // The old 2x2 grid cell (~177x140) scaled by 1.25 - every image renders
+    // at this size regardless of count.
+    private let cellWidth: CGFloat = 221
+    private let cellHeight: CGFloat = 175
 
     var body: some View {
-        Group {
-            switch attachments.count {
-            case 1:
-                cell(0, height: 280)
-            case 2:
-                HStack(spacing: gridSpacing) {
-                    cell(0, height: 180)
-                    cell(1, height: 180)
-                }
-            default:
-                VStack(spacing: gridSpacing) {
-                    HStack(spacing: gridSpacing) {
-                        cell(0, height: 140)
-                        cell(1, height: 140)
-                    }
-                    HStack(spacing: gridSpacing) {
-                        cell(2, height: 140)
-                        if attachments.count > 3 {
-                            cell(3, height: 140)
-                        } else {
-                            Color.clear.frame(height: 140)
-                        }
-                    }
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: cellSpacing) {
+                ForEach(attachments.indices, id: \.self) { index in
+                    cell(index)
                 }
             }
         }
+        .scrollBounceBehavior(.basedOnSize, axes: [.horizontal])
+        .frame(height: cellHeight)
         .fullScreenCover(item: $viewer) { state in
             ImageViewerView(attachments: attachments, initialIndex: state.id)
         }
     }
 
-    private func cell(_ index: Int, height: CGFloat) -> some View {
+    private func cell(_ index: Int) -> some View {
         Button {
             Haptics.lightTap()
             viewer = ViewerState(id: index)
@@ -71,8 +58,7 @@ struct EntryImageGridView: View {
                         }
                     }
                 }
-                .frame(maxWidth: .infinity)
-                .frame(height: height)
+                .frame(width: cellWidth, height: cellHeight)
                 .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
                 .overlay(
                     RoundedRectangle(cornerRadius: cornerRadius)

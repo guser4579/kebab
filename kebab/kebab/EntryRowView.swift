@@ -84,7 +84,7 @@ struct EntryRowView: View {
                 }
 
                 if hasImages {
-                    EntryImageGridView(attachments: entry.imageAttachments)
+                    EntryImageStripView(attachments: entry.imageAttachments)
 
                     Color.clear
                         .frame(height: 12)
