@@ -143,6 +143,10 @@ struct ComposerView: View {
     var onFocus: (() -> Void)?
 
     @State private var isFocused: Bool = false
+    @StateObject private var voice = VoiceTranscriber()
+    /// Text present when dictation started; the streaming transcript is
+    /// appended after it so dictation never destroys typed text.
+    @State private var dictationBaseline: String = ""
 
     private var hasContent: Bool {
         !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -150,14 +154,16 @@ struct ComposerView: View {
 
     private let composerOuterPadding:    CGFloat = Style.Spacing.x4
     private let textLeadingPadding:      CGFloat = 16
-    private let gapBetweenTextAndButton: CGFloat = 12
     private let buttonInset:             CGFloat = 6
     private let buttonSize:              CGFloat = 36
 
     var body: some View {
-        HStack(alignment: .bottom, spacing: gapBetweenTextAndButton) {
+        HStack(alignment: .bottom, spacing: 0) {
             textArea
+            micButton
+                .padding(.bottom, buttonInset)
             sendButtonColumn
+                .padding(.leading, 4)
                 .padding(.trailing, buttonInset)
         }
         // Liquid Glass capsule: feed content scrolls visibly behind the
@@ -169,6 +175,24 @@ struct ComposerView: View {
         )
         .padding(.horizontal, composerOuterPadding)
         .padding(.bottom, isFocused ? Style.Spacing.x3 : 0)
+        .onDisappear {
+            voice.stop()
+        }
+        .alert("Allow microphone access", isPresented: $voice.permissionDenied) {
+            Button("Open Settings") {
+                if let url = URL(string: UIApplication.openSettingsURLString) {
+                    UIApplication.shared.open(url)
+                }
+            }
+            Button("Not now", role: .cancel) { }
+        } message: {
+            Text("To dictate entries, allow microphone and speech recognition access in Settings.")
+        }
+        .alert("Dictation unavailable", isPresented: $voice.startFailed) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text("Speech recognition isn\u{2019}t available right now. Try again in a moment.")
+        }
     }
 
     // Text input area — ZStack holds the placeholder overlay and the live text view.
@@ -196,6 +220,33 @@ struct ComposerView: View {
             .frame(maxWidth: .infinity)
         }
         .frame(maxWidth: .infinity)
+    }
+
+    // Mic button — dictation toggle. While recording the glyph becomes an
+    // animated waveform tinted with the accent color; the streaming transcript
+    // lands in the text field after whatever was already typed.
+    private var micButton: some View {
+        Button {
+            Haptics.lightTap()
+            if voice.isRecording {
+                voice.stop()
+            } else {
+                let baseline = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                dictationBaseline = baseline
+                voice.onTranscript = { transcript in
+                    text = baseline.isEmpty ? transcript : baseline + " " + transcript
+                }
+                Task { await voice.start() }
+            }
+        } label: {
+            Image(systemName: voice.isRecording ? "waveform" : "mic")
+                .font(.system(size: 17, weight: .medium))
+                .foregroundColor(voice.isRecording ? Style.Color.composerSend : Style.Color.secondary)
+                .symbolEffect(.variableColor.iterative, options: .repeating, isActive: voice.isRecording)
+                .frame(width: buttonSize, height: buttonSize)
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
     }
 
     // Send button column — width is fixed; height fills the HStack naturally.
@@ -232,6 +283,9 @@ struct ComposerView: View {
     }
 
     private func sendIfNeeded() {
+        if voice.isRecording {
+            voice.stop()
+        }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         onSent(trimmed)
