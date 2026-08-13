@@ -18,9 +18,12 @@ final class CollectionsViewModel: ObservableObject {
 
     // MARK: - Computed helpers
 
-    /// Top-level collections only (parentId == nil), in the order returned by the backend.
+    /// Top-level collections only (parentId == nil), sorted alphabetically —
+    /// a stable order users can memorize, unlike recently-changed-first.
     var parentCollections: [Collection] {
-        collections.filter { $0.parentId == nil }
+        collections
+            .filter { $0.parentId == nil }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
     /// Sub-collections belonging to `parentId`, sorted alphabetically.

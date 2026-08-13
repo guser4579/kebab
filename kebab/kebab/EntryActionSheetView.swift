@@ -100,6 +100,10 @@ struct EntryActionSheetView: View {
                 topTrailingRadius: sheetTopCornerRadius
             )
             .stroke(Style.Color.separator, lineWidth: 1)
+            // Extend the stroked shape far below the visible sheet so its
+            // bottom edge can never appear when the sheet is stretched
+            // upward; only the top corners and sides render.
+            .padding(.bottom, -400)
         )
         .draggableSheet(onDismiss: onDismiss)
     }

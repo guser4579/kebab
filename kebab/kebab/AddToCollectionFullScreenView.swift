@@ -49,7 +49,7 @@ struct AddToCollectionFullScreenView: View {
     // MARK: - Helpers
 
     private var parentCollections: [Collection] {
-        collectionsVM.collections.filter { $0.parentId == nil }
+        collectionsVM.parentCollections
     }
 
     private func subCollections(for parentId: UUID) -> [Collection] {
@@ -74,7 +74,6 @@ struct AddToCollectionFullScreenView: View {
                     .tint(Style.Color.secondary)
                 Spacer()
             } else {
-                ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         newCollectionRow
@@ -97,7 +96,6 @@ struct AddToCollectionFullScreenView: View {
 
                         ForEach(parentCollections) { parent in
                             parentRow(parent)
-                                .id(parent.id)
 
                             let subs = subCollections(for: parent.id)
                             if expandedCollectionId == parent.id {
@@ -113,21 +111,10 @@ struct AddToCollectionFullScreenView: View {
                         // Breathing room so the last collection's expansion
                         // never crowds the screen edge.
                         Color.clear
-                            .frame(height: 130)
+                            .frame(height: 64)
                     }
                 }
                 .defaultScrollAnchor(.top)
-                // Expanding a parent near the bottom smoothly brings it to the
-                // top so all its sub-collections are visible without hunting.
-                .onChange(of: expandedCollectionId) { _, expanded in
-                    guard let expanded else { return }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                        withAnimation(.easeOut(duration: 0.3)) {
-                            proxy.scrollTo(expanded, anchor: .top)
-                        }
-                    }
-                }
-                }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -282,10 +269,9 @@ struct AddToCollectionFullScreenView: View {
     private var noCollectionRow: some View {
         let isSelected = selectedCollectionId == nil
         return Button {
-            withAnimation(.easeOut(duration: 0.2)) {
-                selectedCollectionId = nil
-                expandedCollectionId = nil
-            }
+            // Deselecting collapses — instant snap, no animation.
+            selectedCollectionId = nil
+            expandedCollectionId = nil
         } label: {
             HStack(spacing: 0) {
                 Color.clear
@@ -320,8 +306,13 @@ struct AddToCollectionFullScreenView: View {
 
         return VStack(spacing: 0) {
             Button {
-                withAnimation(.easeOut(duration: 0.2)) {
+                if selectedCollectionId == collection.id {
+                    // Collapse is an instant snap; only expansion animates.
                     handleParentTap(collection)
+                } else {
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        handleParentTap(collection)
+                    }
                 }
             } label: {
                 HStack(spacing: 0) {
