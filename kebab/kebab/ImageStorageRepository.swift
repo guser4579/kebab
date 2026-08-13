@@ -29,7 +29,9 @@ final class ImageStorageRepository {
         var attachments: [EntryAttachment] = []
         for image in images {
             let data = try Self.jpegData(from: image)
-            let path = "\(userId.uuidString)/\(UUID().uuidString).jpg"
+            // Lowercased to match the RLS folder check: Swift renders UUIDs
+            // uppercase but Postgres's auth.uid()::text is lowercase.
+            let path = "\(userId.uuidString.lowercased())/\(UUID().uuidString.lowercased()).jpg"
             _ = try await supabase.storage
                 .from(Self.bucket)
                 .upload(path, data: data, options: FileOptions(contentType: "image/jpeg"))
