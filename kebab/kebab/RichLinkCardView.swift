@@ -141,16 +141,7 @@ struct RichLinkCardView: View {
             .frame(maxWidth: .infinity)
             .frame(height: 200)
             .overlay {
-                AsyncImage(url: imageURL) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image
-                            .resizable()
-                            .scaledToFill()
-                    default:
-                        Color.clear
-                    }
-                }
+                CachedAsyncImage(url: imageURL)
             }
             .clipped()
     }

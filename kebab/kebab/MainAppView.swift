@@ -555,6 +555,10 @@ struct MainAppView: View {
             }
         }
         }
+        // Shared collections model for every screen in this stack (including
+        // pushed destinations and overlays) — the Add-to-collection picker
+        // renders instantly from it instead of refetching on every open.
+        .environmentObject(collectionsViewModel)
     }
 }
 

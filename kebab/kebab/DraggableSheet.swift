@@ -21,6 +21,16 @@ struct DraggableSheetModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         content
+            // Overscroll extension: extra sheet-colored background hanging
+            // below the screen edge. Pulling up past resting position reveals
+            // more sheet — a stretch — instead of a gap showing the screen
+            // behind it.
+            .overlay(alignment: .bottom) {
+                Style.Color.background
+                    .frame(height: 400)
+                    .offset(y: 400)
+                    .allowsHitTesting(false)
+            }
             .onGeometryChange(for: CGFloat.self) { proxy in
                 proxy.size.height
             } action: { newValue in

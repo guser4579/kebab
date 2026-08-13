@@ -10,7 +10,9 @@ struct AddToCollectionFullScreenView: View {
     /// Called after a successful mutation so the caller can reload shared collection state.
     let onSuccess: () -> Void
 
-    @StateObject private var collectionsVM: CollectionsViewModel
+    /// Shared, already-loaded collections model (injected via environment) —
+    /// the picker renders instantly instead of refetching on every open.
+    @EnvironmentObject private var collectionsVM: CollectionsViewModel
     private let repository: CollectionRepository
 
     @State private var selectedCollectionId: UUID?
@@ -34,7 +36,6 @@ struct AddToCollectionFullScreenView: View {
         self.onDismiss = onDismiss
         self.onSuccess = onSuccess
         self.repository = CollectionRepository(supabase: supabase)
-        _collectionsVM = StateObject(wrappedValue: CollectionsViewModel(supabase: supabase))
     }
 
     private var hasChange: Bool {
@@ -73,6 +74,7 @@ struct AddToCollectionFullScreenView: View {
                     .tint(Style.Color.secondary)
                 Spacer()
             } else {
+                ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         newCollectionRow
@@ -95,6 +97,7 @@ struct AddToCollectionFullScreenView: View {
 
                         ForEach(parentCollections) { parent in
                             parentRow(parent)
+                                .id(parent.id)
 
                             let subs = subCollections(for: parent.id)
                             if expandedCollectionId == parent.id {
@@ -106,9 +109,25 @@ struct AddToCollectionFullScreenView: View {
                                 }
                             }
                         }
+
+                        // Breathing room so the last collection's expansion
+                        // never crowds the screen edge.
+                        Color.clear
+                            .frame(height: 130)
                     }
                 }
                 .defaultScrollAnchor(.top)
+                // Expanding a parent near the bottom smoothly brings it to the
+                // top so all its sub-collections are visible without hunting.
+                .onChange(of: expandedCollectionId) { _, expanded in
+                    guard let expanded else { return }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                        withAnimation(.easeOut(duration: 0.3)) {
+                            proxy.scrollTo(expanded, anchor: .top)
+                        }
+                    }
+                }
+                }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -162,8 +181,9 @@ struct AddToCollectionFullScreenView: View {
             }
         }
         .task {
-            await collectionsVM.loadCollections()
-            if let id = try? await repository.getCollectionIdForEntry(entryId: entry.id) {
+            // Membership comes straight off the entry — no network round trip,
+            // so selection and expansion render on the first frame.
+            if initialCollectionId == nil, let id = entry.collection_id {
                 initialCollectionId = id
                 selectedCollectionId = id
                 if let current = collectionsVM.collections.first(where: { $0.id == id }) {
@@ -177,6 +197,8 @@ struct AddToCollectionFullScreenView: View {
                     }
                 }
             }
+            // Background freshness pass; the UI is already populated.
+            await collectionsVM.loadCollections()
         }
     }
 

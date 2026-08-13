@@ -48,15 +48,7 @@ struct EntryImageStripView: View {
             Rectangle()
                 .fill(Style.Color.separator)
                 .overlay {
-                    AsyncImage(url: URL(string: attachments[index].url)) { phase in
-                        if case .success(let image) = phase {
-                            image
-                                .resizable()
-                                .scaledToFill()
-                        } else {
-                            Color.clear
-                        }
-                    }
+                    CachedAsyncImage(url: URL(string: attachments[index].url))
                 }
                 .frame(width: cellWidth, height: cellHeight)
                 .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
@@ -92,16 +84,11 @@ private struct ImageViewerView: View {
 
             TabView(selection: $currentIndex) {
                 ForEach(Array(attachments.enumerated()), id: \.offset) { index, attachment in
-                    AsyncImage(url: URL(string: attachment.url)) { phase in
-                        if case .success(let image) = phase {
-                            image
-                                .resizable()
-                                .scaledToFit()
-                        } else {
-                            ProgressView()
-                                .tint(Style.Color.secondary)
-                        }
-                    }
+                    CachedAsyncImage(
+                        url: URL(string: attachment.url),
+                        contentMode: .fit,
+                        showsSpinner: true
+                    )
                     .tag(index)
                 }
             }

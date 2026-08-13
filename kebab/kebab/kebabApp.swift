@@ -15,6 +15,15 @@ extension EnvironmentValues {
 @main
 struct kebabApp: App {
 
+    init() {
+        // Generous shared URL cache so link-preview and entry images persist
+        // across scrolling sessions and app launches instead of refetching.
+        URLCache.shared = URLCache(
+            memoryCapacity: 64 * 1024 * 1024,
+            diskCapacity: 256 * 1024 * 1024
+        )
+    }
+
     let supabase = SupabaseClient(
         supabaseURL: URL(string: "https://bjhyaqjimicxtgulvnrl.supabase.co")!,
         supabaseKey: "sb_publishable_J7aGdl5L9Fi_cHzK9sfbdA_dkjtBReV"
