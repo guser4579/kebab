@@ -34,9 +34,7 @@ struct CollectionChipSheetView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Capsule()
-                .fill(Style.Color.secondary.opacity(0.4))
-                .frame(width: 36, height: 5)
+            SheetGrabber()
                 .padding(.top, 12)
 
             header

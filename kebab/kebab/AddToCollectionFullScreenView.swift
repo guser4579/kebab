@@ -274,19 +274,20 @@ struct AddToCollectionFullScreenView: View {
                 Color.clear
                     .frame(width: 16)
 
-                if isSelected {
-                    Icon("tick-02")
-                        .foregroundColor(Style.Color.composerSend)
-                    Color.clear
-                        .frame(width: 8)
-                }
-
                 Text("No collection")
                     .font(Style.Typography.body())
                     .foregroundColor(Style.Color.primaryText)
                     .lineLimit(1)
 
-                Spacer(minLength: Style.Layout.entryContentPadding)
+                Spacer(minLength: Style.Spacing.x3)
+
+                if isSelected {
+                    Icon("tick-02")
+                        .foregroundColor(Style.Color.composerSend)
+                }
+
+                Color.clear
+                    .frame(width: Style.Layout.entryContentPadding)
             }
             .padding(.vertical, Style.Spacing.x4)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -310,13 +311,6 @@ struct AddToCollectionFullScreenView: View {
                     Color.clear
                         .frame(width: 16)
 
-                    if isSelected {
-                        Icon("tick-02")
-                            .foregroundColor(Style.Color.composerSend)
-                        Color.clear
-                            .frame(width: 8)
-                    }
-
                     VStack(alignment: .leading, spacing: 2) {
                         Text(collection.name)
                             .font(Style.Typography.body())
@@ -328,7 +322,15 @@ struct AddToCollectionFullScreenView: View {
                             .foregroundColor(Style.Color.secondary)
                     }
 
-                    Spacer(minLength: Style.Layout.entryContentPadding)
+                    Spacer(minLength: Style.Spacing.x3)
+
+                    if isSelected {
+                        Icon("tick-02")
+                            .foregroundColor(Style.Color.composerSend)
+                    }
+
+                    Color.clear
+                        .frame(width: Style.Layout.entryContentPadding)
                 }
                 .padding(.vertical, Style.Spacing.x4)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -365,13 +367,6 @@ struct AddToCollectionFullScreenView: View {
                     Color.clear
                         .frame(width: 33)
 
-                    if isSelected {
-                        Icon("tick-02")
-                            .foregroundColor(Style.Color.composerSend)
-                        Color.clear
-                            .frame(width: 8)
-                    }
-
                     VStack(alignment: .leading, spacing: 2) {
                         Text(sub.name)
                             .font(Style.Typography.body())
@@ -383,7 +378,15 @@ struct AddToCollectionFullScreenView: View {
                             .foregroundColor(Style.Color.secondary)
                     }
 
-                    Spacer(minLength: Style.Layout.entryContentPadding)
+                    Spacer(minLength: Style.Spacing.x3)
+
+                    if isSelected {
+                        Icon("tick-02")
+                            .foregroundColor(Style.Color.composerSend)
+                    }
+
+                    Color.clear
+                        .frame(width: Style.Layout.entryContentPadding)
                 }
                 .padding(.vertical, Style.Spacing.x4)
                 .frame(maxWidth: .infinity, alignment: .leading)

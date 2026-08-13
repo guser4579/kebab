@@ -17,7 +17,7 @@ struct CollectionActionSheetView: View {
     private let sheetTopCornerRadius: CGFloat = 32
     private let actionRowCornerRadius: CGFloat = 16
     private let actionRowSpacing: CGFloat = 8
-    private let sheetPaddingTop: CGFloat = 32
+    private let sheetPaddingTop: CGFloat = 24
     private let sheetPaddingBottom: CGFloat = 40
     private let sheetPaddingHorizontal: CGFloat = 16
     private let actionRowPaddingVertical: CGFloat = 12
@@ -25,6 +25,10 @@ struct CollectionActionSheetView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+            SheetGrabber()
+                .padding(.top, 12)
+                .frame(maxWidth: .infinity)
+
             VStack(alignment: .leading, spacing: actionRowSpacing) {
                 actionRow(
                     title: "Rename",
