@@ -91,7 +91,7 @@ struct EntryRowView: View {
                 }
 
                 if let link = entry.linkAttachment, !entry.isContentHidden {
-                    RichLinkCardView(urlString: link.url, title: link.title, imageURL: link.image_url)
+                    RichLinkCardView(urlString: link.url, title: link.title, imageURL: link.image_url, footerOnlyOpensLink: true)
 
                     Color.clear
                         .frame(height: 12)
