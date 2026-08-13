@@ -6,12 +6,12 @@
 import SwiftUI
 
 /// Bottom sheet opened by tapping a parent-collection chip that has
-/// sub-collections. Mirrors the EntryActionSheetView presentation chrome.
-///
-/// Top group — filter targets: "View all" (parent + subs) and one row per
-/// sub-collection, with a tick on the active target. Tapping the active row
-/// clears the filter (single-select toggle semantics live in the owner).
-/// Bottom group — collection management: new sub-collection, rename, delete.
+/// sub-collections. Selection-first design: a real title (the collection
+/// name), then flat hairline-separated rows — "View all", each sub-collection
+/// (tick on the active scope), and a "New sub-collection" creation row.
+/// Collection management (rename / delete) lives behind the header ellipsis,
+/// which the owner routes to the standard CollectionActionSheetView — flat
+/// list = choosing, blocky rows = acting.
 struct CollectionChipSheetView: View {
 
     let parent: Collection
@@ -20,18 +20,9 @@ struct CollectionChipSheetView: View {
     let onSelectAll: () -> Void
     let onSelectSub: (Collection) -> Void
     let onNewSubCollection: () -> Void
-    let onRename: () -> Void
-    let onDelete: () -> Void
-    let onDismiss: () -> Void
+    let onManage: () -> Void
 
     private let sheetTopCornerRadius: CGFloat = 32
-    private let actionRowCornerRadius: CGFloat = 16
-    private let actionRowSpacing: CGFloat = 8
-    private let sheetPaddingTop: CGFloat = 24
-    private let sheetPaddingBottom: CGFloat = 40
-    private let sheetPaddingHorizontal: CGFloat = 16
-    private let actionRowPaddingVertical: CGFloat = 12
-    private let actionRowPaddingHorizontal: CGFloat = 16
 
     private var isViewAllActive: Bool {
         activeFilter == .all(parentId: parent.id)
@@ -42,21 +33,20 @@ struct CollectionChipSheetView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text(parent.name)
-                .font(Style.Typography.meta())
-                .foregroundColor(Style.Color.secondary)
-                .padding(.horizontal, sheetPaddingHorizontal + actionRowPaddingHorizontal)
-                .padding(.bottom, 12)
+        VStack(spacing: 0) {
+            Capsule()
+                .fill(Style.Color.secondary.opacity(0.4))
+                .frame(width: 36, height: 5)
+                .padding(.top, 12)
 
-            VStack(alignment: .leading, spacing: actionRowSpacing) {
-                selectionRow(
-                    title: "View all",
-                    isSelected: isViewAllActive,
-                    action: { onSelectAll() }
-                )
+            header
+                .padding(.top, 20)
+
+            VStack(spacing: 0) {
+                selectionRow(title: "View all", isSelected: isViewAllActive, action: onSelectAll)
 
                 ForEach(subCollections) { sub in
+                    hairline(leadingInset: Style.Layout.entryContentPadding)
                     selectionRow(
                         title: sub.name,
                         isSelected: isSubActive(sub),
@@ -64,35 +54,13 @@ struct CollectionChipSheetView: View {
                     )
                 }
 
-                Rectangle()
-                    .fill(Style.Color.separator)
-                    .frame(height: 1)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
+                hairline(leadingInset: 0)
 
-                actionRow(
-                    title: "New sub-collection",
-                    iconName: "add-circle",
-                    color: Style.Color.primaryText,
-                    action: { onNewSubCollection() }
-                )
-                actionRow(
-                    title: "Rename",
-                    iconName: "pencil-edit-02",
-                    color: Style.Color.primaryText,
-                    action: { onRename() }
-                )
-                actionRow(
-                    title: "Delete",
-                    iconName: "trash-2",
-                    color: Style.Color.destructive,
-                    action: { onDelete() }
-                )
+                newSubCollectionRow
             }
-            .padding(.horizontal, sheetPaddingHorizontal)
-            .padding(.bottom, sheetPaddingBottom)
+            .padding(.top, 12)
+            .padding(.bottom, 32)
         }
-        .padding(.top, sheetPaddingTop)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Style.Color.background)
         .clipShape(
@@ -114,53 +82,91 @@ struct CollectionChipSheetView: View {
         )
     }
 
+    // MARK: - Header
+
+    private var header: some View {
+        ZStack {
+            Text(parent.name)
+                .font(.custom("DMSans-Medium", size: 16))
+                .foregroundColor(Style.Color.primaryText)
+                .lineLimit(1)
+                .padding(.horizontal, 56)
+
+            HStack {
+                Spacer(minLength: 0)
+
+                Button {
+                    onManage()
+                } label: {
+                    Icon("ellipsis", glyphSize: Style.Icon.glyphSmall)
+                        .foregroundColor(Style.Color.secondary)
+                }
+                .buttonStyle(.plain)
+                // Enlarge hit area without affecting layout (EntryRowView pattern).
+                .padding(10)
+                .contentShape(Rectangle())
+                .padding(-10)
+            }
+            .padding(.horizontal, Style.Spacing.x4)
+        }
+        .frame(height: 24)
+    }
+
+    // MARK: - Rows
+
     private func selectionRow(
         title: String,
         isSelected: Bool,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            HStack {
+            HStack(spacing: 0) {
                 Text(title)
-                    .font(.system(size: 16, weight: .medium))
+                    .font(Style.Typography.body())
                     .foregroundColor(Style.Color.primaryText)
                     .lineLimit(1)
-                Spacer(minLength: 0)
+
+                Spacer(minLength: Style.Spacing.x3)
+
                 if isSelected {
                     Icon("tick-02")
                         .foregroundColor(Style.Color.composerSend)
                 }
             }
-            .padding(.vertical, actionRowPaddingVertical)
-            .padding(.horizontal, actionRowPaddingHorizontal)
+            .padding(.horizontal, Style.Layout.entryContentPadding)
+            .padding(.vertical, Style.Spacing.x4)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Style.Color.composerBackground)
-            .clipShape(RoundedRectangle(cornerRadius: actionRowCornerRadius))
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
 
-    private func actionRow(
-        title: String,
-        iconName: String,
-        color: SwiftUI.Color,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            HStack {
-                Text(title)
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundColor(color)
+    private var newSubCollectionRow: some View {
+        Button(action: onNewSubCollection) {
+            HStack(spacing: Style.Spacing.x3) {
+                Icon("add-circle")
+                    .foregroundColor(Style.Color.primaryText)
+
+                Text("New sub-collection")
+                    .font(Style.Typography.body())
+                    .foregroundColor(Style.Color.primaryText)
+                    .lineLimit(1)
+
                 Spacer(minLength: 0)
-                Icon(iconName)
-                    .foregroundColor(color)
             }
-            .padding(.vertical, actionRowPaddingVertical)
-            .padding(.horizontal, actionRowPaddingHorizontal)
+            .padding(.horizontal, Style.Layout.entryContentPadding)
+            .padding(.vertical, Style.Spacing.x4)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Style.Color.composerBackground)
-            .clipShape(RoundedRectangle(cornerRadius: actionRowCornerRadius))
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
+
+    private func hairline(leadingInset: CGFloat) -> some View {
+        Rectangle()
+            .fill(Style.Color.separator)
+            .frame(height: 1)
+            .frame(maxWidth: .infinity)
+            .padding(.leading, leadingInset)
     }
 }

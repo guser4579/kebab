@@ -26,6 +26,9 @@ struct MainAppView: View {
     // Same two-phase pattern as activeEntryMenuEntry / isEntryActionSheetVisible.
     @State private var chipSheetParent: Collection?
     @State private var isChipSheetVisible = false
+    // Rename/delete action sheet reached via the chip sheet's ellipsis.
+    @State private var chipManageParent: Collection?
+    @State private var isChipManageVisible = false
     // Overlays launched from the chip sheet.
     @State private var renameChipCollection: Collection?
     @State private var isRenameChipVisible = false
@@ -62,6 +65,15 @@ struct MainAppView: View {
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
             chipSheetParent = nil
+        }
+    }
+
+    private func dismissChipManageSheet() {
+        withAnimation(.easeOut(duration: 0.25)) {
+            isChipManageVisible = false
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+            chipManageParent = nil
         }
     }
 
@@ -163,6 +175,11 @@ struct MainAppView: View {
                                         withAnimation(.easeOut(duration: 0.25)) {
                                             isChipSheetVisible = true
                                         }
+                                    }
+                                },
+                                onClearCollectionFilter: {
+                                    withAnimation(Style.Animation.composerState) {
+                                        feedViewModel.activeCollectionFilter = nil
                                     }
                                 }
                             )
@@ -388,9 +405,35 @@ struct MainAppView: View {
                                         }
                                     }
                                 },
-                                onRename: {
+                                onManage: {
                                     dismissChipSheet()
                                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                                        chipManageParent = parent
+                                        withAnimation(.easeOut(duration: 0.25)) {
+                                            isChipManageVisible = true
+                                        }
+                                    }
+                                }
+                            )
+                            .transition(.move(edge: .bottom))
+                        }
+                    }
+                    .ignoresSafeArea(edges: .bottom)
+                }
+            }
+            // Rename/delete action sheet reached via the chip sheet's ellipsis.
+            .overlay(alignment: .bottom) {
+                if let parent = chipManageParent {
+                    ZStack(alignment: .bottom) {
+                        Color.black.opacity(0.4)
+                            .ignoresSafeArea()
+                            .transaction { $0.animation = nil }
+                            .onTapGesture { dismissChipManageSheet() }
+
+                        if isChipManageVisible {
+                            CollectionActionSheetView(
+                                onRename: {
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                                         renameChipCollection = parent
                                         withAnimation(.easeOut(duration: 0.25)) {
                                             isRenameChipVisible = true
@@ -398,7 +441,6 @@ struct MainAppView: View {
                                     }
                                 },
                                 onDelete: {
-                                    dismissChipSheet()
                                     Task {
                                         let ok = await collectionsViewModel.deleteCollection(id: parent.id)
                                         if ok {
@@ -414,7 +456,7 @@ struct MainAppView: View {
                                         }
                                     }
                                 },
-                                onDismiss: { dismissChipSheet() }
+                                onDismiss: { dismissChipManageSheet() }
                             )
                             .transition(.move(edge: .bottom))
                         }

@@ -21,6 +21,8 @@ struct ChipFilterBarView: View {
     let activeCollectionFilter: CollectionFilter?
     let onToggleHasLink: () -> Void
     let onParentTapped: (Collection) -> Void
+    /// Clears the active collection filter (the × on an active chevron chip).
+    let onClearCollectionFilter: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
@@ -39,11 +41,18 @@ struct ChipFilterBarView: View {
                         )
 
                         ForEach(parentCollections) { parent in
+                            let active = isActive(parent)
+                            let hasSubs = !subCollections(parent.id).isEmpty
                             ChipButton(
                                 label: chipLabel(for: parent),
-                                isActive: isActive(parent),
-                                showsChevron: !subCollections(parent.id).isEmpty,
-                                onTap: { onParentTapped(parent) }
+                                isActive: active,
+                                // Chevron chips swap the glyph by state: chevron invites
+                                // opening the sheet; × on an active chip clears the filter
+                                // without relaunching the sheet. Label tap still reopens
+                                // the sheet to switch scope.
+                                trailing: hasSubs ? (active ? .clear : .chevron) : .none,
+                                onTap: { onParentTapped(parent) },
+                                onClearTap: onClearCollectionFilter
                             )
                         }
                     }
@@ -100,32 +109,63 @@ struct ChipFilterBarView: View {
 // MARK: - ChipButton
 
 private struct ChipButton: View {
+
+    enum Trailing {
+        case none
+        /// Sheet affordance on an inactive chevron chip. Part of the main tap target.
+        case chevron
+        /// Visible clear (×) target on an active chevron chip — its own button,
+        /// so clearing never requires reopening the sheet.
+        case clear
+    }
+
     let label: String
     let isActive: Bool
-    var showsChevron: Bool = false
+    var trailing: Trailing = .none
     let onTap: () -> Void
+    var onClearTap: (() -> Void)? = nil
+
+    private var contentColor: SwiftUI.Color {
+        isActive ? Style.Color.primaryText : Style.Color.secondary
+    }
 
     var body: some View {
-        Button(action: { Haptics.lightTap(); onTap() }) {
-            HStack(spacing: 4) {
-                Text(label)
-                    .font(Style.Typography.meta())
-                    .foregroundColor(isActive ? Style.Color.primaryText : Style.Color.secondary)
+        HStack(spacing: 0) {
+            Button(action: { Haptics.lightTap(); onTap() }) {
+                HStack(spacing: 4) {
+                    Text(label)
+                        .font(Style.Typography.meta())
+                        .foregroundColor(contentColor)
 
-                if showsChevron {
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundColor(isActive ? Style.Color.primaryText : Style.Color.secondary)
+                    if trailing == .chevron {
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundColor(contentColor)
+                    }
                 }
+                .padding(.leading, Style.Spacing.x3)
+                .padding(.trailing, trailing == .clear ? 4 : Style.Spacing.x3)
+                .frame(height: 32)
+                .contentShape(Rectangle())
             }
-            .padding(.horizontal, Style.Spacing.x3)
-            .frame(height: 32)
-            .background(
-                Capsule()
-                    .fill(isActive ? Style.Color.composerSend : Style.Color.composerBackground)
-            )
+            .buttonStyle(.plain)
+
+            if trailing == .clear {
+                Button(action: { Haptics.lightTap(); onClearTap?() }) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundColor(contentColor)
+                        .padding(.trailing, Style.Spacing.x3)
+                        .frame(height: 32)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
         }
-        .buttonStyle(.plain)
+        .background(
+            Capsule()
+                .fill(isActive ? Style.Color.composerSend : Style.Color.composerBackground)
+        )
         .animation(Style.Animation.composerState, value: isActive)
     }
 }
