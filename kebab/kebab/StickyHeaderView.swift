@@ -5,24 +5,15 @@
 
 import SwiftUI
 
+/// App header: settings, wordmark, search. The feed/collections tab row was
+/// sunset when the chip bar became the primary way to navigate collections.
 struct StickyHeaderView: View {
 
-    enum Tab: String, CaseIterable, Hashable {
-        case feed
-        case collections
-    }
-
-    @Binding var selectedTab: StickyHeaderView.Tab
     var onSettingsTapped: (() -> Void)?
     var onSearchTapped: (() -> Void)?
-    @Namespace private var tabNamespace
 
-    private let headerTotalHeight: CGFloat = 142
+    private let headerTotalHeight: CGFloat = 101
     private let topBarContentTopOffset: CGFloat = 60
-    private let titleToTabsSpacing: CGFloat = 24
-    private let tabLabelToIndicatorSpacing: CGFloat = 6
-    private let tabIndicatorHeight: CGFloat = 4
-    private let tabIndicatorCornerRadius: CGFloat = 4
 
     var body: some View {
         VStack(spacing: 0) {
@@ -32,9 +23,7 @@ struct StickyHeaderView: View {
             topBar
 
             Color.clear
-                .frame(height: titleToTabsSpacing)
-
-            tabsRow
+                .frame(height: 16)
 
             Rectangle()
                 .fill(Style.Color.separator)
@@ -69,47 +58,5 @@ struct StickyHeaderView: View {
             .padding(.horizontal, Style.Spacing.x4)
         }
         .frame(height: 24)
-    }
-
-    private var tabsRow: some View {
-        HStack(spacing: 0) {
-            ForEach(StickyHeaderView.Tab.allCases, id: \.self) { tab in
-                tabButton(tab)
-            }
-        }
-    }
-
-    private func tabButton(_ tab: StickyHeaderView.Tab) -> some View {
-        Button {
-            withAnimation(.easeOut(duration: 0.25)) {
-                selectedTab = tab
-            }
-        } label: {
-            VStack(spacing: tabLabelToIndicatorSpacing) {
-                Text(tabTitle(tab))
-                    .font(.custom("DMSans-Medium", size: 18))
-                    .foregroundColor(selectedTab == tab ? Color.white : Style.Color.secondary)
-
-                if selectedTab == tab {
-                    RoundedRectangle(cornerRadius: tabIndicatorCornerRadius)
-                        .fill(Style.Color.composerSend)
-                        .frame(height: tabIndicatorHeight)
-                        .matchedGeometryEffect(id: "tabIndicator", in: tabNamespace)
-                } else {
-                    Color.clear
-                        .frame(height: tabIndicatorHeight)
-                }
-            }
-            .fixedSize(horizontal: true, vertical: false)
-        }
-        .buttonStyle(.plain)
-        .frame(maxWidth: .infinity)
-    }
-
-    private func tabTitle(_ tab: StickyHeaderView.Tab) -> String {
-        switch tab {
-        case .feed: return "feed"
-        case .collections: return "collections"
-        }
     }
 }

@@ -18,10 +18,8 @@ struct MainAppView: View {
     @State private var isEntryActionSheetVisible = false
     @State private var fullScreenEditEntry: Entry?
     @State private var isFullScreenEditVisible = false
-    @State private var selectedTab: StickyHeaderView.Tab = .feed
     @State private var isSettingsOpen: Bool = false
     @State private var isSearchActive: Bool = false
-    @State private var isNewCollectionVisible: Bool = false
     @State private var addToCollectionEntry: Entry?
     @State private var isAddToCollectionVisible: Bool = false
     // Chip-sheet presentation (parent-collection chip with sub-collections).
@@ -88,7 +86,6 @@ struct MainAppView: View {
 
                 VStack(spacing: 0) {
                     StickyHeaderView(
-                        selectedTab: $selectedTab,
                         onSettingsTapped: {
                             withAnimation(.easeInOut(duration: 0.28)) {
                                 isSettingsOpen = true
@@ -99,45 +96,29 @@ struct MainAppView: View {
                         }
                     )
 
-                    ZStack {
-                        // Feed tab — isolated into its own child so that
-                        // onScrollGeometryChange state updates don't re-render
-                        // MainAppView (and therefore don't churn the composer).
-                        FeedScrollContent(
-                            feedViewModel: feedViewModel,
-                            selectedTab: selectedTab,
-                            containerHeight: geometry.size.height,
-                            scrollToBottomOnSend: $scrollToBottomOnSend,
-                            onMoreTapped: { entry in
-                                activeEntryMenuEntry = entry
-                                withAnimation(.easeOut(duration: 0.25)) {
-                                    isEntryActionSheetVisible = true
-                                }
-                            },
-                            onResurfaceTapped: { entry in
-                                Task { await feedViewModel.resurfaceEntry(entry: entry) }
-                            },
-                            onPinTapped: { entry in
-                                Task { await feedViewModel.togglePin(entry: entry) }
-                            },
-                            onFireTapped: { entry in
-                                Task { await feedViewModel.fireEntry(entry: entry) }
+                    // Feed — isolated into its own child so that
+                    // onScrollGeometryChange state updates don't re-render
+                    // MainAppView (and therefore don't churn the composer).
+                    FeedScrollContent(
+                        feedViewModel: feedViewModel,
+                        containerHeight: geometry.size.height,
+                        scrollToBottomOnSend: $scrollToBottomOnSend,
+                        onMoreTapped: { entry in
+                            activeEntryMenuEntry = entry
+                            withAnimation(.easeOut(duration: 0.25)) {
+                                isEntryActionSheetVisible = true
                             }
-                        )
-
-                        CollectionsView(
-                            collectionsViewModel: collectionsViewModel,
-                            feedViewModel: feedViewModel,
-                            supabase: supabase,
-                            onNewCollectionTapped: {
-                                withAnimation(.easeOut(duration: 0.25)) {
-                                    isNewCollectionVisible = true
-                                }
-                            }
-                        )
-                        .opacity(selectedTab == .collections ? 1 : 0)
-                        .allowsHitTesting(selectedTab == .collections)
-                    }
+                        },
+                        onResurfaceTapped: { entry in
+                            Task { await feedViewModel.resurfaceEntry(entry: entry) }
+                        },
+                        onPinTapped: { entry in
+                            Task { await feedViewModel.togglePin(entry: entry) }
+                        },
+                        onFireTapped: { entry in
+                            Task { await feedViewModel.fireEntry(entry: entry) }
+                        }
+                    )
                     .frame(maxWidth: .infinity)
                     .background(Style.Color.background)
                     .foregroundColor(Style.Color.primaryText)
@@ -154,8 +135,27 @@ struct MainAppView: View {
                 // node with edges: [] (semantic no-op) vs edges: .bottom is a parameter update, not a
                 // type change, so the ScrollView position survives both open and close.
                 .ignoresSafeArea(.keyboard, edges: isFullScreenEditVisible ? .bottom : [])
+                // Left-edge swipe opens settings ("swipe between screens").
+                // highPriority so a recognized drag defeats the row's
+                // NavigationLink tap (simultaneousGesture fired both, pushing
+                // the entry AND opening settings). Edge gating in onEnded keeps
+                // the no-op cost of unrelated drags at zero.
+                .highPriorityGesture(
+                    DragGesture(minimumDistance: 20)
+                        .onEnded { value in
+                            guard !isSettingsOpen else { return }
+                            let t = value.translation
+                            if value.startLocation.x < 44,
+                               t.width > 60,
+                               abs(t.width) > abs(t.height) {
+                                withAnimation(.easeInOut(duration: 0.28)) {
+                                    isSettingsOpen = true
+                                }
+                            }
+                        }
+                )
                 .safeAreaInset(edge: .bottom) {
-                    if !isSettingsOpen && selectedTab == .feed {
+                    if !isSettingsOpen {
                         VStack(spacing: 0) {
                             ChipFilterBarView(
                                 parentCollections: collectionsViewModel.parentCollections,
@@ -257,6 +257,19 @@ struct MainAppView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .offset(x: isSettingsOpen ? 0 : -UIScreen.main.bounds.width)
                 .animation(.easeInOut(duration: 0.28), value: isSettingsOpen)
+                // Leftward swipe anywhere on settings slides back to the feed.
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 20)
+                        .onEnded { value in
+                            guard isSettingsOpen else { return }
+                            let t = value.translation
+                            if t.width < -60, abs(t.width) > abs(t.height) {
+                                withAnimation(.easeInOut(duration: 0.28)) {
+                                    isSettingsOpen = false
+                                }
+                            }
+                        }
+                )
             }
             .overlay(alignment: .bottom) {
                 if activeEntryMenuEntry != nil {
@@ -355,19 +368,6 @@ struct MainAppView: View {
                 }
             }
             .overlay {
-                if isNewCollectionVisible {
-                    NewCollectionFullScreenView(
-                        collectionsViewModel: collectionsViewModel,
-                        onDismiss: {
-                            withAnimation(.easeOut(duration: 0.25)) {
-                                isNewCollectionVisible = false
-                            }
-                        }
-                    )
-                    .transition(.move(edge: .bottom))
-                }
-            }
-            .overlay {
                 if isAddToCollectionVisible, let entry = addToCollectionEntry {
                     AddToCollectionFullScreenView(
                         entry: entry,
@@ -422,9 +422,22 @@ struct MainAppView: View {
                                     }
                                 },
                                 onManage: {
+                                    // The ellipsis manages the selected scope: the active
+                                    // sub-collection when one is ticked, else the parent.
+                                    // This keeps sub rename/delete reachable now that the
+                                    // Collections tab (and its detail screens) is gone.
+                                    let managed: Collection = {
+                                        if case .single(let id) = feedViewModel.activeCollectionFilter,
+                                           let sub = collectionsViewModel.collections.first(where: {
+                                               $0.id == id && $0.parentId == parent.id
+                                           }) {
+                                            return sub
+                                        }
+                                        return parent
+                                    }()
                                     dismissChipSheet()
                                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                                        chipManageParent = parent
+                                        chipManageParent = managed
                                         withAnimation(.easeOut(duration: 0.25)) {
                                             isChipManageVisible = true
                                         }
@@ -487,6 +500,10 @@ struct MainAppView: View {
                     RenameCollectionFullScreenView(
                         collection: collection,
                         collectionsViewModel: collectionsViewModel,
+                        existingSiblingNames: collection.parentId == nil ? [] :
+                            collectionsViewModel.collections
+                                .filter { $0.parentId == collection.parentId && $0.id != collection.id }
+                                .map { $0.name },
                         onDismiss: {
                             withAnimation(.easeOut(duration: 0.25)) {
                                 isRenameChipVisible = false
@@ -544,7 +561,6 @@ struct MainAppView: View {
 private struct FeedScrollContent: View {
 
     @ObservedObject var feedViewModel: FeedViewModel
-    let selectedTab: StickyHeaderView.Tab
     let containerHeight: CGFloat
     @Binding var scrollToBottomOnSend: Bool
     let onMoreTapped: (Entry) -> Void
@@ -627,7 +643,6 @@ private struct FeedScrollContent: View {
             }
             .overlay(alignment: .bottom) {
                 let shouldShow = fabEnabled
-                    && selectedTab == .feed
                     && scrollDistanceFromBottom > containerHeight
                 Group {
                     if shouldShow {
@@ -651,8 +666,6 @@ private struct FeedScrollContent: View {
                 .animation(.easeInOut(duration: 0.2), value: shouldShow)
             }
         }
-        .opacity(selectedTab == .feed ? 1 : 0)
-        .allowsHitTesting(selectedTab == .feed)
     }
 
     /// Scrolls to the newest entry, then runs a settle pass. The first scroll
