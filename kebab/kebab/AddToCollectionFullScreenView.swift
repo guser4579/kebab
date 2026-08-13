@@ -20,6 +20,7 @@ struct AddToCollectionFullScreenView: View {
     @State private var isConfirming = false
     @State private var confirmError: String?
     @State private var isNewCollectionVisible = false
+    @State private var isNewSubVisible = false
 
     init(
         entry: Entry,
@@ -94,11 +95,12 @@ struct AddToCollectionFullScreenView: View {
                             parentRow(parent)
 
                             let subs = subCollections(for: parent.id)
-                            if expandedCollectionId == parent.id && !subs.isEmpty {
+                            if expandedCollectionId == parent.id {
                                 VStack(spacing: 0) {
-                                    ForEach(Array(subs.enumerated()), id: \.element.id) { idx, sub in
-                                        subRow(sub, isLast: idx == subs.count - 1)
+                                    ForEach(subs) { sub in
+                                        subRow(sub, isLast: false)
                                     }
+                                    newSubCollectionRow
                                 }
                                 .overlay(alignment: .leading) {
                                     Rectangle()
@@ -144,6 +146,26 @@ struct AddToCollectionFullScreenView: View {
                 .transition(.move(edge: .bottom))
             }
         }
+        .overlay {
+            if isNewSubVisible, let parentId = expandedCollectionId {
+                NewCollectionFullScreenView(
+                    collectionsViewModel: collectionsVM,
+                    onDismiss: {
+                        withAnimation(.easeOut(duration: 0.25)) {
+                            isNewSubVisible = false
+                        }
+                    },
+                    title: "New sub-collection",
+                    parentId: parentId,
+                    existingSiblingNames: subCollections(for: parentId).map { $0.name },
+                    onSuccess: { created in
+                        // Auto-select the newly created sub-collection; parent stays expanded.
+                        selectedCollectionId = created.id
+                    }
+                )
+                .transition(.move(edge: .bottom))
+            }
+        }
         .task {
             await collectionsVM.loadCollections()
             if let id = try? await repository.getCollectionIdForEntry(entryId: entry.id) {
@@ -154,11 +176,9 @@ struct AddToCollectionFullScreenView: View {
                         // Sub-collection: expand its parent so the current sub is visible.
                         expandedCollectionId = parentId
                     } else {
-                        // Top-level collection: expand itself so its sub-collections are visible.
-                        let hasSubs = collectionsVM.collections.contains { $0.parentId == current.id }
-                        if hasSubs {
-                            expandedCollectionId = current.id
-                        }
+                        // Top-level collection: expand itself so its sub-collections
+                        // (and the "New sub-collection" row) are visible.
+                        expandedCollectionId = current.id
                     }
                 }
             }
@@ -284,7 +304,7 @@ struct AddToCollectionFullScreenView: View {
         return VStack(spacing: 0) {
             Button {
                 withAnimation(.easeOut(duration: 0.2)) {
-                    handleParentTap(collection, hasSubs: !subs.isEmpty)
+                    handleParentTap(collection)
                 }
             } label: {
                 HStack(spacing: 0) {
@@ -379,17 +399,55 @@ struct AddToCollectionFullScreenView: View {
         }
     }
 
+    // MARK: - New Sub-Collection Row
+
+    /// Trailing row inside an expanded parent. Indented to align with sub rows;
+    /// full-width bottom separator closes the expanded section like the last sub
+    /// row used to.
+    private var newSubCollectionRow: some View {
+        VStack(spacing: 0) {
+            Button {
+                isNewSubVisible = true
+            } label: {
+                HStack(spacing: Style.Spacing.x3) {
+                    Color.clear
+                        .frame(width: 33 - Style.Spacing.x3)
+
+                    Icon("add-circle")
+                        .foregroundColor(Style.Color.primaryText)
+
+                    Text("New sub-collection")
+                        .font(Style.Typography.body())
+                        .foregroundColor(Style.Color.primaryText)
+                        .lineLimit(1)
+
+                    Spacer(minLength: Style.Layout.entryContentPadding)
+                }
+                .padding(.vertical, Style.Spacing.x4)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            Rectangle()
+                .fill(Style.Color.separator)
+                .frame(height: 1)
+                .frame(maxWidth: .infinity)
+        }
+    }
+
     // MARK: - Tap Logic
 
-    private func handleParentTap(_ collection: Collection, hasSubs: Bool) {
+    private func handleParentTap(_ collection: Collection) {
         if selectedCollectionId == collection.id {
             // Already selected → deselect and collapse.
             selectedCollectionId = nil
             expandedCollectionId = nil
         } else {
-            // Select and expand if it has sub-collections; collapse previous.
+            // Select and expand (even with zero subs, so the "New sub-collection"
+            // row is reachable); collapse the previously expanded parent.
             selectedCollectionId = collection.id
-            expandedCollectionId = hasSubs ? collection.id : nil
+            expandedCollectionId = collection.id
         }
     }
 
