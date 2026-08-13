@@ -40,6 +40,10 @@ struct Entry: Identifiable, Sendable, Equatable {
         attachments?.first { $0.attachmentType == .link }
     }
 
+    var imageAttachments: [EntryAttachment] {
+        attachments?.filter { $0.attachmentType == .image } ?? []
+    }
+
     enum CodingKeys: String, CodingKey {
         case id
         case user_id

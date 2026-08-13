@@ -295,6 +295,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = kebab/Info.plist;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_NSCameraUsageDescription = "The camera lets you attach photos to entries.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "The microphone lets you dictate entries with your voice.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Speech recognition turns your voice into entry text, processed on-device when available.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -334,6 +335,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = kebab/Info.plist;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_NSCameraUsageDescription = "The camera lets you attach photos to entries.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "The microphone lets you dictate entries with your voice.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Speech recognition turns your voice into entry text, processed on-device when available.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;

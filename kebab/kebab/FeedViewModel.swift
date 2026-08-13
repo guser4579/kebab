@@ -2,6 +2,7 @@ import Foundation
 import Combine
 import LinkPresentation
 import Supabase
+import UIKit
 
 @MainActor
 final class FeedViewModel: ObservableObject {
@@ -51,11 +52,13 @@ final class FeedViewModel: ObservableObject {
 
     private let repository: EntryRepository
     private let collectionRepository: CollectionRepository
+    private let imageStorage: ImageStorageRepository
     private let supabase: SupabaseClient
 
     init(supabase: SupabaseClient) {
         self.repository = EntryRepository(supabase: supabase)
         self.collectionRepository = CollectionRepository(supabase: supabase)
+        self.imageStorage = ImageStorageRepository(supabase: supabase)
         self.supabase = supabase
     }
 
@@ -75,24 +78,37 @@ final class FeedViewModel: ObservableObject {
     }
 
     /// Returns `true` when the entry was persisted. Callers should restore the
-    /// composer draft on `false` so a failed send never destroys typed text.
+    /// composer draft (text and images) on `false` so a failed send never
+    /// destroys composed content.
+    ///
+    /// Images upload to Storage first; if any upload fails the send fails
+    /// before the entry exists, so restoring the draft is always safe.
     ///
     /// When `collectionId` is non-nil (an active collection filter), the new
     /// entry is assigned to that collection. Assignment is best-effort: if it
     /// fails the entry still exists in the main feed, so the send is not
     /// reported as failed (restoring the draft would duplicate the entry).
     @discardableResult
-    func sendEntry(content: String, collectionId: UUID? = nil) async -> Bool {
+    func sendEntry(content: String, images: [UIImage] = [], collectionId: UUID? = nil) async -> Bool {
         let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return false }
+        guard !trimmed.isEmpty || !images.isEmpty else { return false }
 
         let (cleanedContent, attachment) = Self.extractFirstLink(from: trimmed)
 
         errorMessage = nil
         do {
+            var attachments: [EntryAttachment] = []
+            if !images.isEmpty {
+                let session = try await supabase.auth.session
+                attachments += try await imageStorage.uploadImages(images, userId: session.user.id)
+            }
+            if let attachment {
+                attachments.append(attachment)
+            }
+
             let entryId = try await repository.insertEntry(
                 content: cleanedContent,
-                attachments: attachment.map { [$0] }
+                attachments: attachments.isEmpty ? nil : attachments
             )
             if let collectionId {
                 do {
@@ -108,8 +124,13 @@ final class FeedViewModel: ObservableObject {
             await loadEntries()
 
             if let attachment = attachment, attachment.title == nil {
+                let allAttachments = attachments
                 Task {
-                    await self.enrichLinkMetadata(entryId: entryId, attachment: attachment)
+                    await self.enrichLinkMetadata(
+                        entryId: entryId,
+                        attachment: attachment,
+                        existingAttachments: allAttachments
+                    )
                 }
             }
             return true
@@ -155,7 +176,11 @@ final class FeedViewModel: ObservableObject {
         return (cleaned, attachment)
     }
 
-    private func enrichLinkMetadata(entryId: UUID, attachment: EntryAttachment) async {
+    private func enrichLinkMetadata(
+        entryId: UUID,
+        attachment: EntryAttachment,
+        existingAttachments: [EntryAttachment]
+    ) async {
         guard let url = URL(string: attachment.url) else { return }
 
         // Run title fetch and og:image extraction concurrently.
@@ -175,14 +200,20 @@ final class FeedViewModel: ObservableObject {
             image_url: imageURL
         )
 
+        // Replace only the link element — image attachments on the same entry
+        // must survive enrichment.
+        let updated = existingAttachments.map { existing in
+            (existing.attachmentType == .link && existing.url == attachment.url) ? enriched : existing
+        }
+
         do {
-            try await repository.updateAttachments(entryId: entryId, attachments: [enriched])
+            try await repository.updateAttachments(entryId: entryId, attachments: updated)
             // Patch only this entry in-memory rather than triggering a full feed reload.
             // A full reload is not safe to fire arbitrarily — it replaces the entire entries
             // array and can disrupt scroll position. Patching a single array element causes
             // SwiftUI to re-render only that row, which is safe and minimal.
             entries = entries.map { entry in
-                entry.id == entryId ? entry.withAttachments([enriched]) : entry
+                entry.id == entryId ? entry.withAttachments(updated) : entry
             }
         } catch {
             // Silently ignore — entry keeps its current compact presentation.

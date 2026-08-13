@@ -74,11 +74,20 @@ struct EntryRowView: View {
                 Color.clear
                     .frame(height: 4)
 
+                let hasImages = !entry.imageAttachments.isEmpty && !entry.isContentHidden
+
                 if !entry.content.isEmpty {
                     contentText
 
                     Color.clear
-                        .frame(height: hasLinkCard ? 8 : 12)
+                        .frame(height: (hasLinkCard || hasImages) ? 8 : 12)
+                }
+
+                if hasImages {
+                    EntryImageGridView(attachments: entry.imageAttachments)
+
+                    Color.clear
+                        .frame(height: 12)
                 }
 
                 if let link = entry.linkAttachment, !entry.isContentHidden {
@@ -88,7 +97,7 @@ struct EntryRowView: View {
                         .frame(height: 12)
                 }
 
-                if entry.content.isEmpty && !hasLinkCard {
+                if entry.content.isEmpty && !hasLinkCard && !hasImages {
                     Color.clear
                         .frame(height: 12)
                 }

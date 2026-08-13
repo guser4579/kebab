@@ -368,11 +368,21 @@ struct EntryDetailView: View {
             Color.clear
                 .frame(height: 4)
 
+            let hasImages = !displayedRootEntry.imageAttachments.isEmpty
+                && !displayedRootEntry.isContentHidden
+
             if !displayedRootEntry.content.isEmpty {
                 contentText
 
                 Color.clear
-                    .frame(height: hasLinkCard ? 8 : 12)
+                    .frame(height: (hasLinkCard || hasImages) ? 8 : 12)
+            }
+
+            if hasImages {
+                EntryImageGridView(attachments: displayedRootEntry.imageAttachments)
+
+                Color.clear
+                    .frame(height: 12)
             }
 
             if let link = displayedRootEntry.linkAttachment, !displayedRootEntry.isContentHidden {
@@ -382,7 +392,7 @@ struct EntryDetailView: View {
                     .frame(height: 12)
             }
 
-            if displayedRootEntry.content.isEmpty && !hasLinkCard {
+            if displayedRootEntry.content.isEmpty && !hasLinkCard && !hasImages {
                 Color.clear
                     .frame(height: 12)
             }

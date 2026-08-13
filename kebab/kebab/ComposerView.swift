@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import PhotosUI
 
 // MARK: - NonScrollingTextView
 
@@ -139,17 +140,47 @@ struct ComposerView: View {
     @Binding var text: String
     let maxHeight: CGFloat
     var placeholder: String = "Make an entry"
+    /// Enables the "+" attach menu (main feed composer only — root entries).
+    var allowsAttachments: Bool = false
+    /// Images staged for the next send. Owned by the host so a failed send
+    /// can restore them alongside the text draft.
+    @Binding var attachedImages: [PendingImage]
     let onSent: (String) -> Void
     var onFocus: (() -> Void)?
+
+    init(
+        text: Binding<String>,
+        maxHeight: CGFloat,
+        placeholder: String = "Make an entry",
+        allowsAttachments: Bool = false,
+        attachedImages: Binding<[PendingImage]> = .constant([]),
+        onSent: @escaping (String) -> Void,
+        onFocus: (() -> Void)? = nil
+    ) {
+        self._text = text
+        self.maxHeight = maxHeight
+        self.placeholder = placeholder
+        self.allowsAttachments = allowsAttachments
+        self._attachedImages = attachedImages
+        self.onSent = onSent
+        self.onFocus = onFocus
+    }
 
     @State private var isFocused: Bool = false
     @StateObject private var voice = VoiceTranscriber()
     /// Text present when dictation started; the streaming transcript is
     /// appended after it so dictation never destroys typed text.
     @State private var dictationBaseline: String = ""
+    // Attachment picker presentation
+    @State private var isPhotosPickerPresented = false
+    @State private var isCameraPresented = false
+    @State private var isFileImporterPresented = false
+    @State private var photoSelection: [PhotosPickerItem] = []
+
+    private let maxImages = 4
 
     private var hasContent: Bool {
-        !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachedImages.isEmpty
     }
 
     private let composerOuterPadding:    CGFloat = Style.Spacing.x4
@@ -158,13 +189,26 @@ struct ComposerView: View {
     private let buttonSize:              CGFloat = 36
 
     var body: some View {
-        HStack(alignment: .bottom, spacing: 0) {
-            textArea
-            micButton
-                .padding(.bottom, buttonInset)
-            sendButtonColumn
-                .padding(.leading, 4)
-                .padding(.trailing, buttonInset)
+        VStack(alignment: .leading, spacing: 0) {
+            if !attachedImages.isEmpty {
+                thumbnailStrip
+                    .padding(.top, 10)
+                    .padding(.horizontal, 12)
+            }
+
+            HStack(alignment: .bottom, spacing: 0) {
+                if allowsAttachments {
+                    attachMenu
+                        .padding(.leading, 4)
+                        .padding(.bottom, buttonInset)
+                }
+                textArea
+                micButton
+                    .padding(.bottom, buttonInset)
+                sendButtonColumn
+                    .padding(.leading, 4)
+                    .padding(.trailing, buttonInset)
+            }
         }
         // Liquid Glass capsule: feed content scrolls visibly behind the
         // composer. The subtle tint keeps placeholder/text contrast on the
@@ -193,6 +237,49 @@ struct ComposerView: View {
         } message: {
             Text("Speech recognition isn\u{2019}t available right now. Try again in a moment.")
         }
+        .photosPicker(
+            isPresented: $isPhotosPickerPresented,
+            selection: $photoSelection,
+            maxSelectionCount: max(1, maxImages - attachedImages.count),
+            matching: .images
+        )
+        .onChange(of: photoSelection) { _, items in
+            guard !items.isEmpty else { return }
+            Task {
+                for item in items {
+                    guard attachedImages.count < maxImages else { break }
+                    if let data = try? await item.loadTransferable(type: Data.self),
+                       let image = UIImage(data: data) {
+                        attachedImages.append(PendingImage(image: image))
+                    }
+                }
+                photoSelection = []
+            }
+        }
+        .fullScreenCover(isPresented: $isCameraPresented) {
+            CameraPicker { image in
+                if attachedImages.count < maxImages {
+                    attachedImages.append(PendingImage(image: image))
+                }
+            }
+            .ignoresSafeArea()
+        }
+        .fileImporter(
+            isPresented: $isFileImporterPresented,
+            allowedContentTypes: [.image],
+            allowsMultipleSelection: true
+        ) { result in
+            guard case .success(let urls) = result else { return }
+            for url in urls {
+                guard attachedImages.count < maxImages else { break }
+                let scoped = url.startAccessingSecurityScopedResource()
+                defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+                if let data = try? Data(contentsOf: url),
+                   let image = UIImage(data: data) {
+                    attachedImages.append(PendingImage(image: image))
+                }
+            }
+        }
     }
 
     // Text input area — ZStack holds the placeholder overlay and the live text view.
@@ -220,6 +307,64 @@ struct ComposerView: View {
             .frame(maxWidth: .infinity)
         }
         .frame(maxWidth: .infinity)
+    }
+
+    // "+" attach menu — Camera / Photos / Files, capped at four images.
+    private var attachMenu: some View {
+        Menu {
+            Button {
+                isCameraPresented = true
+            } label: {
+                Label("Camera", systemImage: "camera")
+            }
+            Button {
+                isPhotosPickerPresented = true
+            } label: {
+                Label("Photos", systemImage: "photo.on.rectangle")
+            }
+            Button {
+                isFileImporterPresented = true
+            } label: {
+                Label("Files", systemImage: "folder")
+            }
+        } label: {
+            Image(systemName: "plus")
+                .font(.system(size: 17, weight: .medium))
+                .foregroundColor(
+                    attachedImages.count >= maxImages
+                        ? Style.Color.secondary.opacity(0.35)
+                        : Style.Color.secondary
+                )
+                .frame(width: buttonSize, height: buttonSize)
+                .contentShape(Circle())
+        }
+        .disabled(attachedImages.count >= maxImages)
+    }
+
+    // Staged image thumbnails with per-image remove.
+    private var thumbnailStrip: some View {
+        HStack(spacing: 8) {
+            ForEach(attachedImages) { pending in
+                Image(uiImage: pending.image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 56, height: 56)
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .overlay(alignment: .topTrailing) {
+                        Button {
+                            Haptics.lightTap()
+                            attachedImages.removeAll { $0.id == pending.id }
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: 16))
+                                .foregroundStyle(.white, .black.opacity(0.6))
+                                .padding(2)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+            }
+        }
     }
 
     // Mic button — dictation toggle. While recording the glyph becomes an
@@ -287,7 +432,9 @@ struct ComposerView: View {
             voice.stop()
         }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
+        // Images alone are sendable; the host reads attachedImages itself
+        // (and clears them) inside onSent.
+        guard !trimmed.isEmpty || !attachedImages.isEmpty else { return }
         onSent(trimmed)
         text = ""
         // Height resets automatically: updateUIView clears the UITextView text,

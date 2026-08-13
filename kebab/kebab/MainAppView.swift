@@ -12,6 +12,8 @@ struct MainAppView: View {
     @StateObject private var collectionsViewModel: CollectionsViewModel
     @State private var composerText: String =
         UserDefaults.standard.string(forKey: MainAppView.feedDraftKey) ?? ""
+    /// Images staged in the feed composer (in-memory only; restored on failed send).
+    @State private var composerImages: [PendingImage] = []
     @State private var activeEntryMenuEntry: Entry?
     @State private var isEntryActionSheetVisible = false
     @State private var fullScreenEditEntry: Entry?
@@ -189,14 +191,19 @@ struct MainAppView: View {
                                 text: $composerText,
                                 maxHeight: geometry.size.height * Style.Layout.composerMaxHeightFraction,
                                 placeholder: composerPlaceholder,
+                                allowsAttachments: true,
+                                attachedImages: $composerImages,
                                 onSent: { content in
                                     scrollToBottomOnSend = true
                                     // Active collection filter targets the composer: the new
                                     // entry lands in the filtered collection.
                                     let targetId = feedViewModel.activeCollectionFilter?.targetCollectionId
+                                    let images = composerImages
+                                    composerImages = []
                                     Task {
                                         let sent = await feedViewModel.sendEntry(
                                             content: content,
+                                            images: images.map(\.image),
                                             collectionId: targetId
                                         )
                                         if sent, targetId != nil {
@@ -205,10 +212,13 @@ struct MainAppView: View {
                                         }
                                         if !sent {
                                             // Restore the draft so a failed send never destroys
-                                            // typed text — but only into an empty composer, so a
-                                            // message the user has already started is not stomped.
+                                            // composed content — but only into an empty composer,
+                                            // so a message the user has already started isn't stomped.
                                             if composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                                                 composerText = content
+                                            }
+                                            if composerImages.isEmpty {
+                                                composerImages = images
                                             }
                                             Haptics.destructiveTap()
                                         }
