@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct AuthView: View {
 
@@ -10,6 +11,15 @@ struct AuthView: View {
 
     @ObservedObject var viewModel: AuthViewModel
     @State private var flow: AuthFlow = .welcome
+    /// Tracks keyboard presence so bottom CTAs can sit close above the keyboard
+    /// (contemporary ~12pt) while keeping a comfortable 40pt resting position
+    /// when no keyboard is shown.
+    @State private var isKeyboardVisible = false
+    @FocusState private var isCodeFocused: Bool
+
+    private var bottomButtonPadding: CGFloat {
+        isKeyboardVisible ? 12 : 40
+    }
 
     var body: some View {
         ZStack {
@@ -45,6 +55,12 @@ struct AuthView: View {
                     .ignoresSafeArea(.container, edges: .top)
                     .allowsHitTesting(false)
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
+            withAnimation(.easeOut(duration: 0.25)) { isKeyboardVisible = true }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+            withAnimation(.easeOut(duration: 0.25)) { isKeyboardVisible = false }
         }
     }
 
@@ -159,7 +175,7 @@ struct AuthView: View {
             .frame(maxWidth: .infinity)
             .background(.white, in: Capsule())
             .disabled(viewModel.isLoading)
-            .padding(.bottom, 40)
+            .padding(.bottom, bottomButtonPadding)
         }
         .ignoresSafeArea(.container, edges: .bottom)
     }
@@ -284,31 +300,71 @@ struct AuthView: View {
                 .foregroundColor(.white)
                 .padding(.top, 28)
             }
-            .padding(.bottom, 40)
+            .padding(.bottom, bottomButtonPadding)
         }
         .ignoresSafeArea(.container, edges: .bottom)
     }
 
+    // Six digit boxes rendered over a single invisible full-width TextField.
+    // The TextField owns the real input: it keeps the number pad, backspace
+    // behavior, and — critically — keyboard OTP autofill via .oneTimeCode,
+    // which custom per-digit inputs tend to break. The boxes are display-only
+    // (allowsHitTesting(false)) so every tap lands on the field.
     private var codeField: some View {
         ZStack {
-            Capsule()
-                .fill(Style.Color.composerBackground)
-                .frame(height: Style.Layout.composerSingleLineHeight)
-
-            if viewModel.code.isEmpty {
-                Text("Enter code")
-                    .font(Style.Typography.composerPlaceholder())
-                    .foregroundColor(Style.Color.secondary)
-            }
-
             TextField("", text: $viewModel.code)
-                .font(Style.Typography.composerText())
-                .foregroundColor(Style.Color.primaryText)
                 .keyboardType(.numberPad)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, Style.Spacing.composerPaddingLeft)
-                .frame(height: Style.Layout.composerSingleLineHeight)
+                .textContentType(.oneTimeCode)
+                .foregroundColor(.clear)
+                .tint(.clear)
+                .frame(height: 56)
+                .frame(maxWidth: .infinity)
+                .opacity(0.05)
+                .focused($isCodeFocused)
+
+            HStack(spacing: 8) {
+                ForEach(0..<6, id: \.self) { index in
+                    digitBox(at: index)
+                }
+            }
+            .allowsHitTesting(false)
         }
+        .onAppear {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                isCodeFocused = true
+            }
+        }
+        .onChange(of: viewModel.code) { _, newValue in
+            let filtered = String(newValue.filter(\.isNumber).prefix(6))
+            if filtered != newValue {
+                viewModel.code = filtered
+                return
+            }
+            // Auto-submit once the sixth digit lands (typed or autofilled).
+            if filtered.count == 6 && !viewModel.isLoading {
+                Task { await viewModel.verifyOTP() }
+            }
+        }
+    }
+
+    private func digitBox(at index: Int) -> some View {
+        let digits = Array(viewModel.code)
+        let isCurrent = isCodeFocused && index == min(digits.count, 5)
+        return Text(index < digits.count ? String(digits[index]) : "")
+            .font(.custom("DMSans-Medium", size: 24))
+            .foregroundColor(Style.Color.primaryText)
+            .frame(width: 48, height: 56)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Style.Color.composerBackground)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(
+                        isCurrent ? Style.Color.composerSend : Style.Color.separator,
+                        lineWidth: 1
+                    )
+            )
     }
 
     // MARK: - Shared
