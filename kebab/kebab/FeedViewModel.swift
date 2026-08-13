@@ -3,6 +3,7 @@ import Combine
 import LinkPresentation
 import Supabase
 import UIKit
+import Network
 
 @MainActor
 final class FeedViewModel: ObservableObject {
@@ -11,6 +12,8 @@ final class FeedViewModel: ObservableObject {
     @Published var isLoading: Bool = false
     @Published var hasCompletedInitialLoad: Bool = false
     @Published var errorMessage: String?
+    /// Entries composed on-device that haven't reached the server yet.
+    @Published var pendingEntries: [PendingEntry] = []
     /// Independent toggle; combines with any collection filter.
     @Published var hasLinkFilterActive: Bool = false
     /// Single-select collection scope. Also drives composer targeting: while
@@ -26,7 +29,8 @@ final class FeedViewModel: ObservableObject {
                .sorted { $0.pinned_at! > $1.pinned_at! }
     }
 
-    /// Feed entries with active filters applied. Views should consume this instead of feedEntries.
+    /// Feed entries with active filters applied, followed by any not-yet-synced
+    /// pending entries. Views should consume this instead of feedEntries.
     var filteredFeedEntries: [Entry] {
         var result = feedEntries
         if hasLinkFilterActive {
@@ -42,7 +46,62 @@ final class FeedViewModel: ObservableObject {
         case nil:
             break
         }
-        return result
+
+        let pendingDisplay = pendingEntries.compactMap { pending -> Entry? in
+            // Pending entries have no parsed link yet.
+            if hasLinkFilterActive { return nil }
+            switch activeCollectionFilter {
+            case .all(let parentId):
+                guard pending.collectionId == parentId else { return nil }
+            case .single(let id):
+                guard pending.collectionId == id else { return nil }
+            case nil:
+                break
+            }
+            return displayEntry(for: pending)
+        }
+        return result + pendingDisplay
+    }
+
+    /// Combined count the feed's scroll logic watches — pending entries are
+    /// part of the visible list.
+    var totalDisplayCount: Int {
+        entries.count + pendingEntries.count
+    }
+
+    /// Maps an outbox item to a display-only Entry, with file:// image
+    /// attachments so offline photos render at full parity.
+    private func displayEntry(for pending: PendingEntry) -> Entry {
+        let imageAttachments = pending.imageFilenames.map { filename in
+            EntryAttachment(
+                type: "image",
+                url: outbox.imageURL(for: filename).absoluteString,
+                title: nil,
+                favicon_url: nil,
+                image_url: nil
+            )
+        }
+        return Entry(
+            id: pending.id,
+            user_id: entries.first?.user_id ?? pending.id,
+            parent_id: nil,
+            root_id: nil,
+            depth: 0,
+            content: pending.content,
+            created_at: pending.createdAt,
+            pinned_at: nil,
+            isContentHidden: false,
+            comment_count: nil,
+            resurface_count: 0,
+            fire_count: 0,
+            attachments: imageAttachments.isEmpty ? nil : imageAttachments,
+            collection_id: pending.collectionId,
+            collection_name: nil,
+            collection_parent_id: nil,
+            collection_parent_name: nil,
+            isPending: true,
+            pendingFailed: pending.failed
+        )
     }
 
     /// Sets the collection filter, or clears it when `filter` is already active.
@@ -54,12 +113,31 @@ final class FeedViewModel: ObservableObject {
     private let collectionRepository: CollectionRepository
     private let imageStorage: ImageStorageRepository
     private let supabase: SupabaseClient
+    private let outbox = OutboxStore()
+    private let pathMonitor = NWPathMonitor()
+    private var isFlushing = false
 
     init(supabase: SupabaseClient) {
         self.repository = EntryRepository(supabase: supabase)
         self.collectionRepository = CollectionRepository(supabase: supabase)
         self.imageStorage = ImageStorageRepository(supabase: supabase)
         self.supabase = supabase
+
+        // Offline read layer: open instantly on the last-known feed.
+        entries = LocalStore.load([Entry].self, from: "feed") ?? []
+        hasCompletedInitialLoad = !entries.isEmpty
+        pendingEntries = outbox.loadAll()
+
+        // Flush the outbox whenever connectivity (re)appears — including the
+        // initial callback at launch, which drains anything left over from a
+        // previous session.
+        pathMonitor.pathUpdateHandler = { [weak self] path in
+            guard path.status == .satisfied else { return }
+            Task { @MainActor [weak self] in
+                await self?.flushOutbox()
+            }
+        }
+        pathMonitor.start(queue: DispatchQueue(label: "kebab.connectivity"))
     }
 
     func loadEntries() async {
@@ -72,72 +150,141 @@ final class FeedViewModel: ObservableObject {
 
         do {
             entries = try await repository.fetchRootEntries()
+            LocalStore.save(entries, as: "feed")
         } catch {
+            // Offline or failed refresh: keep showing the cached feed.
             errorMessage = error.localizedDescription
         }
     }
 
-    /// Returns `true` when the entry was persisted. Callers should restore the
-    /// composer draft (text and images) on `false` so a failed send never
-    /// destroys composed content.
-    ///
-    /// Images upload to Storage first; if any upload fails the send fails
-    /// before the entry exists, so restoring the draft is always safe.
-    ///
-    /// When `collectionId` is non-nil (an active collection filter), the new
-    /// entry is assigned to that collection. Assignment is best-effort: if it
-    /// fails the entry still exists in the main feed, so the send is not
-    /// reported as failed (restoring the draft would duplicate the entry).
+    // MARK: - Send (queue-then-flush)
+
+    /// Stages the entry in the on-disk outbox and kicks a sync. The send
+    /// always succeeds locally — the entry appears in the feed immediately
+    /// with a pending mark, and delivery happens whenever connectivity
+    /// allows. Returns `false` only if the outbox itself can't write (disk
+    /// full), in which case the caller restores the draft.
     @discardableResult
-    func sendEntry(content: String, images: [UIImage] = [], collectionId: UUID? = nil) async -> Bool {
+    func queueEntry(content: String, images: [UIImage] = [], collectionId: UUID? = nil) -> Bool {
         let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty || !images.isEmpty else { return false }
 
-        let (cleanedContent, attachment) = Self.extractFirstLink(from: trimmed)
-
-        errorMessage = nil
         do {
-            var attachments: [EntryAttachment] = []
-            if !images.isEmpty {
-                let session = try await supabase.auth.session
-                attachments += try await imageStorage.uploadImages(images, userId: session.user.id)
-            }
-            if let attachment {
-                attachments.append(attachment)
-            }
-
-            let entryId = try await repository.insertEntry(
-                content: cleanedContent,
-                attachments: attachments.isEmpty ? nil : attachments
+            let pending = try outbox.enqueue(
+                content: trimmed,
+                images: images,
+                collectionId: collectionId
             )
-            if let collectionId {
-                do {
-                    try await collectionRepository.addEntryToCollection(
-                        entryId: entryId,
-                        collectionId: collectionId
-                    )
-                } catch {
-                    print("Failed to add new entry to collection:", error)
-                }
-            }
+            pendingEntries.append(pending)
             Haptics.mediumTap()
-            await loadEntries()
-
-            if let attachment = attachment, attachment.title == nil {
-                let allAttachments = attachments
-                Task {
-                    await self.enrichLinkMetadata(
-                        entryId: entryId,
-                        attachment: attachment,
-                        existingAttachments: allAttachments
-                    )
-                }
-            }
+            kickFlush()
             return true
         } catch {
             errorMessage = error.localizedDescription
             return false
         }
+    }
+
+    func kickFlush() {
+        Task { await flushOutbox() }
+    }
+
+    /// Drains the outbox oldest-first. Transport errors (offline) stop the
+    /// pass — the path monitor retries later. Server rejections count against
+    /// the entry; after repeated rejections it's marked failed and surfaces
+    /// the warning state instead of silently retrying forever.
+    func flushOutbox() async {
+        guard !isFlushing, pendingEntries.contains(where: { !$0.failed }) else { return }
+        isFlushing = true
+        defer { isFlushing = false }
+
+        var syncedAny = false
+
+        for pending in pendingEntries.filter({ !$0.failed }) {
+            do {
+                var attachments: [EntryAttachment] = []
+                let images = outbox.loadImages(for: pending)
+                if !images.isEmpty {
+                    let session = try await supabase.auth.session
+                    attachments += try await imageStorage.uploadImages(images, userId: session.user.id)
+                }
+                let (cleanedContent, link) = Self.extractFirstLink(from: pending.content)
+                if let link {
+                    attachments.append(link)
+                }
+
+                do {
+                    try await repository.insertEntry(
+                        id: pending.id,
+                        content: cleanedContent,
+                        attachments: attachments.isEmpty ? nil : attachments
+                    )
+                } catch where Self.isDuplicateKey(error) {
+                    // A previous attempt landed before we could confirm it —
+                    // the client-generated id makes this safely idempotent.
+                }
+
+                if let collectionId = pending.collectionId {
+                    try? await collectionRepository.addEntryToCollection(
+                        entryId: pending.id,
+                        collectionId: collectionId
+                    )
+                }
+
+                if let link, link.title == nil {
+                    let allAttachments = attachments
+                    let entryId = pending.id
+                    Task {
+                        await self.enrichLinkMetadata(
+                            entryId: entryId,
+                            attachment: link,
+                            existingAttachments: allAttachments
+                        )
+                    }
+                }
+
+                outbox.remove(pending)
+                pendingEntries.removeAll { $0.id == pending.id }
+                syncedAny = true
+            } catch let error as URLError {
+                // Offline / transport failure: stop the whole pass quietly.
+                _ = error
+                break
+            } catch {
+                var updated = pending
+                updated.attempts += 1
+                if updated.attempts >= 3 {
+                    updated.failed = true
+                }
+                outbox.update(updated)
+                pendingEntries = pendingEntries.map { $0.id == updated.id ? updated : $0 }
+            }
+        }
+
+        if syncedAny {
+            await loadEntries()
+        }
+    }
+
+    /// Clears the failure state and tries again (user tapped "Try again").
+    func retryPending(id: UUID) {
+        guard var pending = pendingEntries.first(where: { $0.id == id }) else { return }
+        pending.attempts = 0
+        pending.failed = false
+        outbox.update(pending)
+        pendingEntries = pendingEntries.map { $0.id == id ? pending : $0 }
+        kickFlush()
+    }
+
+    /// Removes a queued entry entirely (user tapped "Discard").
+    func discardPending(id: UUID) {
+        guard let pending = pendingEntries.first(where: { $0.id == id }) else { return }
+        outbox.remove(pending)
+        pendingEntries.removeAll { $0.id == id }
+    }
+
+    private static func isDuplicateKey(_ error: Error) -> Bool {
+        (error as? PostgrestError)?.code == "23505"
     }
 
     private static func extractFirstLink(from text: String) -> (content: String, attachment: EntryAttachment?) {

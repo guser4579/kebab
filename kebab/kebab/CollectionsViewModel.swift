@@ -14,6 +14,10 @@ final class CollectionsViewModel: ObservableObject {
 
     init(supabase: SupabaseClient) {
         self.repository = CollectionRepository(supabase: supabase)
+        // Offline read layer: chips and pickers render instantly from the
+        // last-known collections list.
+        collections = LocalStore.load([Collection].self, from: "collections") ?? []
+        hasCompletedInitialLoad = !collections.isEmpty
     }
 
     // MARK: - Computed helpers
@@ -45,7 +49,9 @@ final class CollectionsViewModel: ObservableObject {
 
         do {
             collections = try await repository.getMyCollections()
+            LocalStore.save(collections, as: "collections")
         } catch {
+            // Offline or failed refresh: keep showing the cached list.
             errorMessage = error.localizedDescription
         }
     }

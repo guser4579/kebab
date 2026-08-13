@@ -40,13 +40,16 @@ final class EntryRepository {
         return entries.filter { $0.parent_id != nil }
     }
 
+    /// `id` lets the outbox supply a client-generated entry id so retries are
+    /// idempotent — a duplicate-key rejection means a prior attempt landed.
     @discardableResult
-    func insertEntry(content: String, attachments: [EntryAttachment]? = nil) async throws -> UUID {
+    func insertEntry(id: UUID? = nil, content: String, attachments: [EntryAttachment]? = nil) async throws -> UUID {
         do {
             let session = try await supabase.auth.session
             let userId = session.user.id
 
             let payload = InsertEntryPayload(
+                id: id,
                 user_id: userId,
                 parent_id: nil,
                 root_id: nil,
@@ -151,11 +154,28 @@ final class EntryRepository {
     }
 
     private struct InsertEntryPayload: Encodable {
+        let id: UUID?
         let user_id: UUID
         let parent_id: UUID?
         let root_id: UUID?
         let content: String
         let attachments: [EntryAttachment]?
+
+        // encodeIfPresent for id: encoding an explicit null would override the
+        // column default and violate the primary key.
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encodeIfPresent(id, forKey: .id)
+            try container.encode(user_id, forKey: .user_id)
+            try container.encode(parent_id, forKey: .parent_id)
+            try container.encode(root_id, forKey: .root_id)
+            try container.encode(content, forKey: .content)
+            try container.encode(attachments, forKey: .attachments)
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case id, user_id, parent_id, root_id, content, attachments
+        }
     }
 
     private struct InsertCommentPayload: Encodable {

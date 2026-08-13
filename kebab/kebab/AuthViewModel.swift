@@ -31,9 +31,19 @@ final class AuthViewModel: ObservableObject {
             currentUserEmail = session.user.email
             isAuthenticated = true
         } catch {
-            isAuthenticated = false
-            currentUserId = nil
-            currentUserEmail = nil
+            // Offline durability: a transport failure (no signal, token refresh
+            // unreachable) must NOT present the login screen when a locally
+            // stored session exists — the cached feed should appear and tokens
+            // refresh whenever connectivity returns.
+            if let localSession = supabase.auth.currentSession {
+                currentUserId = localSession.user.id
+                currentUserEmail = localSession.user.email
+                isAuthenticated = true
+            } else {
+                isAuthenticated = false
+                currentUserId = nil
+                currentUserEmail = nil
+            }
         }
     }
 

@@ -49,7 +49,7 @@ final class ImageStorageRepository {
         return attachments
     }
 
-    private static func jpegData(
+    static func jpegData(
         from image: UIImage,
         maxDimension: CGFloat = 2048,
         quality: CGFloat = 0.8

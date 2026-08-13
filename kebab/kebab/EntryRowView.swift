@@ -17,6 +17,9 @@ struct EntryRowView: View {
     var onResurfaceTapped: (() -> Void)?
     var onPinTapped: (() -> Void)?
     var onFireTapped: (() -> Void)?
+    /// Tapping the warning glyph on a pending entry that permanently failed
+    /// to sync (Retry / Discard alert lives in the host).
+    var onPendingWarningTapped: (() -> Void)? = nil
     /// Passed through to EntryDetailView when the entry is opened from collection context.
     var onRemoveFromCollection: (() async -> Void)? = nil
 
@@ -52,7 +55,8 @@ struct EntryRowView: View {
 
     private var entryContent: some View {
         ZStack(alignment: .leading) {
-            if let feedViewModel = feedViewModel {
+            // Pending entries have no server thread yet — no detail navigation.
+            if let feedViewModel = feedViewModel, !entry.isPending {
                 NavigationLink(destination: EntryDetailView(
                     entry: entry,
                     feedViewModel: feedViewModel,
@@ -102,7 +106,9 @@ struct EntryRowView: View {
                         .frame(height: 12)
                 }
 
-                actionRow
+                if !entry.isPending {
+                    actionRow
+                }
 
                 Color.clear
                     .frame(height: 8)
@@ -126,6 +132,30 @@ struct EntryRowView: View {
                 Text(Style.Timestamp.relative(for: entry.created_at, relativeTo: context.date))
                     .font(Style.Typography.meta())
                     .foregroundColor(Style.Color.secondary)
+            }
+
+            // Pending mark: clock while waiting to sync; tappable warning if
+            // the server permanently rejected it. "Indicate the exception,
+            // never the mode" — synced entries show nothing.
+            if entry.isPending {
+                if entry.pendingFailed {
+                    Button {
+                        onPendingWarningTapped?()
+                    } label: {
+                        Image(systemName: "exclamationmark.circle.fill")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(Style.Color.destructive)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(8)
+                    .contentShape(Rectangle())
+                    .padding(-8)
+                } else {
+                    Image(systemName: "clock")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(Style.Color.secondary)
+                        .padding(.leading, 2)
+                }
             }
 
             if entry.resurface_count > 0 {
@@ -162,19 +192,22 @@ struct EntryRowView: View {
 
             Spacer(minLength: 0)
 
-            Button {
-                UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-                onMoreTapped?()
-            } label: {
-                Icon("ellipsis", glyphSize: Style.Icon.glyphSmall)
-                    .foregroundColor(Style.Color.secondary)
+            // Pending entries can't be edited/deleted server-side yet.
+            if !entry.isPending {
+                Button {
+                    UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                    onMoreTapped?()
+                } label: {
+                    Icon("ellipsis", glyphSize: Style.Icon.glyphSmall)
+                        .foregroundColor(Style.Color.secondary)
+                }
+                // Expand the hit-test region by 10 pt in each direction without touching layout:
+                // .padding(10) enlarges the frame that contentShape registers against, then
+                // .padding(-10) shrinks the layout contribution back to the icon's natural size.
+                .padding(10)
+                .contentShape(Rectangle())
+                .padding(-10)
             }
-            // Expand the hit-test region by 10 pt in each direction without touching layout:
-            // .padding(10) enlarges the frame that contentShape registers against, then
-            // .padding(-10) shrinks the layout contribution back to the icon's natural size.
-            .padding(10)
-            .contentShape(Rectangle())
-            .padding(-10)
         }
     }
 

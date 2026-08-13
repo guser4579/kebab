@@ -35,6 +35,12 @@ struct Entry: Identifiable, Sendable, Equatable {
     let collection_name: String?
     let collection_parent_id: UUID?
     let collection_parent_name: String?
+    /// True for entries still in the local outbox (composed offline, not yet
+    /// synced). Display-only — never encoded or sent to the server.
+    var isPending: Bool = false
+    /// True when the outbox gave up after repeated server rejections; shows
+    /// the tappable warning glyph.
+    var pendingFailed: Bool = false
 
     var linkAttachment: EntryAttachment? {
         attachments?.first { $0.attachmentType == .link }

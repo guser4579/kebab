@@ -39,6 +39,9 @@ struct MainAppView: View {
     // flag here (not inside FeedScrollContent) lets the onSent closure write it
     // without needing a captured proxy reference.
     @State private var scrollToBottomOnSend = false
+    /// Pending entry whose sync permanently failed; drives the Retry/Discard alert.
+    @State private var pendingWarningId: UUID?
+    @Environment(\.scenePhase) private var scenePhase
 
     let authViewModel: AuthViewModel
 
@@ -117,6 +120,9 @@ struct MainAppView: View {
                         },
                         onFireTapped: { entry in
                             Task { await feedViewModel.fireEntry(entry: entry) }
+                        },
+                        onPendingWarningTapped: { entry in
+                            pendingWarningId = entry.id
                         }
                     )
                     .frame(maxWidth: .infinity)
@@ -205,28 +211,22 @@ struct MainAppView: View {
                                     let targetId = feedViewModel.activeCollectionFilter?.targetCollectionId
                                     let images = composerImages
                                     composerImages = []
-                                    Task {
-                                        let sent = await feedViewModel.sendEntry(
-                                            content: content,
-                                            images: images.map(\.image),
-                                            collectionId: targetId
-                                        )
-                                        if sent, targetId != nil {
-                                            // Refresh item counts shown in the chip sheet.
-                                            await collectionsViewModel.loadCollections()
+                                    // Queue-then-flush: the entry appears immediately with a
+                                    // pending mark and syncs whenever connectivity allows.
+                                    let queued = feedViewModel.queueEntry(
+                                        content: content,
+                                        images: images.map(\.image),
+                                        collectionId: targetId
+                                    )
+                                    if !queued {
+                                        // Outbox write failed (disk full) — restore the draft.
+                                        if composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                            composerText = content
                                         }
-                                        if !sent {
-                                            // Restore the draft so a failed send never destroys
-                                            // composed content — but only into an empty composer,
-                                            // so a message the user has already started isn't stomped.
-                                            if composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                                                composerText = content
-                                            }
-                                            if composerImages.isEmpty {
-                                                composerImages = images
-                                            }
-                                            Haptics.destructiveTap()
+                                        if composerImages.isEmpty {
+                                            composerImages = images
                                         }
+                                        Haptics.destructiveTap()
                                     }
                                 },
                                 onFocus: { }
@@ -553,6 +553,34 @@ struct MainAppView: View {
             .onChange(of: composerText) { _, newValue in
                 UserDefaults.standard.set(newValue, forKey: Self.feedDraftKey)
             }
+            // Returning to the foreground is a natural moment to drain the outbox.
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active {
+                    feedViewModel.kickFlush()
+                }
+            }
+            .alert("Entry couldn\u{2019}t sync", isPresented: Binding(
+                get: { pendingWarningId != nil },
+                set: { if !$0 { pendingWarningId = nil } }
+            )) {
+                Button("Try again") {
+                    if let id = pendingWarningId {
+                        feedViewModel.retryPending(id: id)
+                    }
+                    pendingWarningId = nil
+                }
+                Button("Discard entry", role: .destructive) {
+                    if let id = pendingWarningId {
+                        feedViewModel.discardPending(id: id)
+                    }
+                    pendingWarningId = nil
+                }
+                Button("Cancel", role: .cancel) {
+                    pendingWarningId = nil
+                }
+            } message: {
+                Text("This entry is saved on your phone, but the server rejected it. You can retry or discard it.")
+            }
         }
         }
         // Shared collections model for every screen in this stack (including
@@ -576,6 +604,7 @@ private struct FeedScrollContent: View {
     let onResurfaceTapped: (Entry) -> Void
     let onPinTapped: (Entry) -> Void
     let onFireTapped: (Entry) -> Void
+    let onPendingWarningTapped: (Entry) -> Void
 
     @State private var scrollDistanceFromBottom: CGFloat = 0
     @State private var hasScrolledToBottom = false
@@ -613,6 +642,8 @@ private struct FeedScrollContent: View {
                                 onPinTapped(entry)
                             }, onFireTapped: {
                                 onFireTapped(entry)
+                            }, onPendingWarningTapped: {
+                                onPendingWarningTapped(entry)
                             })
                     }
                 }
@@ -622,8 +653,19 @@ private struct FeedScrollContent: View {
                     .id("feed-bottom")
             }
             .scrollDismissesKeyboard(.interactively)
-            .onChange(of: feedViewModel.entries.count) {
-                if !hasScrolledToBottom && !feedViewModel.entries.isEmpty {
+            // Cached feed is present before the first layout — anchor at the
+            // newest entry on appear (onChange won't fire without a count change).
+            .onAppear {
+                if !hasScrolledToBottom && feedViewModel.totalDisplayCount > 0 {
+                    hasScrolledToBottom = true
+                    scrollToBottom(proxy)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
+                        fabEnabled = true
+                    }
+                }
+            }
+            .onChange(of: feedViewModel.totalDisplayCount) {
+                if !hasScrolledToBottom && feedViewModel.totalDisplayCount > 0 {
                     hasScrolledToBottom = true
                     scrollToBottom(proxy)
                     // Delay FAB eligibility past the settle pass so the scroll
