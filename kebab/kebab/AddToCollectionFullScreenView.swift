@@ -81,6 +81,7 @@ struct AddToCollectionFullScreenView: View {
                             .fill(Style.Color.separator)
                             .frame(height: 1)
                             .frame(maxWidth: .infinity)
+                            .padding(.horizontal, Style.Layout.entryContentPadding)
 
                         if initialCollectionId != nil {
                             noCollectionRow
@@ -89,6 +90,7 @@ struct AddToCollectionFullScreenView: View {
                                 .fill(Style.Color.separator)
                                 .frame(height: 1)
                                 .frame(maxWidth: .infinity)
+                                .padding(.horizontal, Style.Layout.entryContentPadding)
                         }
 
                         ForEach(parentCollections) { parent in
@@ -98,7 +100,7 @@ struct AddToCollectionFullScreenView: View {
                             if expandedCollectionId == parent.id {
                                 VStack(spacing: 0) {
                                     ForEach(subs) { sub in
-                                        subRow(sub, isLast: false)
+                                        subRow(sub)
                                     }
                                     newSubCollectionRow
                                 }
@@ -342,6 +344,7 @@ struct AddToCollectionFullScreenView: View {
                 .fill(Style.Color.separator)
                 .frame(height: 1)
                 .frame(maxWidth: .infinity)
+                .padding(.horizontal, Style.Layout.entryContentPadding)
         }
     }
 
@@ -349,11 +352,9 @@ struct AddToCollectionFullScreenView: View {
 
     /// Indented using the same leading/trailing values as CommentRowView (33pt / 16pt),
     /// with a vertical separator line overlay at 16pt from leading — matching EntryDetailView's
-    /// comment-section line pattern exactly.
-    /// `isLast` controls the separator inset:
-    /// - intermediate rows: indent to the spine (16pt) so the line abuts the vertical thread line
-    /// - last row: full-width separator, matching the parent row style
-    private func subRow(_ sub: Collection, isLast: Bool) -> some View {
+    /// comment-section line pattern exactly. Separators are inset 16pt on both
+    /// sides; the leading inset also makes them abut the vertical spine.
+    private func subRow(_ sub: Collection) -> some View {
         let isSelected = selectedCollectionId == sub.id
 
         return VStack(spacing: 0) {
@@ -397,7 +398,7 @@ struct AddToCollectionFullScreenView: View {
             Rectangle()
                 .fill(Style.Color.separator)
                 .frame(height: 1)
-                .padding(.leading, isLast ? 0 : 16)
+                .padding(.horizontal, Style.Layout.entryContentPadding)
         }
     }
 
@@ -435,6 +436,7 @@ struct AddToCollectionFullScreenView: View {
                 .fill(Style.Color.separator)
                 .frame(height: 1)
                 .frame(maxWidth: .infinity)
+                .padding(.horizontal, Style.Layout.entryContentPadding)
         }
     }
 

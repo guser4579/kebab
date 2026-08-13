@@ -72,6 +72,7 @@ struct CollectionsView: View {
                 .fill(Style.Color.separator)
                 .frame(height: 1)
                 .frame(maxWidth: .infinity)
+                .padding(.horizontal, Style.Layout.entryContentPadding)
         }
     }
 }
@@ -138,6 +139,7 @@ private struct CollectionRowView: View {
                 .fill(Style.Color.separator)
                 .frame(height: 1)
                 .frame(maxWidth: .infinity)
+                .padding(.horizontal, Style.Layout.entryContentPadding)
         }
     }
 }

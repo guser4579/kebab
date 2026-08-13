@@ -101,6 +101,7 @@ struct EntryActionSheetView: View {
             )
             .stroke(Style.Color.separator, lineWidth: 1)
         )
+        .draggableSheet(onDismiss: onDismiss)
     }
 
     private func actionRow(

@@ -413,7 +413,8 @@ struct MainAppView: View {
                                             isChipManageVisible = true
                                         }
                                     }
-                                }
+                                },
+                                onDismiss: { dismissChipSheet() }
                             )
                             .transition(.move(edge: .bottom))
                         }

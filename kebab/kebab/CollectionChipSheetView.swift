@@ -21,6 +21,8 @@ struct CollectionChipSheetView: View {
     let onSelectSub: (Collection) -> Void
     let onNewSubCollection: () -> Void
     let onManage: () -> Void
+    /// Same choreography as the dim-layer tap; drives drag-to-dismiss.
+    let onDismiss: () -> Void
 
     private let sheetTopCornerRadius: CGFloat = 32
 
@@ -44,7 +46,7 @@ struct CollectionChipSheetView: View {
                 selectionRow(title: "View all", isSelected: isViewAllActive, action: onSelectAll)
 
                 ForEach(subCollections) { sub in
-                    hairline(leadingInset: Style.Layout.entryContentPadding)
+                    hairline
                     selectionRow(
                         title: sub.name,
                         isSelected: isSubActive(sub),
@@ -52,7 +54,7 @@ struct CollectionChipSheetView: View {
                     )
                 }
 
-                hairline(leadingInset: 0)
+                hairline
 
                 newSubCollectionRow
             }
@@ -78,6 +80,7 @@ struct CollectionChipSheetView: View {
             )
             .stroke(Style.Color.separator, lineWidth: 1)
         )
+        .draggableSheet(onDismiss: onDismiss)
     }
 
     // MARK: - Header
@@ -160,11 +163,14 @@ struct CollectionChipSheetView: View {
         .buttonStyle(.plain)
     }
 
-    private func hairline(leadingInset: CGFloat) -> some View {
+    // Symmetric 16pt insets: separators between choose-rows never touch the
+    // screen edges (feed-post dividers stay full-bleed — they separate blocks,
+    // not rows).
+    private var hairline: some View {
         Rectangle()
             .fill(Style.Color.separator)
             .frame(height: 1)
             .frame(maxWidth: .infinity)
-            .padding(.leading, leadingInset)
+            .padding(.horizontal, Style.Layout.entryContentPadding)
     }
 }
