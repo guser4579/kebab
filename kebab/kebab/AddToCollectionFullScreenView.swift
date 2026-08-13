@@ -104,13 +104,6 @@ struct AddToCollectionFullScreenView: View {
                                     }
                                     newSubCollectionRow
                                 }
-                                .overlay(alignment: .leading) {
-                                    Rectangle()
-                                        .fill(Style.Color.separator)
-                                        .frame(width: 1)
-                                        .frame(maxHeight: .infinity)
-                                        .padding(.leading, 16)
-                                }
                             }
                         }
                     }
@@ -350,10 +343,10 @@ struct AddToCollectionFullScreenView: View {
 
     // MARK: - Sub-Collection Row
 
-    /// Indented using the same leading/trailing values as CommentRowView (33pt / 16pt),
-    /// with a vertical separator line overlay at 16pt from leading — matching EntryDetailView's
-    /// comment-section line pattern exactly. Separators are inset 16pt on both
-    /// sides; the leading inset also makes them abut the vertical spine.
+    /// Hierarchy is conveyed by indentation alone (40pt vs the parent's 16pt),
+    /// matching the folder-picker convention (Outlook, Apple Mail, Dropbox).
+    /// The vertical spine is deliberately absent — that's comment-thread
+    /// language, not folder-hierarchy language.
     private func subRow(_ sub: Collection) -> some View {
         let isSelected = selectedCollectionId == sub.id
 
@@ -366,7 +359,7 @@ struct AddToCollectionFullScreenView: View {
             } label: {
                 HStack(spacing: 0) {
                     Color.clear
-                        .frame(width: 33)
+                        .frame(width: 40)
 
                     VStack(alignment: .leading, spacing: 2) {
                         Text(sub.name)
@@ -404,9 +397,7 @@ struct AddToCollectionFullScreenView: View {
 
     // MARK: - New Sub-Collection Row
 
-    /// Trailing row inside an expanded parent. Indented to align with sub rows;
-    /// full-width bottom separator closes the expanded section like the last sub
-    /// row used to.
+    /// Trailing row inside an expanded parent, indented to align with sub rows.
     private var newSubCollectionRow: some View {
         VStack(spacing: 0) {
             Button {
@@ -414,7 +405,7 @@ struct AddToCollectionFullScreenView: View {
             } label: {
                 HStack(spacing: Style.Spacing.x3) {
                     Color.clear
-                        .frame(width: 33 - Style.Spacing.x3)
+                        .frame(width: 40 - Style.Spacing.x3)
 
                     Icon("add-circle")
                         .foregroundColor(Style.Color.primaryText)
