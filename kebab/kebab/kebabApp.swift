@@ -37,7 +37,10 @@ struct kebabApp: App {
             RootView(supabase: supabase)
                 .environment(\.supabase, supabase)
                 // Dynamic Style.Color tokens resolve app-wide from this.
-                .preferredColorScheme(appearance == "light" ? .light : .dark)
+                // "system" (nil) follows the device appearance.
+                .preferredColorScheme(
+                    appearance == "system" ? nil : (appearance == "light" ? .light : .dark)
+                )
         }
     }
 }

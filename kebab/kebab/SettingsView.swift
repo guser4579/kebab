@@ -92,29 +92,30 @@ struct SettingsView: View {
         .clipShape(RoundedRectangle(cornerRadius: rowCornerRadius))
     }
 
+    // Appearance: stacked option rows with a trailing tick on the active one —
+    // the app's selection language (flat rows choose, tick marks the choice).
     private var appearanceContainer: some View {
-        HStack {
-            Text("Appearance")
-                .font(Style.Typography.meta())
-                .foregroundColor(Style.Color.secondary)
-
-            Spacer(minLength: 0)
-
-            HStack(spacing: 16) {
-                appearanceOption("Light", value: "light")
-                appearanceOption("Dark", value: "dark")
-            }
+        VStack(alignment: .leading, spacing: 0) {
+            appearanceRow("System", value: "system", symbol: "circle.lefthalf.filled")
+            appearanceDivider
+            appearanceRow("Light", value: "light", symbol: "sun.max")
+            appearanceDivider
+            appearanceRow("Dark", value: "dark", symbol: "moon")
         }
-        .padding(.top, rowPaddingVertical)
-        .padding(.bottom, rowPaddingVertical)
-        .padding(.leading, rowPaddingHorizontal)
-        .padding(.trailing, rowPaddingHorizontal)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Style.Color.composerBackground)
         .clipShape(RoundedRectangle(cornerRadius: rowCornerRadius))
     }
 
-    private func appearanceOption(_ label: String, value: String) -> some View {
+    private var appearanceDivider: some View {
+        Rectangle()
+            .fill(Style.Color.separator)
+            .frame(height: 1)
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, rowPaddingHorizontal)
+    }
+
+    private func appearanceRow(_ label: String, value: String, symbol: String) -> some View {
         Button {
             guard appearance != value else { return }
             Haptics.lightTap()
@@ -122,12 +123,29 @@ struct SettingsView: View {
                 appearance = value
             }
         } label: {
-            Text(label)
-                .font(.custom("DMSans-Medium", size: 14))
-                .foregroundColor(
-                    appearance == value ? Style.Color.primaryText : Style.Color.secondary
-                )
-                .contentShape(Rectangle())
+            HStack(spacing: Style.Spacing.x3) {
+                Image(systemName: symbol)
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundColor(Style.Color.secondary)
+                    .frame(width: Style.Icon.grid)
+
+                Text(label)
+                    .font(Style.Typography.body())
+                    .foregroundColor(Style.Color.primaryText)
+
+                Spacer(minLength: 0)
+
+                if appearance == value {
+                    Icon("tick-02")
+                        .foregroundColor(Style.Color.composerSend)
+                }
+            }
+            .padding(.top, rowPaddingVertical)
+            .padding(.bottom, rowPaddingVertical)
+            .padding(.leading, rowPaddingHorizontal)
+            .padding(.trailing, rowPaddingHorizontal)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
