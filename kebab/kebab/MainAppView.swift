@@ -22,18 +22,22 @@ struct MainAppView: View {
     @State private var isSearchActive: Bool = false
     @State private var addToCollectionEntry: Entry?
     @State private var isAddToCollectionVisible: Bool = false
-    // Chip-sheet presentation (parent-collection chip with sub-collections).
-    // Same two-phase pattern as activeEntryMenuEntry / isEntryActionSheetVisible.
-    @State private var chipSheetParent: Collection?
-    @State private var isChipSheetVisible = false
-    // Rename/delete action sheet reached via the chip sheet's ellipsis.
-    @State private var chipManageParent: Collection?
-    @State private var isChipManageVisible = false
-    // Overlays launched from the chip sheet.
-    @State private var renameChipCollection: Collection?
-    @State private var isRenameChipVisible = false
-    @State private var newSubChipParent: Collection?
-    @State private var isNewSubChipVisible = false
+    // Collections sheet behind the pinned + in the nav bar. Same two-phase
+    // pattern as activeEntryMenuEntry / isEntryActionSheetVisible: `presented`
+    // mounts the overlay, `visible` animates it.
+    @State private var isCollectionsSheetPresented = false
+    @State private var isCollectionsSheetVisible = false
+    /// Full-screen New Collection creation, entered directly from + while All
+    /// is selected (the only relevant action in that state).
+    @State private var isNewCollectionVisible = false
+    /// Full-screen New Sub-collection, launched from the contextual sheet.
+    @State private var newSubParent: Collection?
+    @State private var isNewSubVisible = false
+    /// Full-screen Rename, launched from the contextual sheet.
+    @State private var renameTarget: Collection?
+    @State private var isRenameVisible = false
+    /// Collection awaiting the descriptive delete confirmation alert.
+    @State private var deleteCandidate: Collection?
     // Toggled to true by onSent; the FeedScrollContent child reads and clears it
     // to scroll the feed to the bottom after a new entry appears. Keeping this
     // flag here (not inside FeedScrollContent) lets the onSent closure write it
@@ -62,21 +66,73 @@ struct MainAppView: View {
         return "Add to \(target.name)"
     }
 
-    private func dismissChipSheet() {
-        withAnimation(.easeOut(duration: 0.25)) {
-            isChipSheetVisible = false
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-            chipSheetParent = nil
+    /// Where the feed currently is — decides what the Collections sheet offers.
+    private var collectionsSheetContext: CollectionsSheetContext {
+        switch feedViewModel.activeCollectionFilter {
+        case nil:
+            return .all
+        case .all(let parentId):
+            if let parent = collectionsViewModel.collections.first(where: { $0.id == parentId }) {
+                return .parent(parent)
+            }
+            return .all
+        case .single(let id):
+            if let sub = collectionsViewModel.collections.first(where: { $0.id == id }),
+               let parentId = sub.parentId,
+               let parent = collectionsViewModel.collections.first(where: { $0.id == parentId }) {
+                return .sub(parent: parent, sub: sub)
+            }
+            return .all
         }
     }
 
-    private func dismissChipManageSheet() {
+    /// Name of the collection scope the feed is filtered to; nil while on All.
+    /// Drives the contextual empty state.
+    private var activeScopeName: String? {
+        guard let filter = feedViewModel.activeCollectionFilter else { return nil }
+        return collectionsViewModel.collections
+            .first { $0.id == filter.targetCollectionId }?
+            .name
+    }
+
+    private func dismissCollectionsSheet() {
         withAnimation(.easeOut(duration: 0.25)) {
-            isChipManageVisible = false
+            isCollectionsSheetVisible = false
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-            chipManageParent = nil
+            isCollectionsSheetPresented = false
+        }
+    }
+
+    /// Descriptive delete confirmation: says what happens to the entries,
+    /// never just "Are you sure?".
+    private func deleteMessage(for collection: Collection) -> String {
+        if let parentId = collection.parentId,
+           let parent = collectionsViewModel.collections.first(where: { $0.id == parentId }) {
+            return "Entries in \u{201C}\(collection.name)\u{201D} will move to \u{201C}\(parent.name)\u{201D}."
+        }
+        let hasSubs = !collectionsViewModel.subCollections(for: collection.id).isEmpty
+        return hasSubs
+            ? "Its sub-collections will also be deleted. Entries will move to All entries."
+            : "Entries will move to All entries."
+    }
+
+    private func performDelete(_ collection: Collection) {
+        Task {
+            let parentId = collection.parentId
+            let ok = await collectionsViewModel.deleteCollection(id: collection.id)
+            if ok {
+                withAnimation(Style.Animation.composerState) {
+                    // Deleted sub → land on the parent's aggregate view;
+                    // deleted parent → back to All.
+                    if let parentId {
+                        feedViewModel.activeCollectionFilter = .all(parentId: parentId)
+                    } else {
+                        feedViewModel.activeCollectionFilter = nil
+                    }
+                }
+                await feedViewModel.loadEntries()
+            }
         }
     }
 
@@ -96,6 +152,55 @@ struct MainAppView: View {
                         },
                         onSearchTapped: {
                             isSearchActive = true
+                        },
+                        showsBottomSeparator: false
+                    )
+
+                    CollectionNavBarView(
+                        parentCollections: collectionsViewModel.parentCollections,
+                        subCollections: { collectionsViewModel.subCollections(for: $0) },
+                        activeFilter: feedViewModel.activeCollectionFilter,
+                        parentIdForCollection: { id in
+                            collectionsViewModel.collections.first { $0.id == id }?.parentId
+                        },
+                        onSelectAll: {
+                            withAnimation(Style.Animation.composerState) {
+                                feedViewModel.activeCollectionFilter = nil
+                            }
+                        },
+                        onSelectParent: { parent in
+                            // Tabs don't toggle: re-tapping the selected parent
+                            // stays put (already its aggregate view).
+                            withAnimation(Style.Animation.composerState) {
+                                feedViewModel.activeCollectionFilter = .all(parentId: parent.id)
+                            }
+                        },
+                        onSelectSub: { sub in
+                            // Chips are optional refinements that toggle:
+                            // re-tapping the active one returns to the parent
+                            // aggregate (no explicit "All" control).
+                            withAnimation(Style.Animation.composerState) {
+                                if feedViewModel.activeCollectionFilter == .single(id: sub.id),
+                                   let parentId = sub.parentId {
+                                    feedViewModel.activeCollectionFilter = .all(parentId: parentId)
+                                } else {
+                                    feedViewModel.activeCollectionFilter = .single(id: sub.id)
+                                }
+                            }
+                        },
+                        onPlusTapped: {
+                            // From All the only relevant action is creating a
+                            // collection — go straight to the full-screen flow.
+                            if case .all = collectionsSheetContext {
+                                withAnimation(.easeOut(duration: 0.25)) {
+                                    isNewCollectionVisible = true
+                                }
+                            } else {
+                                isCollectionsSheetPresented = true
+                                withAnimation(.easeOut(duration: 0.25)) {
+                                    isCollectionsSheetVisible = true
+                                }
+                            }
                         }
                     )
 
@@ -105,6 +210,7 @@ struct MainAppView: View {
                     FeedScrollContent(
                         feedViewModel: feedViewModel,
                         containerHeight: geometry.size.height,
+                        emptyScopeName: activeScopeName,
                         scrollToBottomOnSend: $scrollToBottomOnSend,
                         onMoreTapped: { entry in
                             activeEntryMenuEntry = entry
@@ -130,6 +236,11 @@ struct MainAppView: View {
                     .foregroundColor(Style.Color.primaryText)
                     .task {
                         Haptics.prepare()
+                        // Pending (outbox) entries filed into a sub-collection
+                        // must match the parent's aggregate filter too.
+                        feedViewModel.collectionParentResolver = { [weak collectionsViewModel] id in
+                            collectionsViewModel?.collections.first { $0.id == id }?.parentId
+                        }
                         await feedViewModel.loadEntries()
                         await collectionsViewModel.loadCollections()
                     }
@@ -149,12 +260,13 @@ struct MainAppView: View {
                         canBegin: {
                             !isSettingsOpen
                                 && activeEntryMenuEntry == nil
-                                && chipSheetParent == nil
-                                && chipManageParent == nil
+                                && !isCollectionsSheetPresented
+                                && !isNewCollectionVisible
+                                && !isNewSubVisible
+                                && !isRenameVisible
+                                && deleteCandidate == nil
                                 && !isFullScreenEditVisible
                                 && !isAddToCollectionVisible
-                                && !isRenameChipVisible
-                                && !isNewSubChipVisible
                                 // On pushed screens the left edge means "back".
                                 && (PopGestureDelegate.shared.navigationController?.viewControllers.count ?? 1) <= 1
                         },
@@ -167,37 +279,10 @@ struct MainAppView: View {
                 )
                 .safeAreaInset(edge: .bottom) {
                     if !isSettingsOpen {
+                        // Collection navigation moved to the top nav bar; the
+                        // area above the composer stays free for the Tier III
+                        // post-capture actions.
                         VStack(spacing: 0) {
-                            ChipFilterBarView(
-                                parentCollections: collectionsViewModel.parentCollections,
-                                subCollections: { collectionsViewModel.subCollections(for: $0) },
-                                hasLinkActive: feedViewModel.hasLinkFilterActive,
-                                activeCollectionFilter: feedViewModel.activeCollectionFilter,
-                                onToggleHasLink: {
-                                    withAnimation(Style.Animation.composerState) {
-                                        feedViewModel.hasLinkFilterActive.toggle()
-                                    }
-                                },
-                                onParentTapped: { parent in
-                                    if collectionsViewModel.subCollections(for: parent.id).isEmpty {
-                                        withAnimation(Style.Animation.composerState) {
-                                            feedViewModel.toggleCollectionFilter(.all(parentId: parent.id))
-                                        }
-                                    } else {
-                                        chipSheetParent = parent
-                                        withAnimation(.easeOut(duration: 0.25)) {
-                                            isChipSheetVisible = true
-                                        }
-                                    }
-                                },
-                                onClearCollectionFilter: {
-                                    withAnimation(Style.Animation.composerState) {
-                                        feedViewModel.activeCollectionFilter = nil
-                                    }
-                                }
-                            )
-                            .padding(.bottom, 8)
-
                             ComposerView(
                                 text: $composerText,
                                 maxHeight: geometry.size.height * Style.Layout.composerMaxHeightFraction,
@@ -395,103 +480,52 @@ struct MainAppView: View {
                     .transition(.move(edge: .bottom))
                 }
             }
-            // Chip sheet: filter targets + collection management for a parent chip.
+            // Collections sheet behind the nav bar's pinned +: creation is
+            // relative to the current parent scope, management applies to the
+            // deepest selected location.
             .overlay(alignment: .bottom) {
-                if let parent = chipSheetParent {
+                if isCollectionsSheetPresented {
                     ZStack(alignment: .bottom) {
                         Color.black.opacity(0.4)
                             .ignoresSafeArea()
                             .transaction { $0.animation = nil }
-                            .onTapGesture { dismissChipSheet() }
+                            .onTapGesture { dismissCollectionsSheet() }
 
-                        if isChipSheetVisible {
-                            CollectionChipSheetView(
-                                parent: parent,
-                                subCollections: collectionsViewModel.subCollections(for: parent.id),
-                                activeFilter: feedViewModel.activeCollectionFilter,
-                                onSelectAll: {
-                                    feedViewModel.toggleCollectionFilter(.all(parentId: parent.id))
-                                    dismissChipSheet()
-                                },
-                                onSelectSub: { sub in
-                                    feedViewModel.toggleCollectionFilter(.single(id: sub.id))
-                                    dismissChipSheet()
-                                },
+                        if isCollectionsSheetVisible {
+                            let context = collectionsSheetContext
+                            CollectionsSheetView(
+                                context: context,
                                 onNewSubCollection: {
-                                    dismissChipSheet()
+                                    // The sheet only launches actions —
+                                    // naming happens on the shared
+                                    // full-screen surface.
+                                    guard let parent = context.parent else { return }
+                                    dismissCollectionsSheet()
                                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                                        newSubChipParent = parent
+                                        newSubParent = parent
                                         withAnimation(.easeOut(duration: 0.25)) {
-                                            isNewSubChipVisible = true
+                                            isNewSubVisible = true
                                         }
                                     }
                                 },
-                                onManage: {
-                                    // The ellipsis manages the selected scope: the active
-                                    // sub-collection when one is ticked, else the parent.
-                                    // This keeps sub rename/delete reachable now that the
-                                    // Collections tab (and its detail screens) is gone.
-                                    let managed: Collection = {
-                                        if case .single(let id) = feedViewModel.activeCollectionFilter,
-                                           let sub = collectionsViewModel.collections.first(where: {
-                                               $0.id == id && $0.parentId == parent.id
-                                           }) {
-                                            return sub
-                                        }
-                                        return parent
-                                    }()
-                                    dismissChipSheet()
-                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                                        chipManageParent = managed
-                                        withAnimation(.easeOut(duration: 0.25)) {
-                                            isChipManageVisible = true
-                                        }
-                                    }
-                                },
-                                onDismiss: { dismissChipSheet() }
-                            )
-                            .transition(.move(edge: .bottom))
-                        }
-                    }
-                    .ignoresSafeArea(edges: .bottom)
-                }
-            }
-            // Rename/delete action sheet reached via the chip sheet's ellipsis.
-            .overlay(alignment: .bottom) {
-                if let parent = chipManageParent {
-                    ZStack(alignment: .bottom) {
-                        Color.black.opacity(0.4)
-                            .ignoresSafeArea()
-                            .transaction { $0.animation = nil }
-                            .onTapGesture { dismissChipManageSheet() }
-
-                        if isChipManageVisible {
-                            CollectionActionSheetView(
                                 onRename: {
-                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                                        renameChipCollection = parent
+                                    guard let managed = context.managed else { return }
+                                    dismissCollectionsSheet()
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                                        renameTarget = managed
                                         withAnimation(.easeOut(duration: 0.25)) {
-                                            isRenameChipVisible = true
+                                            isRenameVisible = true
                                         }
                                     }
                                 },
-                                onDelete: {
-                                    Task {
-                                        let ok = await collectionsViewModel.deleteCollection(id: parent.id)
-                                        if ok {
-                                            // Drop the filter if its target no longer exists
-                                            // (deleteCollection already reloaded collections).
-                                            if let filter = feedViewModel.activeCollectionFilter,
-                                               !collectionsViewModel.collections.contains(where: {
-                                                   $0.id == filter.targetCollectionId
-                                               }) {
-                                                feedViewModel.activeCollectionFilter = nil
-                                            }
-                                            await feedViewModel.loadEntries()
-                                        }
+                                onRequestDelete: {
+                                    guard let managed = context.managed else { return }
+                                    dismissCollectionsSheet()
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                                        deleteCandidate = managed
                                     }
                                 },
-                                onDismiss: { dismissChipManageSheet() }
+                                onDismiss: { dismissCollectionsSheet() }
                             )
                             .transition(.move(edge: .bottom))
                         }
@@ -499,48 +533,78 @@ struct MainAppView: View {
                     .ignoresSafeArea(edges: .bottom)
                 }
             }
-            // Rename overlay launched from the chip sheet.
+            // Full-screen New Collection creation, entered directly from +
+            // while All is selected — same presentation as full-screen entry
+            // editing, a deliberate creation surface rather than a sheet.
             .overlay {
-                if isRenameChipVisible, let collection = renameChipCollection {
-                    RenameCollectionFullScreenView(
-                        collection: collection,
+                if isNewCollectionVisible {
+                    NewCollectionFullScreenView(
                         collectionsViewModel: collectionsViewModel,
-                        existingSiblingNames: collection.parentId == nil ? [] :
-                            collectionsViewModel.collections
-                                .filter { $0.parentId == collection.parentId && $0.id != collection.id }
-                                .map { $0.name },
                         onDismiss: {
                             withAnimation(.easeOut(duration: 0.25)) {
-                                isRenameChipVisible = false
-                            }
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                                renameChipCollection = nil
+                                isNewCollectionVisible = false
                             }
                         },
-                        onSuccess: { _ in
-                            // Refresh breadcrumb names in the feed.
-                            Task { await feedViewModel.loadEntries() }
+                        onSuccess: { created in
+                            // A new collection is a real place: navigate
+                            // straight into its (empty) view.
+                            withAnimation(Style.Animation.composerState) {
+                                feedViewModel.activeCollectionFilter = .all(parentId: created.id)
+                            }
                         }
                     )
                     .transition(.move(edge: .bottom))
                 }
             }
-            // New sub-collection overlay launched from the chip sheet.
+            // Full-screen New Sub-collection launched from the contextual sheet.
             .overlay {
-                if isNewSubChipVisible, let parent = newSubChipParent {
+                if isNewSubVisible, let parent = newSubParent {
                     NewCollectionFullScreenView(
                         collectionsViewModel: collectionsViewModel,
                         onDismiss: {
                             withAnimation(.easeOut(duration: 0.25)) {
-                                isNewSubChipVisible = false
+                                isNewSubVisible = false
                             }
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                                newSubChipParent = nil
+                                newSubParent = nil
                             }
                         },
                         title: "New sub-collection",
                         parentId: parent.id,
-                        existingSiblingNames: collectionsViewModel.subCollections(for: parent.id).map { $0.name }
+                        existingSiblingNames: collectionsViewModel.subCollections(for: parent.id).map { $0.name },
+                        onSuccess: { created in
+                            withAnimation(Style.Animation.composerState) {
+                                feedViewModel.activeCollectionFilter = .single(id: created.id)
+                            }
+                        }
+                    )
+                    .transition(.move(edge: .bottom))
+                }
+            }
+            // Full-screen Rename launched from the contextual sheet, with the
+            // existing name prefilled.
+            .overlay {
+                if isRenameVisible, let target = renameTarget {
+                    NewCollectionFullScreenView(
+                        collectionsViewModel: collectionsViewModel,
+                        onDismiss: {
+                            withAnimation(.easeOut(duration: 0.25)) {
+                                isRenameVisible = false
+                            }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                                renameTarget = nil
+                            }
+                        },
+                        title: target.parentId == nil ? "Rename collection" : "Rename sub-collection",
+                        existingSiblingNames: target.parentId == nil ? [] :
+                            collectionsViewModel.collections
+                                .filter { $0.parentId == target.parentId && $0.id != target.id }
+                                .map { $0.name },
+                        renameTarget: target,
+                        onSuccess: { _ in
+                            // Refresh breadcrumb names in the feed.
+                            Task { await feedViewModel.loadEntries() }
+                        }
                     )
                     .transition(.move(edge: .bottom))
                 }
@@ -581,6 +645,29 @@ struct MainAppView: View {
             } message: {
                 Text("This entry is saved on your phone, but the server rejected it. You can retry or discard it.")
             }
+            // Destructive confirmation describes what happens to the entries —
+            // structure is disposable, entries never are.
+            .alert(
+                "Delete \u{201C}\(deleteCandidate?.name ?? "")\u{201D}?",
+                isPresented: Binding(
+                    get: { deleteCandidate != nil },
+                    set: { if !$0 { deleteCandidate = nil } }
+                )
+            ) {
+                Button("Delete", role: .destructive) {
+                    if let candidate = deleteCandidate {
+                        performDelete(candidate)
+                    }
+                    deleteCandidate = nil
+                }
+                Button("Cancel", role: .cancel) {
+                    deleteCandidate = nil
+                }
+            } message: {
+                if let candidate = deleteCandidate {
+                    Text(deleteMessage(for: candidate))
+                }
+            }
         }
         }
         // Shared collections model for every screen in this stack (including
@@ -599,6 +686,10 @@ private struct FeedScrollContent: View {
 
     @ObservedObject var feedViewModel: FeedViewModel
     let containerHeight: CGFloat
+    /// Name of the filtered collection scope (nil while on All). An empty
+    /// scoped feed gets a restrained one-liner; an empty All feed gets the
+    /// first-use state.
+    let emptyScopeName: String?
     @Binding var scrollToBottomOnSend: Bool
     let onMoreTapped: (Entry) -> Void
     let onResurfaceTapped: (Entry) -> Void
@@ -617,13 +708,23 @@ private struct FeedScrollContent: View {
         ScrollViewReader { proxy in
             ScrollView {
                 if feedViewModel.hasCompletedInitialLoad && feedViewModel.filteredFeedEntries.isEmpty {
-                    EmptyStateView(
-                        iconName: "bookmark-02",
-                        title: "Save it here",
-                        primaryBody: "Kebab is a micro journal for thoughts, links, and things you don't want to lose.\n\nLike a sticky note you'll come back to.",
-                        secondaryBody: "Recipes, quotes, ideas, movies to watch, random thoughts that come to you at 3am."
-                    )
-                    .padding(Style.Spacing.emptyStateMargin)
+                    if let scopeName = emptyScopeName {
+                        // An empty collection is a valid destination, not an
+                        // error — one quiet line, composer stays the action.
+                        Text("Nothing in \(scopeName) yet.")
+                            .font(Style.Typography.meta())
+                            .foregroundColor(Style.Color.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(Style.Spacing.emptyStateMargin)
+                    } else {
+                        EmptyStateView(
+                            iconName: "bookmark-02",
+                            title: "Save it here",
+                            primaryBody: "Kebab is a micro journal for thoughts, links, and things you don't want to lose.\n\nLike a sticky note you'll come back to.",
+                            secondaryBody: "Recipes, quotes, ideas, movies to watch, random thoughts that come to you at 3am."
+                        )
+                        .padding(Style.Spacing.emptyStateMargin)
+                    }
                 }
                 let entries = feedViewModel.filteredFeedEntries
                 LazyVStack(alignment: .leading, spacing: 0) {

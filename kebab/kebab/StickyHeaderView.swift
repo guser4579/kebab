@@ -11,6 +11,9 @@ struct StickyHeaderView: View {
 
     var onSettingsTapped: (() -> Void)?
     var onSearchTapped: (() -> Void)?
+    /// The feed screen hides this hairline: the collection nav bar directly
+    /// below draws the single separator between chrome and feed.
+    var showsBottomSeparator: Bool = true
 
     private let headerTotalHeight: CGFloat = 101
     private let topBarContentTopOffset: CGFloat = 60
@@ -26,7 +29,7 @@ struct StickyHeaderView: View {
                 .frame(height: 16)
 
             Rectangle()
-                .fill(Style.Color.separator)
+                .fill(showsBottomSeparator ? Style.Color.separator : SwiftUI.Color.clear)
                 .frame(height: 1)
         }
         .frame(height: headerTotalHeight)

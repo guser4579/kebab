@@ -13,7 +13,13 @@ struct NewCollectionFullScreenView: View {
     /// Sibling sub-collection names used for live duplicate validation (case-insensitive).
     /// Leave empty for top-level collection creation (no duplicate check).
     var existingSiblingNames: [String] = []
-    /// Called with the newly created sub-collection after a successful create (sub-collection path only).
+    /// When non-nil this surface renames the given collection instead of
+    /// creating one: the field is prefilled with its current name and the
+    /// tick requires an actual change. Same layout, keyboard behavior, and
+    /// controls as creation — one naming surface for all four flows.
+    var renameTarget: Collection? = nil
+    /// Called with the created (or renamed) collection after a successful
+    /// submit, before dismissal — lets owners navigate into it or refresh.
     var onSuccess: ((Collection) -> Void)? = nil
 
     @State private var name: String = ""
@@ -38,18 +44,32 @@ struct NewCollectionFullScreenView: View {
     private var isDuplicate: Bool {
         guard !trimmedName.isEmpty, !isCreating, !hasSubmittedSuccessfully else { return false }
         let lower = trimmedName.lowercased()
+        // A case-only change of a rename target's own name is never a
+        // duplicate of itself.
+        if let renameTarget, lower == renameTarget.name.lowercased() {
+            return false
+        }
         return existingSiblingNames.contains { $0.lowercased() == lower }
     }
 
     private var tickInteractive: Bool {
-        !trimmedName.isEmpty && !isDuplicate && !isCreating
+        guard !trimmedName.isEmpty, !isDuplicate, !isCreating else { return false }
+        // Renaming requires an actual change.
+        if let renameTarget, trimmedName == renameTarget.name {
+            return false
+        }
+        return true
     }
 
     var body: some View {
         VStack(spacing: 0) {
             createHeader
 
-            TextField(parentId == nil ? "Collection name" : "Sub-collection name", text: $name)
+            TextField(
+                (parentId != nil || renameTarget?.parentId != nil)
+                    ? "Sub-collection name" : "Collection name",
+                text: $name
+            )
                 .font(Style.Typography.body())
                 .foregroundColor(Style.Color.primaryText)
                 .tint(Style.Color.composerSend)
@@ -71,7 +91,9 @@ struct NewCollectionFullScreenView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(Style.Color.background)
         .ignoresSafeArea(edges: [.top, .bottom])
-        .alert("Couldn't create collection", isPresented: Binding(
+        .alert(
+            renameTarget == nil ? "Couldn't create collection" : "Couldn't rename collection",
+            isPresented: Binding(
             get: { createErrorMessage != nil },
             set: { if !$0 { createErrorMessage = nil } }
         )) {
@@ -84,6 +106,10 @@ struct NewCollectionFullScreenView: View {
             }
         }
         .onAppear {
+            // Rename starts from the existing name, ready to edit.
+            if let renameTarget, name.isEmpty {
+                name = renameTarget.name
+            }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                 isFocused = true
             }
@@ -151,7 +177,31 @@ struct NewCollectionFullScreenView: View {
 
         isCreating = true
 
-        if let parentId {
+        if let renameTarget {
+            // Rename path — same surface, different mutation.
+            let ok = await collectionsViewModel.renameCollection(
+                id: renameTarget.id,
+                name: trimmedName
+            )
+            if ok {
+                hasSubmittedSuccessfully = true
+                isCreating = false
+                UIApplication.shared.sendAction(
+                    #selector(UIResponder.resignFirstResponder),
+                    to: nil, from: nil, for: nil
+                )
+                Haptics.mediumTap()
+                // The reload inside renameCollection already has the fresh
+                // model; fall back to the target if it's not found.
+                let updated = collectionsViewModel.collections
+                    .first { $0.id == renameTarget.id } ?? renameTarget
+                onSuccess?(updated)
+                onDismiss()
+            } else {
+                isCreating = false
+                createErrorMessage = collectionsViewModel.errorMessage ?? "Something went wrong."
+            }
+        } else if let parentId {
             // Sub-collection creation path
             if let created = await collectionsViewModel.createSubcollection(
                 parentId: parentId,
@@ -175,17 +225,18 @@ struct NewCollectionFullScreenView: View {
             }
         } else {
             // Top-level collection creation path
-            let ok = await collectionsViewModel.createCollection(name: trimmedName)
-            isCreating = false
-
-            if ok {
+            if let created = await collectionsViewModel.createCollection(name: trimmedName) {
+                hasSubmittedSuccessfully = true
+                isCreating = false
                 UIApplication.shared.sendAction(
                     #selector(UIResponder.resignFirstResponder),
                     to: nil, from: nil, for: nil
                 )
                 Haptics.mediumTap()
+                onSuccess?(created)
                 onDismiss()
             } else {
+                isCreating = false
                 createErrorMessage = collectionsViewModel.errorMessage ?? "Something went wrong."
             }
         }

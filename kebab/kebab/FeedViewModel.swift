@@ -19,6 +19,10 @@ final class FeedViewModel: ObservableObject {
     /// Single-select collection scope. Also drives composer targeting: while
     /// active, new entries are added to `targetCollectionId`.
     @Published var activeCollectionFilter: CollectionFilter?
+    /// Resolves a collection id to its parent id (nil for top-level). Set by
+    /// the owner from the collections model so pending (outbox) entries filed
+    /// into a sub-collection also match the parent's aggregate filter.
+    var collectionParentResolver: ((UUID) -> UUID?)?
 
     var feedEntries: [Entry] {
         entries.filter { $0.pinned_at == nil }
@@ -52,7 +56,10 @@ final class FeedViewModel: ObservableObject {
             if hasLinkFilterActive { return nil }
             switch activeCollectionFilter {
             case .all(let parentId):
-                guard pending.collectionId == parentId else { return nil }
+                // Match the parent itself or any of its sub-collections, same
+                // as the aggregate filter on synced entries above.
+                let pendingParentId = pending.collectionId.flatMap { collectionParentResolver?($0) }
+                guard pending.collectionId == parentId || pendingParentId == parentId else { return nil }
             case .single(let id):
                 guard pending.collectionId == id else { return nil }
             case nil:

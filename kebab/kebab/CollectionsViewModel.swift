@@ -58,18 +58,24 @@ final class CollectionsViewModel: ObservableObject {
 
     // MARK: - Create
 
+    /// Creates a top-level collection. Returns the newly created `Collection`
+    /// (sourced from a fresh `get_my_collections` reload) on success, or `nil`
+    /// on failure — callers use it to navigate straight into the new collection.
     @discardableResult
-    func createCollection(name: String) async -> Bool {
+    func createCollection(name: String) async -> Collection? {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return false }
+        guard !trimmed.isEmpty else { return nil }
+
+        // Snapshot existing top-level IDs so we can identify the new one after reload.
+        let existingIds = Set(collections.filter { $0.parentId == nil }.map { $0.id })
 
         do {
             try await repository.createCollection(name: trimmed)
             await loadCollections()
-            return true
+            return collections.first { $0.parentId == nil && !existingIds.contains($0.id) }
         } catch {
             errorMessage = error.localizedDescription
-            return false
+            return nil
         }
     }
 
