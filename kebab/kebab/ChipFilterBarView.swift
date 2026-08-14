@@ -107,8 +107,11 @@ private struct ChipButton: View {
     let onTap: () -> Void
     var onClearTap: (() -> Void)? = nil
 
+    // Active chips fill with composerSend (ink/bone), so their content uses
+    // the same on-fill foreground as the send button — primaryText would
+    // vanish against the bone fill in dark mode.
     private var contentColor: SwiftUI.Color {
-        isActive ? Style.Color.primaryText : Style.Color.secondary
+        isActive ? Style.Color.composerSendForeground : Style.Color.secondary
     }
 
     var body: some View {

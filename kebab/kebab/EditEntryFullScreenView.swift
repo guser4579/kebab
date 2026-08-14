@@ -54,13 +54,13 @@ private struct EditEntryTextEditor: UIViewRepresentable {
         let tv = FocusingTextView()
         tv.backgroundColor = .clear
         tv.font = UIFont(name: "DMSans-Regular", size: 16) ?? .systemFont(ofSize: 16, weight: .regular)
-        tv.textColor = UIColor(red: 202 / 255, green: 208 / 255, blue: 219 / 255, alpha: 1)
+        tv.textColor = Style.Color.primaryTextUIColor
         tv.textContainerInset = UIEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)
         tv.textContainer.lineFragmentPadding = 0
         tv.textContainer.lineBreakMode = .byWordWrapping
         tv.delegate = context.coordinator
         tv.text = text
-        tv.tintColor = UIColor(red: 147 / 255, green: 94 / 255, blue: 213 / 255, alpha: 1)
+        tv.tintColor = Style.Color.composerSendUIColor
         return tv
     }
 

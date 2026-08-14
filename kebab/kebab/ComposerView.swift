@@ -53,7 +53,7 @@ private struct GrowingTextView: UIViewRepresentable {
         textView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         textView.setContentHuggingPriority(.defaultLow, for: .horizontal)
         textView.font      = UIFont.systemFont(ofSize: 16, weight: .regular)
-        textView.textColor = UIColor(red: 202/255, green: 208/255, blue: 219/255, alpha: 1)
+        textView.textColor = Style.Color.primaryTextUIColor
         textView.delegate  = context.coordinator
         textView.text      = text
         return textView
@@ -418,7 +418,7 @@ struct ComposerView: View {
                 Icon("arrow-up")
                     .foregroundColor(
                         hasContent
-                        ? Style.Color.primaryText
+                        ? Style.Color.composerSendForeground
                         : Style.Color.secondary
                     )
             }

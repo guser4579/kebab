@@ -10,6 +10,8 @@ struct SettingsView: View {
     let onClose: () -> Void
     @ObservedObject var authViewModel: AuthViewModel
 
+    @AppStorage("kebab.appearance") private var appearance = "dark"
+
     private let contentTopOffset: CGFloat = 60
     private let headerHorizontalPadding: CGFloat = 16
     private let containerSpacing: CGFloat = 8
@@ -32,6 +34,7 @@ struct SettingsView: View {
 
             VStack(alignment: .leading, spacing: containerSpacing) {
                 emailContainer
+                appearanceContainer
                 logOutContainer
             }
             .padding(.horizontal, 16)
@@ -87,6 +90,46 @@ struct SettingsView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Style.Color.composerBackground)
         .clipShape(RoundedRectangle(cornerRadius: rowCornerRadius))
+    }
+
+    private var appearanceContainer: some View {
+        HStack {
+            Text("Appearance")
+                .font(Style.Typography.meta())
+                .foregroundColor(Style.Color.secondary)
+
+            Spacer(minLength: 0)
+
+            HStack(spacing: 16) {
+                appearanceOption("Light", value: "light")
+                appearanceOption("Dark", value: "dark")
+            }
+        }
+        .padding(.top, rowPaddingVertical)
+        .padding(.bottom, rowPaddingVertical)
+        .padding(.leading, rowPaddingHorizontal)
+        .padding(.trailing, rowPaddingHorizontal)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Style.Color.composerBackground)
+        .clipShape(RoundedRectangle(cornerRadius: rowCornerRadius))
+    }
+
+    private func appearanceOption(_ label: String, value: String) -> some View {
+        Button {
+            guard appearance != value else { return }
+            Haptics.lightTap()
+            withAnimation(.easeInOut(duration: 0.25)) {
+                appearance = value
+            }
+        } label: {
+            Text(label)
+                .font(.custom("DMSans-Medium", size: 14))
+                .foregroundColor(
+                    appearance == value ? Style.Color.primaryText : Style.Color.secondary
+                )
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     private var logOutContainer: some View {

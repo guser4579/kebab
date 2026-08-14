@@ -15,6 +15,9 @@ extension EnvironmentValues {
 @main
 struct kebabApp: App {
 
+    /// User-selected appearance; defaults to dark (the app's original look).
+    @AppStorage("kebab.appearance") private var appearance = "dark"
+
     init() {
         // Generous shared URL cache so link-preview and entry images persist
         // across scrolling sessions and app launches instead of refetching.
@@ -33,6 +36,8 @@ struct kebabApp: App {
         WindowGroup {
             RootView(supabase: supabase)
                 .environment(\.supabase, supabase)
+                // Dynamic Style.Color tokens resolve app-wide from this.
+                .preferredColorScheme(appearance == "light" ? .light : .dark)
         }
     }
 }

@@ -46,7 +46,8 @@ struct AuthView: View {
                     .overlay(alignment: .top) {
                         Text("kebab")
                             .font(Style.Typography.headerTitle())
-                            .foregroundColor(Style.Color.background)
+                            // Constant ink on the yellow note in both modes.
+                            .foregroundColor(SwiftUI.Color(hex: "161718"))
                             .frame(height: 24)
                             .padding(.top, 24)
                     }
@@ -73,7 +74,7 @@ struct AuthView: View {
             VStack(spacing: 0) {
                 Text("A place for thoughts you\ndon\u{2019}t want to lose.")
                     .font(Style.Typography.authTitle())
-                    .foregroundColor(.white)
+                    .foregroundColor(Style.Color.primaryText)
                     .lineSpacing(8)
                     .multilineTextAlignment(.center)
 
@@ -83,11 +84,11 @@ struct AuthView: View {
                     ZStack {
                         Text("Continue with email")
                             .font(Style.Typography.authButton())
-                            .foregroundColor(.white)
+                            .foregroundColor(Style.Color.primaryText)
 
                         HStack(spacing: 0) {
                             Icon("email")
-                                .foregroundColor(.white)
+                                .foregroundColor(Style.Color.primaryText)
                                 .padding(.leading, Style.Spacing.composerPaddingLeft)
                             Spacer(minLength: 0)
                         }
@@ -140,7 +141,7 @@ struct AuthView: View {
             VStack(spacing: 0) {
                 Text("Enter your email")
                     .font(Style.Typography.authTitle())
-                    .foregroundColor(.white)
+                    .foregroundColor(Style.Color.primaryText)
                     .lineSpacing(8)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: .infinity)
@@ -181,7 +182,7 @@ struct AuthView: View {
                 .frame(height: Style.Layout.composerSingleLineHeight)
 
             Icon("email")
-                .foregroundColor(.white)
+                .foregroundColor(Style.Color.primaryText)
                 .padding(.leading, Style.Spacing.composerPaddingLeft)
 
             if viewModel.email.isEmpty {
@@ -235,7 +236,7 @@ struct AuthView: View {
             VStack(spacing: 0) {
                 Text("Enter your code")
                     .font(Style.Typography.authTitle())
-                    .foregroundColor(.white)
+                    .foregroundColor(Style.Color.primaryText)
                     .lineSpacing(8)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: .infinity)
@@ -280,7 +281,7 @@ struct AuthView: View {
                     flow = .email
                 }
                 .font(Style.Typography.authButton())
-                .foregroundColor(.white)
+                .foregroundColor(Style.Color.primaryText)
                 .padding(.top, 28)
             }
             .padding(.bottom, bottomButtonPadding)
@@ -367,16 +368,16 @@ struct AuthView: View {
             ZStack {
                 if viewModel.isLoading {
                     ProgressView()
-                        .tint(Style.Color.background)
+                        .tint(Style.Color.composerSendForeground)
                 } else {
                     Text(title)
                         .font(Style.Typography.authButton())
-                        .foregroundColor(Style.Color.background)
+                        .foregroundColor(Style.Color.composerSendForeground)
                 }
             }
             .frame(height: Style.Layout.composerSingleLineHeight)
             .frame(maxWidth: .infinity)
-            .background(.white, in: Capsule())
+            .background(Style.Color.composerSend, in: Capsule())
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
@@ -391,7 +392,7 @@ struct AuthView: View {
         } label: {
             Text(title)
                 .font(Style.Typography.authButton())
-                .foregroundColor(.white)
+                .foregroundColor(Style.Color.primaryText)
                 .opacity(viewModel.isLoading ? 0.4 : 1)
                 .frame(height: Style.Layout.composerSingleLineHeight)
                 .frame(maxWidth: .infinity)

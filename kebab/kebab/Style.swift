@@ -6,32 +6,61 @@
 //
 
 import SwiftUI
+import UIKit
 
 enum Style {
 
-    // MARK: - Colors (exact hex)
+    // MARK: - Colors ("Greige & Azure" system, dynamic light/dark)
 
+    // Warm near-neutral surfaces; ink is the action color (black pill in
+    // light, bone in dark); azure is spent exactly once per screen on links;
+    // amber/pink counters are the only other color. Every token resolves per
+    // color scheme so the static API works unchanged in all views.
     enum Color {
+        private static func dynamic(light: String, dark: String) -> SwiftUI.Color {
+            SwiftUI.Color(UIColor { trait in
+                trait.userInterfaceStyle == .light
+                    ? UIColor(hex: light)
+                    : UIColor(hex: dark)
+            })
+        }
+
         /// Background (app)
-        static let background = SwiftUI.Color(hex: "171718")
+        static let background = dynamic(light: "F4F3F0", dark: "111112")
         /// Primary text (entries + header title)
-        static let primaryText = SwiftUI.Color(hex: "CAD0DB")
+        static let primaryText = dynamic(light: "161718", dark: "F0EFEC")
         /// Secondary/meta text, icon/meta tint, composer placeholder, composer mic idle
-        static let secondary = SwiftUI.Color(hex: "575B61")
+        static let secondary = dynamic(light: "8B8A86", dark: "84837F")
         /// Separator/divider
-        static let separator = SwiftUI.Color(hex: "262727")
+        static let separator = dynamic(light: "E7E5E1", dark: "232324")
         /// Composer background
-        static let composerBackground = SwiftUI.Color(hex: "282828")
-        /// Composer send (typing state)
-        static let composerSend = SwiftUI.Color(hex: "935ED5")
+        static let composerBackground = dynamic(light: "FFFFFF", dark: "1A1A1B")
+        /// Composer send / primary action fill — ink in light, bone in dark
+        static let composerSend = dynamic(light: "161718", dark: "F0EFEC")
+        /// Glyph/label on top of a composerSend fill
+        static let composerSendForeground = dynamic(light: "FFFFFF", dark: "111112")
+        /// Link-card title text + link glyph tint — the single azure moment per screen
+        static let linkAccent = SwiftUI.Color(hex: "2AA2FF")
         /// Destructive actions (e.g. delete)
-        static let destructive = SwiftUI.Color(hex: "DD2340")
+        static let destructive = dynamic(light: "C42B44", dark: "FF6478")
         /// Resurface indicator
-        static let resurface = SwiftUI.Color(hex: "FFC57C")
+        static let resurface = dynamic(light: "D9822B", dark: "F0A868")
         /// Fire indicator
-        static let fire = SwiftUI.Color(hex: "F79CE1")
-        /// Auth welcome sticky note
+        static let fire = dynamic(light: "E36D9A", dark: "F49CC0")
+        /// Auth welcome sticky note (same in both modes)
         static let stickyNoteYellow = SwiftUI.Color(hex: "EBCF47")
+
+        // UIKit-facing dynamics for the UITextView-backed editors.
+        static let primaryTextUIColor = UIColor { trait in
+            trait.userInterfaceStyle == .light
+                ? UIColor(hex: "161718")
+                : UIColor(hex: "F0EFEC")
+        }
+        static let composerSendUIColor = UIColor { trait in
+            trait.userInterfaceStyle == .light
+                ? UIColor(hex: "161718")
+                : UIColor(hex: "F0EFEC")
+        }
     }
 
     // MARK: - Typography
@@ -224,7 +253,32 @@ enum Style {
     }
 }
 
-// MARK: - Color hex initializer
+// MARK: - Color hex initializers
+
+extension UIColor {
+    convenience init(hex: String) {
+        let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+        var int: UInt64 = 0
+        Scanner(string: hex).scanHexInt64(&int)
+        let a, r, g, b: UInt64
+        switch hex.count {
+        case 3:
+            (a, r, g, b) = (255, (int >> 8) * 17, (int >> 4 & 0xF) * 17, (int & 0xF) * 17)
+        case 6:
+            (a, r, g, b) = (255, int >> 16, int >> 8 & 0xFF, int & 0xFF)
+        case 8:
+            (a, r, g, b) = (int >> 24, int >> 16 & 0xFF, int >> 8 & 0xFF, int & 0xFF)
+        default:
+            (a, r, g, b) = (255, 0, 0, 0)
+        }
+        self.init(
+            red: CGFloat(r) / 255,
+            green: CGFloat(g) / 255,
+            blue: CGFloat(b) / 255,
+            alpha: CGFloat(a) / 255
+        )
+    }
+}
 
 extension SwiftUI.Color {
     init(hex: String) {
