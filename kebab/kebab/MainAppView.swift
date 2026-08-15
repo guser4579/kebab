@@ -13,6 +13,9 @@ struct MainAppView: View {
     private let supabase: SupabaseClient
     @StateObject private var feedViewModel: FeedViewModel
     @StateObject private var collectionsViewModel: CollectionsViewModel
+    /// Session-lived registry of per-scope feed stores: every visited scope
+    /// stays warm with its own pages, position, and unseen state.
+    @StateObject private var scopeCoordinator: FeedScopeCoordinator
     @State private var composerText: String =
         UserDefaults.standard.string(forKey: MainAppView.feedDraftKey) ?? ""
     /// Images staged in the feed composer (in-memory only; restored on failed send).
@@ -44,11 +47,6 @@ struct MainAppView: View {
     @State private var isRenameVisible = false
     /// Collection awaiting the descriptive delete confirmation alert.
     @State private var deleteCandidate: Collection?
-    // Toggled to true by onSent; the FeedScrollContent child reads and clears it
-    // to scroll the feed to the bottom after a new entry appears. Keeping this
-    // flag here (not inside FeedScrollContent) lets the onSent closure write it
-    // without needing a captured proxy reference.
-    @State private var scrollToBottomOnSend = false
     /// Pending entry whose sync permanently failed; drives the Retry/Discard alert.
     @State private var pendingWarningId: UUID?
     /// Full-screen composer — the same draft (composerText/composerImages) at
@@ -77,6 +75,7 @@ struct MainAppView: View {
         self.supabase = supabase
         _feedViewModel = StateObject(wrappedValue: FeedViewModel(supabase: supabase))
         _collectionsViewModel = StateObject(wrappedValue: CollectionsViewModel(supabase: supabase))
+        _scopeCoordinator = StateObject(wrappedValue: FeedScopeCoordinator(supabase: supabase))
         self.authViewModel = authViewModel
     }
 
@@ -119,6 +118,12 @@ struct MainAppView: View {
             .name
     }
 
+    /// Collection name for a scope's empty state; nil for All.
+    private func scopeDisplayName(for scope: FeedScope) -> String? {
+        guard let id = scope.collectionId else { return nil }
+        return collectionsViewModel.collections.first { $0.id == id }?.name
+    }
+
     private func dismissCollectionsSheet() {
         withAnimation(.easeOut(duration: 0.25)) {
             isCollectionsSheetVisible = false
@@ -144,7 +149,10 @@ struct MainAppView: View {
     /// One submission path for every composer state (inline and full-screen):
     /// queue-then-flush, with draft restoration if the outbox write fails.
     private func sendDraft(_ content: String) {
-        scrollToBottomOnSend = true
+        // Every scope obeys the live-edge rule: at the edge the entry flows
+        // in naturally; away from it the viewport is preserved and the entry
+        // becomes an unseen arrival in the active scope.
+        let activeStore = scopeCoordinator.store(for: FeedScope(filter: feedViewModel.activeCollectionFilter))
         // Active collection filter targets the composer: the new
         // entry lands in the filtered collection.
         let targetId = feedViewModel.activeCollectionFilter?.targetCollectionId
@@ -161,7 +169,13 @@ struct MainAppView: View {
             collectionId: targetId
         )
         if let queuedId {
-            beginPostCapture(for: queuedId)
+            if !activeStore.isAtLiveEdge {
+                // Preserve the reading position: hold the new entry out of
+                // the rendered feed and surface it through the FAB count.
+                activeStore.holdOwnEntry(id: queuedId)
+            } else {
+                beginPostCapture(for: queuedId)
+            }
         } else {
             // Outbox write failed (disk full) — restore the draft.
             if composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -316,11 +330,16 @@ struct MainAppView: View {
                     // Deleted sub → land on the parent's aggregate view;
                     // deleted parent → back to All.
                     if let parentId {
+                        scopeCoordinator.activate(.parent(parentId))
                         feedViewModel.activeCollectionFilter = .all(parentId: parentId)
                     } else {
+                        scopeCoordinator.activate(.all)
                         feedViewModel.activeCollectionFilter = nil
                     }
                 }
+                // Collection structure changed: warm scopes re-derive their
+                // membership on their own revalidation.
+                scopeCoordinator.revalidateAllWarm()
                 await feedViewModel.loadEntries()
             }
         }
@@ -357,12 +376,19 @@ struct MainAppView: View {
                         },
                         onSelectAll: {
                             dismissPostCapture()
+                            scopeCoordinator.activate(.all)
                             withAnimation(Style.Animation.composerState) {
                                 feedViewModel.activeCollectionFilter = nil
                             }
                         },
                         onSelectParent: { parent in
                             dismissPostCapture()
+                            scopeCoordinator.activate(.parent(parent.id))
+                            // A parent becoming active makes its subs likely
+                            // next stops: warm their newest pages.
+                            scopeCoordinator.prefetch(
+                                collectionsViewModel.subCollections(for: parent.id).map { .sub($0.id) }
+                            )
                             // Tabs don't toggle: re-tapping the selected parent
                             // stays put (already its aggregate view).
                             withAnimation(Style.Animation.composerState) {
@@ -377,8 +403,10 @@ struct MainAppView: View {
                             withAnimation(Style.Animation.composerState) {
                                 if feedViewModel.activeCollectionFilter == .single(id: sub.id),
                                    let parentId = sub.parentId {
+                                    scopeCoordinator.activate(.parent(parentId))
                                     feedViewModel.activeCollectionFilter = .all(parentId: parentId)
                                 } else {
+                                    scopeCoordinator.activate(.sub(sub.id))
                                     feedViewModel.activeCollectionFilter = .single(id: sub.id)
                                 }
                             }
@@ -408,41 +436,51 @@ struct MainAppView: View {
                         }
                     )
 
-                    // Feed — isolated into its own child so that
-                    // onScrollGeometryChange state updates don't re-render
-                    // MainAppView (and therefore don't churn the composer).
-                    FeedScrollContent(
-                        feedViewModel: feedViewModel,
-                        containerHeight: geometry.size.height,
-                        emptyScopeName: activeScopeName,
-                        settlingEntryId: settlingEntryId,
-                        scrollToBottomOnSend: $scrollToBottomOnSend,
-                        onUserScroll: {
-                            dismissPostCapture()
-                        },
-                        onEntryOpened: {
-                            dismissPostCapture()
-                        },
-                        onMoreTapped: { entry in
-                            dismissPostCapture()
-                            activeEntryMenuEntry = entry
-                            withAnimation(.easeOut(duration: 0.25)) {
-                                isEntryActionSheetVisible = true
-                            }
-                        },
-                        onResurfaceTapped: { entry in
-                            Task { await feedViewModel.resurfaceEntry(entry: entry) }
-                        },
-                        onPinTapped: { entry in
-                            Task { await feedViewModel.togglePin(entry: entry) }
-                        },
-                        onFireTapped: { entry in
-                            Task { await feedViewModel.fireEntry(entry: entry) }
-                        },
-                        onPendingWarningTapped: { entry in
-                            pendingWarningId = entry.id
+                    // Feed — one warm ScopeFeedView per visited scope, kept
+                    // alive in a ZStack so each scope preserves its own scroll
+                    // position, pages, and FAB state. Switching scopes just
+                    // toggles which surface is visible.
+                    ZStack {
+                        let activeScope = FeedScope(filter: feedViewModel.activeCollectionFilter)
+                        ForEach(scopeCoordinator.visitedScopes) { scope in
+                            ScopeFeedView(
+                                store: scopeCoordinator.store(for: scope),
+                                scopeName: scopeDisplayName(for: scope),
+                                feedViewModel: feedViewModel,
+                                containerHeight: geometry.size.height,
+                                settlingEntryId: settlingEntryId,
+                                onUserScroll: { dismissPostCapture() },
+                                onEntryOpened: { dismissPostCapture() },
+                                onMoreTapped: { entry in
+                                    dismissPostCapture()
+                                    activeEntryMenuEntry = entry
+                                    withAnimation(.easeOut(duration: 0.25)) {
+                                        isEntryActionSheetVisible = true
+                                    }
+                                },
+                                onResurfaceTapped: { entry in
+                                    Task {
+                                        await feedViewModel.resurfaceEntry(entry: entry)
+                                        // The move-to-live-edge lands as an
+                                        // arrival in every warm scope it
+                                        // belongs to (unseen while away).
+                                        scopeCoordinator.revalidateScopes(containing: entry)
+                                    }
+                                },
+                                onPinTapped: { entry in
+                                    Task { await feedViewModel.togglePin(entry: entry) }
+                                },
+                                onFireTapped: { entry in
+                                    Task { await feedViewModel.fireEntry(entry: entry) }
+                                },
+                                onPendingWarningTapped: { entry in
+                                    pendingWarningId = entry.id
+                                }
+                            )
+                            .opacity(scope == activeScope ? 1 : 0)
+                            .allowsHitTesting(scope == activeScope)
                         }
-                    )
+                    }
                     .frame(maxWidth: .infinity)
                     .background(Style.Color.background)
                     .foregroundColor(Style.Color.primaryText)
@@ -464,8 +502,26 @@ struct MainAppView: View {
                                 parentName: parent?.name
                             )
                         }
+                        // Cross-scope hooks: promoted outbox rows and in-place
+                        // patches reconcile into every warm scope by ID.
+                        feedViewModel.onEntryPromoted = { [weak scopeCoordinator] promoted in
+                            scopeCoordinator?.fanOutPromoted(promoted)
+                        }
+                        feedViewModel.onEntryPatched = { [weak feedViewModel, weak scopeCoordinator] id in
+                            if let fresh = feedViewModel?.entries.first(where: { $0.id == id }) {
+                                scopeCoordinator?.reconcile(fresh)
+                            }
+                        }
+                        // SWR: cached page already rendered; revalidate quietly.
+                        scopeCoordinator.activate(.all)
+                        // Legacy full-array load: still feeds post-capture entry
+                        // lookup and onEntryPatched snapshots. Flagged for removal.
                         await feedViewModel.loadEntries()
                         await collectionsViewModel.loadCollections()
+                        // All is stable: warm the newest page of visible parents.
+                        scopeCoordinator.prefetch(
+                            collectionsViewModel.parentCollections.map { .parent($0.id) }
+                        )
                     }
                 }
                 .ignoresSafeArea(edges: .top)
@@ -613,7 +669,10 @@ struct MainAppView: View {
                             EntryActionSheetView(
                                 entry: entry,
                                 onDelete: {
-                                    Task { await feedViewModel.deleteEntry(id: entry.id) }
+                                    Task {
+                                        await feedViewModel.deleteEntry(id: entry.id)
+                                        scopeCoordinator.removeEverywhere(id: entry.id)
+                                    }
                                 },
                                 onToggleContentHidden: {
                                     Task {
@@ -702,9 +761,13 @@ struct MainAppView: View {
                             }
                         },
                         onSuccess: {
+                            let movedId = entry.id
                             Task {
                                 await collectionsViewModel.loadCollections()
                                 await feedViewModel.loadEntries()
+                                if let fresh = feedViewModel.entries.first(where: { $0.id == movedId }) {
+                                    scopeCoordinator.reconcile(fresh)
+                                }
                             }
                         }
                     )
@@ -779,6 +842,7 @@ struct MainAppView: View {
                         onSuccess: { created in
                             // A new collection is a real place: navigate
                             // straight into its (empty) view.
+                            scopeCoordinator.activate(.parent(created.id))
                             withAnimation(Style.Animation.composerState) {
                                 feedViewModel.activeCollectionFilter = .all(parentId: created.id)
                             }
@@ -835,6 +899,7 @@ struct MainAppView: View {
                         parentId: parent.id,
                         existingSiblingNames: collectionsViewModel.subCollections(for: parent.id).map { $0.name },
                         onSuccess: { created in
+                            scopeCoordinator.activate(.sub(created.id))
                             withAnimation(Style.Animation.composerState) {
                                 feedViewModel.activeCollectionFilter = .single(id: created.id)
                             }
@@ -865,6 +930,7 @@ struct MainAppView: View {
                         renameTarget: target,
                         onSuccess: { _ in
                             // Refresh breadcrumb names in the feed.
+                            scopeCoordinator.revalidateAllWarm()
                             Task { await feedViewModel.loadEntries() }
                         }
                     )
@@ -903,6 +969,9 @@ struct MainAppView: View {
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active {
                     feedViewModel.kickFlush()
+                    // Foreground revalidation: silent; every warm scope keeps
+                    // its position and applies its own arrival rule.
+                    scopeCoordinator.revalidateAllWarm()
                 }
             }
             .alert("Entry couldn\u{2019}t sync", isPresented: Binding(
@@ -958,180 +1027,6 @@ struct MainAppView: View {
         .environmentObject(collectionsViewModel)
     }
 }
-
-// MARK: - FeedScrollContent
-
-// Owns scrollDistanceFromBottom and hasScrolledToBottom so that the high-frequency
-// onScrollGeometryChange updates re-render only this view — not MainAppView and not
-// the ComposerView subtree in MainAppView's safeAreaInset.
-private struct FeedScrollContent: View {
-
-    @ObservedObject var feedViewModel: FeedViewModel
-    let containerHeight: CGFloat
-    /// Name of the filtered collection scope (nil while on All). An empty
-    /// scoped feed gets a restrained one-liner; an empty All feed gets the
-    /// first-use state.
-    let emptyScopeName: String?
-    /// The just-captured entry receiving the brief settling emphasis.
-    let settlingEntryId: UUID?
-    @Binding var scrollToBottomOnSend: Bool
-    /// User-initiated feed scrolling — a meaningful action that dismisses
-    /// the post-capture state.
-    var onUserScroll: (() -> Void)?
-    /// A row was opened into its detail view.
-    var onEntryOpened: (() -> Void)?
-    let onMoreTapped: (Entry) -> Void
-    let onResurfaceTapped: (Entry) -> Void
-    let onPinTapped: (Entry) -> Void
-    let onFireTapped: (Entry) -> Void
-    let onPendingWarningTapped: (Entry) -> Void
-
-    @State private var scrollDistanceFromBottom: CGFloat = 0
-    @State private var hasScrolledToBottom = false
-    /// Guards the FAB against the initial-load blink: set to true only after the
-    /// programmatic scroll-to-bottom has had time to update the scroll geometry,
-    /// so scrollDistanceFromBottom is already near 0 before FAB can evaluate.
-    @State private var fabEnabled = false
-
-    var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                if feedViewModel.hasCompletedInitialLoad && feedViewModel.filteredFeedEntries.isEmpty {
-                    if let scopeName = emptyScopeName {
-                        // An empty collection is a valid destination, not an
-                        // error — one quiet line, composer stays the action.
-                        Text("Nothing in \(scopeName) yet.")
-                            .font(Style.Typography.meta())
-                            .foregroundColor(Style.Color.secondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(Style.Spacing.emptyStateMargin)
-                    } else {
-                        EmptyStateView(
-                            iconName: "bookmark-02",
-                            title: "Save it here",
-                            primaryBody: "Kebab is a micro journal for thoughts, links, and things you don't want to lose.\n\nLike a sticky note you'll come back to.",
-                            secondaryBody: "Recipes, quotes, ideas, movies to watch, random thoughts that come to you at 3am."
-                        )
-                        .padding(Style.Spacing.emptyStateMargin)
-                    }
-                }
-                let entries = feedViewModel.filteredFeedEntries
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(entries) { entry in
-                        EntryRowView(
-                            entry: entry,
-                            feedViewModel: feedViewModel,
-                            // Newest entry sits flush above the composer — no bottom
-                            // hairline — unless it's the only entry (top of screen).
-                            showBottomSeparator: entry.id != entries.last?.id || entries.count == 1,
-                            onResultActivated: {
-                                onEntryOpened?()
-                            },
-                            onMoreTapped: {
-                                onMoreTapped(entry)
-                            }, onResurfaceTapped: {
-                                onResurfaceTapped(entry)
-                            }, onPinTapped: {
-                                onPinTapped(entry)
-                            }, onFireTapped: {
-                                onFireTapped(entry)
-                            }, onPendingWarningTapped: {
-                                onPendingWarningTapped(entry)
-                            },
-                            isSettling: entry.id == settlingEntryId)
-                    }
-                }
-
-                Color.clear
-                    .frame(height: 1)
-                    .id("feed-bottom")
-            }
-            .scrollDismissesKeyboard(.interactively)
-            // Cached feed is present before the first layout — anchor at the
-            // newest entry on appear (onChange won't fire without a count change).
-            .onAppear {
-                if !hasScrolledToBottom && feedViewModel.totalDisplayCount > 0 {
-                    hasScrolledToBottom = true
-                    scrollToBottom(proxy)
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
-                        fabEnabled = true
-                    }
-                }
-            }
-            .onChange(of: feedViewModel.totalDisplayCount) {
-                if !hasScrolledToBottom && feedViewModel.totalDisplayCount > 0 {
-                    hasScrolledToBottom = true
-                    scrollToBottom(proxy)
-                    // Delay FAB eligibility past the settle pass so the scroll
-                    // geometry is final, preventing the one-frame blink where
-                    // scrollDistanceFromBottom is still large.
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
-                        fabEnabled = true
-                    }
-                } else if scrollToBottomOnSend {
-                    scrollToBottomOnSend = false
-                    scrollToBottom(proxy)
-                }
-            }
-            // Any filter change (select, switch, or clear) re-anchors the feed at
-            // the newest entry — never leaves the user stranded mid-history.
-            .onChange(of: feedViewModel.activeCollectionFilter) { _, _ in
-                DispatchQueue.main.async { scrollToBottom(proxy) }
-            }
-            .onChange(of: feedViewModel.hasLinkFilterActive) { _, _ in
-                DispatchQueue.main.async { scrollToBottom(proxy) }
-            }
-            .onScrollGeometryChange(for: CGFloat.self) { g in
-                max(0, g.contentSize.height - g.contentOffset.y - g.containerSize.height)
-            } action: { _, newValue in
-                scrollDistanceFromBottom = newValue
-            }
-            // Only user-initiated drags count as meaningful scrolling —
-            // programmatic re-anchoring and layout changes never fire this.
-            .onScrollPhaseChange { _, newPhase in
-                if newPhase == .interacting {
-                    onUserScroll?()
-                }
-            }
-            .overlay(alignment: .bottom) {
-                let shouldShow = fabEnabled
-                    && scrollDistanceFromBottom > containerHeight
-                Group {
-                    if shouldShow {
-                        Icon("arrow-up")
-                            .rotationEffect(.degrees(180))
-                            .foregroundColor(Style.Color.primaryText)
-                            .frame(width: 36, height: 36)
-                            .glassEffect(
-                                .regular.tint(Style.Color.composerBackground.opacity(0.5)),
-                                in: Circle()
-                            )
-                            .contentShape(Circle())
-                        .simultaneousGesture(TapGesture().onEnded {
-                            Haptics.lightTap()
-                            proxy.scrollTo("feed-bottom", anchor: .bottom)
-                        })
-                        .padding(.bottom, 12)
-                        .transition(.opacity.combined(with: .scale(scale: 0.85)))
-                    }
-                }
-                .animation(.easeInOut(duration: 0.2), value: shouldShow)
-            }
-        }
-    }
-
-    /// Scrolls to the newest entry, then runs a settle pass. The first scroll
-    /// lands on LazyVStack's *estimated* row heights; once real rows materialize
-    /// the content is slightly taller and the newest entry ends up tucked under
-    /// the composer. The follow-up scroll corrects the residual offset.
-    private func scrollToBottom(_ proxy: ScrollViewProxy) {
-        proxy.scrollTo("feed-bottom", anchor: .bottom)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-            proxy.scrollTo("feed-bottom", anchor: .bottom)
-        }
-    }
-}
-
 
 #Preview {
     MainAppView(

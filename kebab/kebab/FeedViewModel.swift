@@ -32,6 +32,18 @@ final class FeedViewModel: ObservableObject {
     /// entries render breadcrumbs and match aggregate filters without a
     /// server round-trip.
     var collectionInfoResolver: ((UUID) -> CollectionDisplayInfo?)?
+    /// Fired when an outbox entry is promoted to a server row, so the paged
+    /// All store can adopt it without a reload.
+    var onEntryPromoted: ((Entry) -> Void)?
+    /// Fired after any in-place patch of an entry (checklist, fire, edit,
+    /// enrichment, hidden toggle) so the paged All store can mirror it.
+    var onEntryPatched: ((UUID) -> Void)?
+
+    /// Outbox entries mapped to display form, newest first — consumed by the
+    /// paged All feed, which renders pending entries at the live edge.
+    var pendingDisplayEntries: [Entry] {
+        pendingEntries.reversed().map { displayEntry(for: $0) }
+    }
 
     var feedEntries: [Entry] {
         entries.filter { $0.pinned_at == nil }
@@ -339,6 +351,7 @@ final class FeedViewModel: ObservableObject {
                 pendingEntries.removeAll { $0.id == pending.id }
                 LocalStore.save(entries, as: "feed")
                 outbox.remove(pending)
+                onEntryPromoted?(promoted)
             } catch let error as URLError {
                 // Offline / transport failure: stop the whole pass quietly.
                 _ = error
@@ -451,6 +464,7 @@ final class FeedViewModel: ObservableObject {
             entries = entries.map { entry in
                 entry.id == entryId ? entry.withAttachments(updated) : entry
             }
+            onEntryPatched?(entryId)
         } catch {
             // Silently ignore — entry keeps its current compact presentation.
         }
@@ -575,6 +589,7 @@ final class FeedViewModel: ObservableObject {
         do {
             try await repository.updateEntryContent(id: id, content: content)
             entries = entries.map { $0.id == id ? $0.withContent(content) : $0 }
+            onEntryPatched?(id)
             return true
         } catch {
             errorMessage = error.localizedDescription
@@ -589,12 +604,14 @@ final class FeedViewModel: ObservableObject {
         let newContent = Checklist.toggling(entry.content, lineIndex: lineIndex)
         guard newContent != entry.content else { return }
         entries = entries.map { $0.id == entry.id ? $0.withContent(newContent) : $0 }
+        onEntryPatched?(entry.id)
         Haptics.lightTap()
         do {
             try await repository.updateEntryContent(id: entry.id, content: newContent)
             LocalStore.save(entries, as: "feed")
         } catch {
             entries = entries.map { $0.id == entry.id ? $0.withContent(entry.content) : $0 }
+            onEntryPatched?(entry.id)
         }
     }
 
@@ -613,6 +630,7 @@ final class FeedViewModel: ObservableObject {
 
             Haptics.lightTap()
             await loadEntries()
+            onEntryPatched?(id)
             return true
         } catch {
             print("Failed to toggle entry hidden state:", error)
@@ -638,12 +656,14 @@ final class FeedViewModel: ObservableObject {
     func fireEntry(entry: Entry) async -> Bool {
         guard entry.parent_id == nil else { return false }
         entries = entries.map { $0.id == entry.id ? $0.withFireCount($0.fire_count + 1) : $0 }
+        onEntryPatched?(entry.id)
         Haptics.lightTap()
         do {
             try await repository.fireEntry(id: entry.id)
             return true
         } catch {
             entries = entries.map { $0.id == entry.id ? $0.withFireCount(entry.fire_count) : $0 }
+            onEntryPatched?(entry.id)
             print("Failed to fire entry:", error)
             return false
         }
