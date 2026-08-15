@@ -106,9 +106,11 @@ struct EntryRowView: View {
                         .frame(height: 12)
                 }
 
-                if !entry.isPending {
-                    actionRow
-                }
+                // Rendered identically from the moment of posting so promotion
+                // never changes the row's height (the post-submit jiggle).
+                // Only interactivity waits for the server row to exist.
+                actionRow
+                    .allowsHitTesting(!entry.isPending)
 
                 Color.clear
                     .frame(height: 8)
@@ -192,22 +194,23 @@ struct EntryRowView: View {
 
             Spacer(minLength: 0)
 
-            // Pending entries can't be edited/deleted server-side yet.
-            if !entry.isPending {
-                Button {
-                    UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-                    onMoreTapped?()
-                } label: {
-                    Icon("ellipsis", glyphSize: Style.Icon.glyphSmall)
-                        .foregroundColor(Style.Color.secondary)
-                }
-                // Expand the hit-test region by 10 pt in each direction without touching layout:
-                // .padding(10) enlarges the frame that contentShape registers against, then
-                // .padding(-10) shrinks the layout contribution back to the icon's natural size.
-                .padding(10)
-                .contentShape(Rectangle())
-                .padding(-10)
+            // Rendered identically while pending so promotion causes no
+            // pop-in; interactivity waits for the server row (its menu's
+            // actions all need it to exist).
+            Button {
+                UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                onMoreTapped?()
+            } label: {
+                Icon("ellipsis", glyphSize: Style.Icon.glyphSmall)
+                    .foregroundColor(Style.Color.secondary)
             }
+            // Expand the hit-test region by 10 pt in each direction without touching layout:
+            // .padding(10) enlarges the frame that contentShape registers against, then
+            // .padding(-10) shrinks the layout contribution back to the icon's natural size.
+            .padding(10)
+            .contentShape(Rectangle())
+            .padding(-10)
+            .allowsHitTesting(!entry.isPending)
         }
     }
 
