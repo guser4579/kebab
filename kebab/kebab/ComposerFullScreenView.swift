@@ -55,6 +55,9 @@ struct ComposerFullScreenView: View {
                     for image in pasted where attachedImages.count < 4 {
                         attachedImages.append(PendingImage(image: image))
                     }
+                },
+                onPasteLink: { url in
+                    attachedLink = url
                 }
             )
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

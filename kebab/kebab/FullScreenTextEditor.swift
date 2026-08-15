@@ -34,6 +34,8 @@ final class FocusingTextView: UITextView {
     /// When set, images on the pasteboard route into the composer's
     /// attachment pipeline instead of pasting into the text.
     var onPasteImages: (([UIImage]) -> Void)?
+    /// When set, a pasted bare URL becomes a staged link attachment.
+    var onPasteLink: ((URL) -> Void)?
 
     override func didMoveToWindow() {
         super.didMoveToWindow()
@@ -60,6 +62,10 @@ final class FocusingTextView: UITextView {
             onPasteImages(images)
             return
         }
+        if let onPasteLink, let url = PastedLink.current() {
+            onPasteLink(url)
+            return
+        }
         super.paste(sender)
     }
 }
@@ -71,6 +77,8 @@ struct FullScreenTextEditor: UIViewRepresentable {
     @Binding var text: String
     /// Routes pasted images into the attachment pipeline (composer only).
     var onPasteImages: (([UIImage]) -> Void)? = nil
+    /// Routes a pasted bare URL into the staged-link attachment (composer only).
+    var onPasteLink: ((URL) -> Void)? = nil
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -88,12 +96,14 @@ struct FullScreenTextEditor: UIViewRepresentable {
         tv.text = text
         tv.tintColor = Style.Color.composerSendUIColor
         tv.onPasteImages = onPasteImages
+        tv.onPasteLink = onPasteLink
         return tv
     }
 
     func updateUIView(_ uiView: FocusingTextView, context: Context) {
         context.coordinator.parent = self
         uiView.onPasteImages = onPasteImages
+        uiView.onPasteLink = onPasteLink
         if uiView.text != text {
             uiView.text = text
         }

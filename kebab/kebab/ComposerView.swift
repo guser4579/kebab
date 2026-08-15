@@ -18,6 +18,9 @@ private final class NonScrollingTextView: UITextView {
     /// When set, images on the pasteboard route into the composer's
     /// attachment pipeline instead of pasting into the text.
     var onPasteImages: (([UIImage]) -> Void)?
+    /// When set, a pasted bare URL becomes a staged link attachment — the
+    /// same treatment the Paste affordance produces.
+    var onPasteLink: ((URL) -> Void)?
 
     override func setContentOffset(_ contentOffset: CGPoint, animated: Bool) {
         if isScrollEnabled || contentOffset == .zero {
@@ -36,6 +39,10 @@ private final class NonScrollingTextView: UITextView {
         if let onPasteImages, UIPasteboard.general.hasImages,
            let images = UIPasteboard.general.images, !images.isEmpty {
             onPasteImages(images)
+            return
+        }
+        if let onPasteLink, let url = PastedLink.current() {
+            onPasteLink(url)
             return
         }
         super.paste(sender)
@@ -61,6 +68,8 @@ private struct GrowingTextView: UIViewRepresentable {
     var onConstrainedChange: ((Bool) -> Void)?
     /// Routes pasted images into the attachment pipeline (root composer only).
     var onPasteImages: (([UIImage]) -> Void)?
+    /// Routes a pasted bare URL into the staged-link attachment.
+    var onPasteLink: ((URL) -> Void)?
 
     private let textInsetTop: CGFloat    = 13
     private let textInsetBottom: CGFloat = 13
@@ -86,12 +95,14 @@ private struct GrowingTextView: UIViewRepresentable {
         textView.delegate  = context.coordinator
         textView.text      = text
         textView.onPasteImages = onPasteImages
+        textView.onPasteLink = onPasteLink
         return textView
     }
 
     func updateUIView(_ textView: UITextView, context: Context) {
         context.coordinator.parent = self
         (textView as? NonScrollingTextView)?.onPasteImages = onPasteImages
+        (textView as? NonScrollingTextView)?.onPasteLink = onPasteLink
         if textView.text != text {
             textView.text = text
         }
@@ -445,7 +456,10 @@ struct ComposerView: View {
                 trailingInset: textTrailingInset,
                 onFocus: onFocus,
                 onConstrainedChange: { isConstrained = $0 },
-                onPasteImages: allowsAttachments ? { appendPastedImages($0) } : nil
+                onPasteImages: allowsAttachments ? { appendPastedImages($0) } : nil,
+                // Standard iOS paste of a bare URL converges on the same
+                // staged-link attachment as the Paste affordance.
+                onPasteLink: allowsAttachments ? { stageLink($0) } : nil
             )
             .frame(maxWidth: .infinity)
         }
@@ -537,24 +551,16 @@ struct ComposerView: View {
 
     private func pasteLinkFromClipboard() {
         Haptics.lightTap()
-        let pasteboard = UIPasteboard.general
-        var url = pasteboard.url
-        if url == nil, let string = pasteboard.string {
-            let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
-            if let direct = URL(string: trimmed), direct.scheme != nil {
-                url = direct
-            } else if let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue),
-                      let match = detector.firstMatch(in: trimmed, range: NSRange(trimmed.startIndex..., in: trimmed)),
-                      let detected = match.url {
-                url = detected
-            } else if !trimmed.isEmpty, !trimmed.contains(" ") {
-                url = URL(string: "https://" + trimmed)
-            }
-        }
-        guard let url else {
+        guard let url = PastedLink.current() else {
             clipboardHasURL = false
             return
         }
+        stageLink(url)
+    }
+
+    /// The single place a URL becomes a staged link, whichever route brought
+    /// it here (Paste affordance or standard iOS paste).
+    private func stageLink(_ url: URL) {
         attachedLink = url
         clipboardHasURL = false
     }
@@ -674,9 +680,10 @@ struct ComposerView: View {
             voice.stop()
         }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        // Images alone are sendable; the host reads attachedImages itself
-        // (and clears them) inside onSent.
-        guard !trimmed.isEmpty || !attachedImages.isEmpty else { return }
+        // Images or a staged link alone are sendable — text context is
+        // optional. The host reads attachedImages/attachedLink itself (and
+        // clears them) inside onSent.
+        guard !trimmed.isEmpty || !attachedImages.isEmpty || attachedLink != nil else { return }
         onSent(trimmed)
         text = ""
         // Height resets automatically: updateUIView clears the UITextView text,

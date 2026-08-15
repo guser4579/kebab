@@ -249,27 +249,60 @@ struct MainAppView: View {
     /// Transient strip in the reclaimed area above the composer, targeting
     /// the entry that was just created. Flat capsules, feed language.
     private var postCaptureStrip: some View {
-        HStack(spacing: Style.Spacing.x2) {
-            postCaptureAction("Comment", action: openCommentQuickAction)
-            postCaptureAction("Add to collection", action: openAddToCollectionQuickAction)
-            postCaptureAction("Edit", action: openEditQuickAction)
+        // Scrolls rather than compressing labels if the three don't fit at a
+        // given width; they fit comfortably at common device widths.
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: Style.Spacing.x2) {
+                postCaptureAction(
+                    "Comment",
+                    iconName: "message-circle",
+                    action: openCommentQuickAction
+                )
+                postCaptureAction(
+                    "Add to collection",
+                    iconName: "folder",
+                    action: openAddToCollectionQuickAction
+                )
+                postCaptureAction(
+                    "Edit",
+                    iconName: "pencil-edit-02",
+                    action: openEditQuickAction
+                )
+            }
+            .padding(.horizontal, Style.Spacing.x4)
+            .frame(maxWidth: .infinity)
         }
-        .frame(maxWidth: .infinity)
+        // Horizontal ScrollViews claim all offered height; pin to content.
+        .fixedSize(horizontal: false, vertical: true)
     }
 
-    private func postCaptureAction(_ title: String, action: @escaping () -> Void) -> some View {
+    private func postCaptureAction(
+        _ title: String,
+        iconName: String,
+        action: @escaping () -> Void
+    ) -> some View {
         Button {
             Haptics.lightTap()
             action()
         } label: {
-            Text(title)
-                .font(Style.Typography.meta())
-                .foregroundColor(Style.Color.primaryText)
-                .lineLimit(1)
-                .padding(.horizontal, Style.Spacing.x3)
-                .frame(height: 32)
-                .background(Capsule().fill(Style.Color.composerBackground))
-                .contentShape(Capsule())
+            HStack(spacing: 6) {
+                Icon(iconName, glyphSize: Style.Icon.glyphSmall)
+                    .foregroundColor(Style.Color.primaryText)
+
+                Text(title)
+                    .font(Style.Typography.meta())
+                    .foregroundColor(Style.Color.primaryText)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+            }
+            .padding(.horizontal, Style.Spacing.x3)
+            .frame(height: 36)
+            .background(
+                Capsule()
+                    .fill(Style.Color.composerBackground)
+                    .overlay(Capsule().stroke(Style.Color.separator, lineWidth: 1))
+            )
+            .contentShape(Capsule())
         }
         .buttonStyle(.plain)
     }
@@ -351,6 +384,15 @@ struct MainAppView: View {
                             }
                         },
                         onPlusTapped: {
+                            // Drop the keyboard first so the sheet (or the
+                            // full-screen flow) never presents underneath it.
+                            // Synchronous resign, same pattern as the entry
+                            // ellipsis — no delay needed.
+                            UIApplication.shared.sendAction(
+                                #selector(UIResponder.resignFirstResponder),
+                                to: nil, from: nil, for: nil
+                            )
+                            dismissPostCapture()
                             // From All the only relevant action is creating a
                             // collection — go straight to the full-screen flow.
                             if case .all = collectionsSheetContext {

@@ -12,6 +12,40 @@ struct PendingImage: Identifiable, Equatable {
     let image: UIImage
 }
 
+/// One place that decides whether pasteboard content is a link, shared by the
+/// Paste affordance and the text views' paste interception — both routes
+/// produce the same staged-link attachment, never two representations.
+enum PastedLink {
+
+    /// The URL the pasteboard is currently offering, or nil when its content
+    /// isn't a bare URL. Prose that merely *contains* a URL deliberately
+    /// returns nil: that pastes as ordinary text and is still parsed at send.
+    static func current() -> URL? {
+        let pasteboard = UIPasteboard.general
+        if let string = pasteboard.string {
+            let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty,
+                  !trimmed.contains(where: { $0.isWhitespace })
+            else { return nil }
+
+            if let direct = URL(string: trimmed), direct.scheme != nil {
+                return direct
+            }
+            if let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue),
+               let match = detector.firstMatch(in: trimmed, range: NSRange(trimmed.startIndex..., in: trimmed)),
+               let detected = match.url {
+                return detected
+            }
+            // Bare host ("nytimes.com") — only when it looks like a domain.
+            if trimmed.contains("."), let assumed = URL(string: "https://" + trimmed) {
+                return assumed
+            }
+            return nil
+        }
+        return pasteboard.url
+    }
+}
+
 /// A URL staged in the composer as a compact chip. The full URL is preserved
 /// underneath; only the root domain (and favicon when available) shows.
 extension URL {

@@ -504,7 +504,7 @@ struct EntryDetailView: View {
             checklistContent
         } else {
             Text(rootDisplayContent)
-                .font(.custom("DMSans-SemiBold", size: 16))
+                .font(Style.Typography.body())
                 .foregroundColor(Style.Color.primaryText)
                 .lineSpacing(4)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -520,7 +520,7 @@ struct EntryDetailView: View {
                 switch segment {
                 case .text(_, let block):
                     Text(block)
-                        .font(.custom("DMSans-SemiBold", size: 16))
+                        .font(Style.Typography.body())
                         .foregroundColor(Style.Color.primaryText)
                         .lineSpacing(4)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -540,7 +540,7 @@ struct EntryDetailView: View {
                                 .foregroundColor(checked ? Style.Color.secondary : Style.Color.primaryText)
 
                             Text(text)
-                                .font(.custom("DMSans-SemiBold", size: 16))
+                                .font(Style.Typography.body())
                                 .foregroundColor(checked ? Style.Color.secondary : Style.Color.primaryText)
                                 .strikethrough(checked, color: Style.Color.secondary)
                                 .lineSpacing(4)

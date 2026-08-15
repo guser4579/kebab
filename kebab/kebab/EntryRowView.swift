@@ -238,32 +238,37 @@ struct EntryRowView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .allowsHitTesting(false)
                 case .item(_, let lineIndex, let text, let checked):
-                    Button {
-                        guard let feedViewModel else { return }
-                        Task {
-                            await feedViewModel.toggleChecklistItem(entry: entry, lineIndex: lineIndex)
-                        }
-                    } label: {
-                        HStack(alignment: .firstTextBaseline, spacing: Style.Spacing.x3) {
-                            Image(systemName: checked ? "checkmark.square" : "square")
-                                .font(.system(size: 17, weight: .regular))
-                                .foregroundColor(checked ? Style.Color.secondary : Style.Color.primaryText)
+                    // The Spacer sits OUTSIDE the button: only the checkbox
+                    // and its label toggle. The rest of the row's width falls
+                    // through to the entry's normal open-detail behavior.
+                    HStack(spacing: 0) {
+                        Button {
+                            guard let feedViewModel else { return }
+                            Task {
+                                await feedViewModel.toggleChecklistItem(entry: entry, lineIndex: lineIndex)
+                            }
+                        } label: {
+                            HStack(alignment: .firstTextBaseline, spacing: Style.Spacing.x3) {
+                                Image(systemName: checked ? "checkmark.square" : "square")
+                                    .font(.system(size: 17, weight: .regular))
+                                    .foregroundColor(checked ? Style.Color.secondary : Style.Color.primaryText)
 
-                            Text(text)
-                                .font(Style.Typography.body())
-                                .foregroundColor(checked ? Style.Color.secondary : Style.Color.primaryText)
-                                .strikethrough(checked, color: Style.Color.secondary)
-                                .lineSpacing(4)
-                                .multilineTextAlignment(.leading)
-
-                            Spacer(minLength: 0)
+                                Text(text)
+                                    .font(Style.Typography.body())
+                                    .foregroundColor(checked ? Style.Color.secondary : Style.Color.primaryText)
+                                    .strikethrough(checked, color: Style.Color.secondary)
+                                    .lineSpacing(4)
+                                    .multilineTextAlignment(.leading)
+                            }
+                            .contentShape(Rectangle())
                         }
-                        .contentShape(Rectangle())
+                        .buttonStyle(.plain)
+                        // Toggling needs the server row; pending lists sync in
+                        // under a second online.
+                        .allowsHitTesting(!entry.isPending && feedViewModel != nil)
+
+                        Spacer(minLength: 0)
                     }
-                    .buttonStyle(.plain)
-                    // Toggling needs the server row; pending lists sync in
-                    // under a second online.
-                    .allowsHitTesting(!entry.isPending && feedViewModel != nil)
                 }
             }
         }
