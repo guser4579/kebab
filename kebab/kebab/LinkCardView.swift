@@ -36,11 +36,11 @@ struct LinkCardView: View {
     private var cardContent: some View {
         HStack(spacing: 12) {
             Icon("link-02")
-                .foregroundColor(Style.Color.linkAccent)
+                .foregroundColor(Style.Color.primaryText)
 
             Text(displayText)
                 .font(Style.Typography.linkCard())
-                .foregroundColor(Style.Color.linkAccent)
+                .foregroundColor(Style.Color.primaryText)
                 .underline()
                 .lineLimit(1)
                 .truncationMode(.tail)

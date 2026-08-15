@@ -64,6 +64,47 @@ struct EditEntryFullScreenView: View {
         VStack(spacing: 0) {
             editHeader
 
+            // Read-only attachment context: editing mutates text only, so
+            // attachments are shown (same treatment as the composer) but not
+            // removable here — they can never be destroyed by an edit.
+            if entry.linkAttachment != nil || !entry.imageAttachments.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    if let link = entry.linkAttachment, let url = URL(string: link.url) {
+                        HStack(spacing: 6) {
+                            Icon("link-02", glyphSize: Style.Icon.glyphSmall)
+                                .foregroundColor(Style.Color.secondary)
+                            Text(url.rootDomainDisplay)
+                                .font(Style.Typography.meta())
+                                .foregroundColor(Style.Color.primaryText)
+                                .lineLimit(1)
+                        }
+                        .padding(.horizontal, 10)
+                        .frame(height: 32)
+                        .background(
+                            Capsule()
+                                .fill(Style.Color.composerBackground)
+                                .overlay(Capsule().stroke(Style.Color.separator, lineWidth: 1))
+                        )
+                    }
+
+                    if !entry.imageAttachments.isEmpty {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ForEach(entry.imageAttachments, id: \.url) { attachment in
+                                    CachedAsyncImage(url: URL(string: attachment.url))
+                                        .frame(width: 56, height: 56)
+                                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                                }
+                            }
+                        }
+                        .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, Style.Layout.entryContentPadding)
+                .padding(.top, 16)
+            }
+
             FullScreenTextEditor(text: $text)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .padding(.horizontal, Style.Layout.entryContentPadding)

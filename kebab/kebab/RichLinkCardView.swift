@@ -150,7 +150,7 @@ struct RichLinkCardView: View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
                 .font(Style.Typography.linkCard())
-                .foregroundColor(Style.Color.linkAccent)
+                .foregroundColor(Style.Color.primaryText)
                 .lineLimit(2)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -169,12 +169,12 @@ struct RichLinkCardView: View {
     private func mediumCard(title: String) -> some View {
         HStack(alignment: .center, spacing: 12) {
             Icon("link-02")
-                .foregroundColor(Style.Color.linkAccent)
+                .foregroundColor(Style.Color.primaryText)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
                     .font(Style.Typography.linkCard())
-                    .foregroundColor(Style.Color.linkAccent)
+                    .foregroundColor(Style.Color.primaryText)
                     .lineLimit(2)
 
                 Text(displayDomain)

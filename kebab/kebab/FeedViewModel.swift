@@ -88,7 +88,7 @@ final class FeedViewModel: ObservableObject {
     /// Maps an outbox item to a display-only Entry, with file:// image
     /// attachments so offline photos render at full parity.
     private func displayEntry(for pending: PendingEntry) -> Entry {
-        let imageAttachments = pending.imageFilenames.map { filename in
+        var imageAttachments = pending.imageFilenames.map { filename in
             EntryAttachment(
                 type: "image",
                 url: outbox.imageURL(for: filename).absoluteString,
@@ -96,6 +96,17 @@ final class FeedViewModel: ObservableObject {
                 favicon_url: nil,
                 image_url: nil
             )
+        }
+        // Staged link renders as a link card from the first frame, matching
+        // the promoted form.
+        if let stagedURL = pending.linkURL {
+            imageAttachments.append(EntryAttachment(
+                type: "link",
+                url: stagedURL,
+                title: nil,
+                favicon_url: nil,
+                image_url: nil
+            ))
         }
         let info = pending.collectionId.flatMap { collectionInfoResolver?($0) }
         return Entry(
@@ -179,26 +190,34 @@ final class FeedViewModel: ObservableObject {
     /// Stages the entry in the on-disk outbox and kicks a sync. The send
     /// always succeeds locally — the entry appears in the feed immediately
     /// with a pending mark, and delivery happens whenever connectivity
-    /// allows. Returns `false` only if the outbox itself can't write (disk
-    /// full), in which case the caller restores the draft.
+    /// allows. Returns the entry's stable client-generated id (the same id
+    /// it keeps after promotion, so post-capture actions can target it), or
+    /// nil only if the outbox itself can't write (disk full), in which case
+    /// the caller restores the draft.
     @discardableResult
-    func queueEntry(content: String, images: [UIImage] = [], collectionId: UUID? = nil) -> Bool {
+    func queueEntry(
+        content: String,
+        images: [UIImage] = [],
+        linkURL: URL? = nil,
+        collectionId: UUID? = nil
+    ) -> UUID? {
         let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty || !images.isEmpty else { return false }
+        guard !trimmed.isEmpty || !images.isEmpty || linkURL != nil else { return nil }
 
         do {
             let pending = try outbox.enqueue(
                 content: trimmed,
                 images: images,
+                linkURL: linkURL?.absoluteString,
                 collectionId: collectionId
             )
             pendingEntries.append(pending)
             Haptics.mediumTap()
             kickFlush()
-            return true
+            return pending.id
         } catch {
             errorMessage = error.localizedDescription
-            return false
+            return nil
         }
     }
 
@@ -239,7 +258,23 @@ final class FeedViewModel: ObservableObject {
                     }
                     attachments += uploaded
                 }
-                let (cleanedContent, link) = Self.extractFirstLink(from: pending.content)
+                // An explicitly staged link (composer chip) takes precedence
+                // and leaves the text untouched; otherwise fall back to
+                // detecting a typed URL in the text, as before.
+                let cleanedContent: String
+                let link: EntryAttachment?
+                if let stagedURL = pending.linkURL {
+                    cleanedContent = pending.content
+                    link = EntryAttachment(
+                        type: "link",
+                        url: stagedURL,
+                        title: nil,
+                        favicon_url: nil,
+                        image_url: nil
+                    )
+                } else {
+                    (cleanedContent, link) = Self.extractFirstLink(from: pending.content)
+                }
                 if let link {
                     attachments.append(link)
                 }
@@ -544,6 +579,22 @@ final class FeedViewModel: ObservableObject {
         } catch {
             errorMessage = error.localizedDescription
             return false
+        }
+    }
+
+    /// Toggles the checklist line at `lineIndex` with an immediate optimistic
+    /// patch (checkbox taps must feel instant from the feed); rolls back if
+    /// the server write fails. No reload — only the one row re-renders.
+    func toggleChecklistItem(entry: Entry, lineIndex: Int) async {
+        let newContent = Checklist.toggling(entry.content, lineIndex: lineIndex)
+        guard newContent != entry.content else { return }
+        entries = entries.map { $0.id == entry.id ? $0.withContent(newContent) : $0 }
+        Haptics.lightTap()
+        do {
+            try await repository.updateEntryContent(id: entry.id, content: newContent)
+            LocalStore.save(entries, as: "feed")
+        } catch {
+            entries = entries.map { $0.id == entry.id ? $0.withContent(entry.content) : $0 }
         }
     }
 

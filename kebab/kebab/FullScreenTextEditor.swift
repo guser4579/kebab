@@ -31,6 +31,9 @@ import UIKit
 
 final class FocusingTextView: UITextView {
     private var didRequestFocus = false
+    /// When set, images on the pasteboard route into the composer's
+    /// attachment pipeline instead of pasting into the text.
+    var onPasteImages: (([UIImage]) -> Void)?
 
     override func didMoveToWindow() {
         super.didMoveToWindow()
@@ -43,6 +46,22 @@ final class FocusingTextView: UITextView {
             self.selectedTextRange = self.textRange(from: end, to: end)
         }
     }
+
+    override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
+        if action == #selector(paste(_:)), onPasteImages != nil, UIPasteboard.general.hasImages {
+            return true
+        }
+        return super.canPerformAction(action, withSender: sender)
+    }
+
+    override func paste(_ sender: Any?) {
+        if let onPasteImages, UIPasteboard.general.hasImages,
+           let images = UIPasteboard.general.images, !images.isEmpty {
+            onPasteImages(images)
+            return
+        }
+        super.paste(sender)
+    }
 }
 
 // MARK: - FullScreenTextEditor
@@ -50,6 +69,8 @@ final class FocusingTextView: UITextView {
 struct FullScreenTextEditor: UIViewRepresentable {
 
     @Binding var text: String
+    /// Routes pasted images into the attachment pipeline (composer only).
+    var onPasteImages: (([UIImage]) -> Void)? = nil
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -66,11 +87,13 @@ struct FullScreenTextEditor: UIViewRepresentable {
         tv.delegate = context.coordinator
         tv.text = text
         tv.tintColor = Style.Color.composerSendUIColor
+        tv.onPasteImages = onPasteImages
         return tv
     }
 
     func updateUIView(_ uiView: FocusingTextView, context: Context) {
         context.coordinator.parent = self
+        uiView.onPasteImages = onPasteImages
         if uiView.text != text {
             uiView.text = text
         }
@@ -85,6 +108,42 @@ struct FullScreenTextEditor: UIViewRepresentable {
 
         func textViewDidChange(_ textView: UITextView) {
             parent.text = textView.text ?? ""
+        }
+
+        // Checklist continuation: return on a checklist line inserts the next
+        // "- [ ] " marker; return on an *empty* checklist item removes the
+        // marker instead (the natural way to end a list). Plain text lines
+        // are untouched.
+        func textView(
+            _ textView: UITextView,
+            shouldChangeTextIn range: NSRange,
+            replacementText replacement: String
+        ) -> Bool {
+            guard replacement == "\n" else { return true }
+            let ns = textView.text as NSString
+            let lineRange = ns.lineRange(for: NSRange(location: range.location, length: 0))
+            let line = ns.substring(with: lineRange)
+                .trimmingCharacters(in: .newlines)
+
+            guard let marker = Checklist.marker(of: line) else { return true }
+
+            let itemText = String(line.dropFirst(marker.count))
+            if itemText.trimmingCharacters(in: .whitespaces).isEmpty {
+                // Empty item: end the list by clearing the marker line.
+                let contentLength = (line as NSString).length
+                let markerRange = NSRange(location: lineRange.location, length: contentLength)
+                textView.textStorage.replaceCharacters(in: markerRange, with: "")
+                textView.selectedRange = NSRange(location: lineRange.location, length: 0)
+            } else {
+                let insertion = "\n" + Checklist.uncheckedMarker
+                textView.textStorage.replaceCharacters(in: range, with: insertion)
+                textView.selectedRange = NSRange(
+                    location: range.location + (insertion as NSString).length,
+                    length: 0
+                )
+            }
+            parent.text = textView.text ?? ""
+            return false
         }
     }
 }

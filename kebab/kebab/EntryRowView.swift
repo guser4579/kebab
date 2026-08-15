@@ -20,6 +20,9 @@ struct EntryRowView: View {
     var onPendingWarningTapped: (() -> Void)? = nil
     /// Passed through to EntryDetailView when the entry is opened from collection context.
     var onRemoveFromCollection: (() async -> Void)? = nil
+    /// Post-capture settling: a brief surface emphasis so the eye lands on
+    /// the thing just saved. A receipt, not a celebration.
+    var isSettling: Bool = false
 
     private var displayContent: String {
         if entry.isContentHidden {
@@ -45,6 +48,8 @@ struct EntryRowView: View {
                 bottomSeparator
             }
         }
+        .background(isSettling ? Style.Color.composerBackground : SwiftUI.Color.clear)
+        .animation(.easeOut(duration: 0.45), value: isSettling)
     }
 
     private var hasLinkCard: Bool {
@@ -203,13 +208,66 @@ struct EntryRowView: View {
         }
     }
 
+    @ViewBuilder
     private var contentText: some View {
-        Text(displayContent)
-            .font(Style.Typography.body())
-            .foregroundColor(Style.Color.primaryText)
-            .lineSpacing(4)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .allowsHitTesting(false)
+        if !entry.isContentHidden, Checklist.hasChecklist(entry.content) {
+            checklistContent
+        } else {
+            Text(displayContent)
+                .font(Style.Typography.body())
+                .foregroundColor(Style.Color.primaryText)
+                .lineSpacing(4)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .allowsHitTesting(false)
+        }
+    }
+
+    // Checklist entries render their marker lines as tappable checkbox rows
+    // directly in the feed — no detail-screen round trip to check an item.
+    // Text segments stay hit-transparent so entry navigation still works;
+    // only the checkbox buttons intercept taps.
+    private var checklistContent: some View {
+        VStack(alignment: .leading, spacing: Style.Spacing.x2) {
+            ForEach(Checklist.segments(of: entry.content)) { segment in
+                switch segment {
+                case .text(_, let block):
+                    Text(block)
+                        .font(Style.Typography.body())
+                        .foregroundColor(Style.Color.primaryText)
+                        .lineSpacing(4)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .allowsHitTesting(false)
+                case .item(_, let lineIndex, let text, let checked):
+                    Button {
+                        guard let feedViewModel else { return }
+                        Task {
+                            await feedViewModel.toggleChecklistItem(entry: entry, lineIndex: lineIndex)
+                        }
+                    } label: {
+                        HStack(alignment: .firstTextBaseline, spacing: Style.Spacing.x3) {
+                            Image(systemName: checked ? "checkmark.square" : "square")
+                                .font(.system(size: 17, weight: .regular))
+                                .foregroundColor(checked ? Style.Color.secondary : Style.Color.primaryText)
+
+                            Text(text)
+                                .font(Style.Typography.body())
+                                .foregroundColor(checked ? Style.Color.secondary : Style.Color.primaryText)
+                                .strikethrough(checked, color: Style.Color.secondary)
+                                .lineSpacing(4)
+                                .multilineTextAlignment(.leading)
+
+                            Spacer(minLength: 0)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    // Toggling needs the server row; pending lists sync in
+                    // under a second online.
+                    .allowsHitTesting(!entry.isPending && feedViewModel != nil)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder

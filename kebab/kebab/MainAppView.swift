@@ -6,6 +6,9 @@ struct MainAppView: View {
     /// UserDefaults key backing the feed composer draft, so an in-progress
     /// message survives app termination and failed sends.
     private static let feedDraftKey = "composer.draft.feed"
+    /// Staged link survives alongside the text draft (images stay in-memory,
+    /// matching existing draft-persistence parity).
+    private static let feedLinkDraftKey = "composer.draft.feed.link"
 
     private let supabase: SupabaseClient
     @StateObject private var feedViewModel: FeedViewModel
@@ -14,6 +17,9 @@ struct MainAppView: View {
         UserDefaults.standard.string(forKey: MainAppView.feedDraftKey) ?? ""
     /// Images staged in the feed composer (in-memory only; restored on failed send).
     @State private var composerImages: [PendingImage] = []
+    /// Link staged in the feed composer as a compact chip (pasted URL).
+    @State private var composerLink: URL? =
+        UserDefaults.standard.string(forKey: MainAppView.feedLinkDraftKey).flatMap(URL.init(string:))
     @State private var activeEntryMenuEntry: Entry?
     @State private var isEntryActionSheetVisible = false
     @State private var fullScreenEditEntry: Entry?
@@ -51,6 +57,18 @@ struct MainAppView: View {
     /// One-shot signal asking the inline composer to retake keyboard focus
     /// (set when collapsing back from the full-screen composer).
     @State private var composerFocusRequest = false
+    // Post-capture state: the just-captured entry gets a transient action
+    // strip (Comment / Add to collection / Edit) and a brief settling
+    // emphasis. Action-dismissed first, timer-dismissed second (~10s).
+    @State private var postCaptureEntryId: UUID?
+    /// Shorter-lived (~650ms) surface emphasis on the new row — a receipt.
+    @State private var settlingEntryId: UUID?
+    /// Invalidates stale timers when a newer capture supersedes the strip.
+    @State private var postCaptureGeneration = 0
+    // Comment quick action: programmatic push into the entry's detail view
+    // with the comment composer pre-focused.
+    @State private var commentTargetEntry: Entry?
+    @State private var isCommentTargetActive = false
     @Environment(\.scenePhase) private var scenePhase
 
     let authViewModel: AuthViewModel
@@ -131,15 +149,20 @@ struct MainAppView: View {
         // entry lands in the filtered collection.
         let targetId = feedViewModel.activeCollectionFilter?.targetCollectionId
         let images = composerImages
+        let link = composerLink
         composerImages = []
+        composerLink = nil
         // Queue-then-flush: the entry appears immediately with a
         // pending mark and syncs whenever connectivity allows.
-        let queued = feedViewModel.queueEntry(
+        let queuedId = feedViewModel.queueEntry(
             content: content,
             images: images.map(\.image),
+            linkURL: link,
             collectionId: targetId
         )
-        if !queued {
+        if let queuedId {
+            beginPostCapture(for: queuedId)
+        } else {
             // Outbox write failed (disk full) — restore the draft.
             if composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 composerText = content
@@ -147,8 +170,108 @@ struct MainAppView: View {
             if composerImages.isEmpty {
                 composerImages = images
             }
+            if composerLink == nil {
+                composerLink = link
+            }
             Haptics.destructiveTap()
         }
+    }
+
+    // MARK: - Post-capture state
+
+    private func beginPostCapture(for entryId: UUID) {
+        postCaptureGeneration += 1
+        let generation = postCaptureGeneration
+
+        withAnimation(.easeOut(duration: 0.25)) {
+            postCaptureEntryId = entryId
+        }
+        // Settling is a ~650ms receipt; the row fades back on clear. It never
+        // replays: promotion keeps the same id and this state is set only here.
+        settlingEntryId = entryId
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.65) {
+            if settlingEntryId == entryId {
+                settlingEntryId = nil
+            }
+        }
+        // Timer dismissal is the fallback, never the primary rule.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 10) {
+            if postCaptureGeneration == generation {
+                dismissPostCapture()
+            }
+        }
+    }
+
+    /// Any meaningful user action dismisses the post-capture state at once.
+    private func dismissPostCapture() {
+        postCaptureGeneration += 1
+        settlingEntryId = nil
+        guard postCaptureEntryId != nil else { return }
+        withAnimation(.easeOut(duration: 0.25)) {
+            postCaptureEntryId = nil
+        }
+    }
+
+    /// The just-captured entry once promoted. Quick actions need the server
+    /// row (comments, filing, editing all live there); online promotion is
+    /// sub-second, offline the strip stays inert until sync — matching the
+    /// pending row's disabled actions.
+    private func promotedPostCaptureEntry() -> Entry? {
+        guard let id = postCaptureEntryId else { return nil }
+        return feedViewModel.entries.first { $0.id == id }
+    }
+
+    private func openCommentQuickAction() {
+        guard let entry = promotedPostCaptureEntry() else { return }
+        dismissPostCapture()
+        commentTargetEntry = entry
+        isCommentTargetActive = true
+    }
+
+    private func openAddToCollectionQuickAction() {
+        guard let entry = promotedPostCaptureEntry() else { return }
+        dismissPostCapture()
+        addToCollectionEntry = entry
+        withAnimation(.easeOut(duration: 0.25)) {
+            isAddToCollectionVisible = true
+        }
+    }
+
+    private func openEditQuickAction() {
+        guard let entry = promotedPostCaptureEntry() else { return }
+        dismissPostCapture()
+        fullScreenEditEntry = entry
+        withAnimation(.easeOut(duration: 0.25)) {
+            isFullScreenEditVisible = true
+        }
+    }
+
+    /// Transient strip in the reclaimed area above the composer, targeting
+    /// the entry that was just created. Flat capsules, feed language.
+    private var postCaptureStrip: some View {
+        HStack(spacing: Style.Spacing.x2) {
+            postCaptureAction("Comment", action: openCommentQuickAction)
+            postCaptureAction("Add to collection", action: openAddToCollectionQuickAction)
+            postCaptureAction("Edit", action: openEditQuickAction)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func postCaptureAction(_ title: String, action: @escaping () -> Void) -> some View {
+        Button {
+            Haptics.lightTap()
+            action()
+        } label: {
+            Text(title)
+                .font(Style.Typography.meta())
+                .foregroundColor(Style.Color.primaryText)
+                .lineLimit(1)
+                .padding(.horizontal, Style.Spacing.x3)
+                .frame(height: 32)
+                .background(Capsule().fill(Style.Color.composerBackground))
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
     }
 
     private func performDelete(_ collection: Collection) {
@@ -180,11 +303,13 @@ struct MainAppView: View {
                 VStack(spacing: 0) {
                     StickyHeaderView(
                         onSettingsTapped: {
+                            dismissPostCapture()
                             withAnimation(.easeInOut(duration: 0.28)) {
                                 isSettingsOpen = true
                             }
                         },
                         onSearchTapped: {
+                            dismissPostCapture()
                             isSearchActive = true
                         },
                         showsBottomSeparator: false
@@ -198,11 +323,13 @@ struct MainAppView: View {
                             collectionsViewModel.collections.first { $0.id == id }?.parentId
                         },
                         onSelectAll: {
+                            dismissPostCapture()
                             withAnimation(Style.Animation.composerState) {
                                 feedViewModel.activeCollectionFilter = nil
                             }
                         },
                         onSelectParent: { parent in
+                            dismissPostCapture()
                             // Tabs don't toggle: re-tapping the selected parent
                             // stays put (already its aggregate view).
                             withAnimation(Style.Animation.composerState) {
@@ -210,6 +337,7 @@ struct MainAppView: View {
                             }
                         },
                         onSelectSub: { sub in
+                            dismissPostCapture()
                             // Chips are optional refinements that toggle:
                             // re-tapping the active one returns to the parent
                             // aggregate (no explicit "All" control).
@@ -245,8 +373,16 @@ struct MainAppView: View {
                         feedViewModel: feedViewModel,
                         containerHeight: geometry.size.height,
                         emptyScopeName: activeScopeName,
+                        settlingEntryId: settlingEntryId,
                         scrollToBottomOnSend: $scrollToBottomOnSend,
+                        onUserScroll: {
+                            dismissPostCapture()
+                        },
+                        onEntryOpened: {
+                            dismissPostCapture()
+                        },
                         onMoreTapped: { entry in
+                            dismissPostCapture()
                             activeEntryMenuEntry = entry
                             withAnimation(.easeOut(duration: 0.25)) {
                                 isEntryActionSheetVisible = true
@@ -325,22 +461,45 @@ struct MainAppView: View {
                 )
                 .safeAreaInset(edge: .bottom) {
                     if !isSettingsOpen {
-                        // Collection navigation moved to the top nav bar; the
-                        // area above the composer stays free for the Tier III
-                        // post-capture actions.
                         VStack(spacing: 0) {
+                            // The reclaimed area above the composer hosts the
+                            // transient post-capture actions.
+                            if postCaptureEntryId != nil {
+                                postCaptureStrip
+                                    .padding(.bottom, Style.Spacing.x2)
+                                    .transition(.opacity)
+                            }
+
                             ComposerView(
                                 text: $composerText,
                                 maxHeight: geometry.size.height * Style.Layout.composerMaxHeightFraction,
                                 placeholder: composerPlaceholder,
                                 allowsAttachments: true,
                                 attachedImages: $composerImages,
+                                attachedLink: $composerLink,
                                 requestFocus: $composerFocusRequest,
                                 onSent: { content in
                                     sendDraft(content)
                                 },
-                                onFocus: { },
+                                onFocus: {
+                                    dismissPostCapture()
+                                },
                                 onExpandTapped: {
+                                    dismissPostCapture()
+                                    withAnimation(.easeOut(duration: 0.25)) {
+                                        isComposerFullScreenVisible = true
+                                    }
+                                },
+                                onStartList: {
+                                    // List: a purpose-built accelerator — seed
+                                    // the first checkbox and open the
+                                    // full-screen accommodation state, focused.
+                                    dismissPostCapture()
+                                    if composerText.isEmpty {
+                                        composerText = Checklist.uncheckedMarker
+                                    } else {
+                                        composerText += "\n" + Checklist.uncheckedMarker
+                                    }
                                     withAnimation(.easeOut(duration: 0.25)) {
                                         isComposerFullScreenVisible = true
                                     }
@@ -594,6 +753,7 @@ struct MainAppView: View {
                     ComposerFullScreenView(
                         text: $composerText,
                         attachedImages: $composerImages,
+                        attachedLink: $composerLink,
                         onSend: {
                             let content = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
                             sendDraft(content)
@@ -674,8 +834,28 @@ struct MainAppView: View {
                     SearchView(supabase: supabase, feedViewModel: feedViewModel, userId: userId)
                 }
             }
+            // Comment quick action: straight into the new entry's thread with
+            // the comment composer focused — jot → think with zero extra taps.
+            .navigationDestination(isPresented: $isCommentTargetActive) {
+                if let entry = commentTargetEntry {
+                    EntryDetailView(
+                        entry: entry,
+                        feedViewModel: feedViewModel,
+                        autoFocusComposer: true
+                    )
+                }
+            }
             .onChange(of: composerText) { _, newValue in
                 UserDefaults.standard.set(newValue, forKey: Self.feedDraftKey)
+                // Typing a new draft is a meaningful action — the previous
+                // capture's strip yields. (Clearing on send leaves "" and
+                // never triggers this.)
+                if !newValue.isEmpty {
+                    dismissPostCapture()
+                }
+            }
+            .onChange(of: composerLink) { _, newValue in
+                UserDefaults.standard.set(newValue?.absoluteString, forKey: Self.feedLinkDraftKey)
             }
             // Returning to the foreground is a natural moment to drain the outbox.
             .onChange(of: scenePhase) { _, phase in
@@ -750,7 +930,14 @@ private struct FeedScrollContent: View {
     /// scoped feed gets a restrained one-liner; an empty All feed gets the
     /// first-use state.
     let emptyScopeName: String?
+    /// The just-captured entry receiving the brief settling emphasis.
+    let settlingEntryId: UUID?
     @Binding var scrollToBottomOnSend: Bool
+    /// User-initiated feed scrolling — a meaningful action that dismisses
+    /// the post-capture state.
+    var onUserScroll: (() -> Void)?
+    /// A row was opened into its detail view.
+    var onEntryOpened: (() -> Void)?
     let onMoreTapped: (Entry) -> Void
     let onResurfaceTapped: (Entry) -> Void
     let onPinTapped: (Entry) -> Void
@@ -795,6 +982,9 @@ private struct FeedScrollContent: View {
                             // Newest entry sits flush above the composer — no bottom
                             // hairline — unless it's the only entry (top of screen).
                             showBottomSeparator: entry.id != entries.last?.id || entries.count == 1,
+                            onResultActivated: {
+                                onEntryOpened?()
+                            },
                             onMoreTapped: {
                                 onMoreTapped(entry)
                             }, onResurfaceTapped: {
@@ -805,7 +995,8 @@ private struct FeedScrollContent: View {
                                 onFireTapped(entry)
                             }, onPendingWarningTapped: {
                                 onPendingWarningTapped(entry)
-                            })
+                            },
+                            isSettling: entry.id == settlingEntryId)
                     }
                 }
 
@@ -852,6 +1043,13 @@ private struct FeedScrollContent: View {
                 max(0, g.contentSize.height - g.contentOffset.y - g.containerSize.height)
             } action: { _, newValue in
                 scrollDistanceFromBottom = newValue
+            }
+            // Only user-initiated drags count as meaningful scrolling —
+            // programmatic re-anchoring and layout changes never fire this.
+            .onScrollPhaseChange { _, newPhase in
+                if newPhase == .interacting {
+                    onUserScroll?()
+                }
             }
             .overlay(alignment: .bottom) {
                 let shouldShow = fabEnabled

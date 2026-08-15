@@ -16,6 +16,9 @@ struct PendingEntry: Codable, Identifiable, Equatable {
     let content: String
     let collectionId: UUID?
     let imageFilenames: [String]
+    /// Explicitly staged link (composer chip). Optional so entries queued by
+    /// older builds still decode.
+    var linkURL: String? = nil
     let createdAt: Date
     var attempts: Int = 0
     /// True after repeated server rejections (not mere connectivity loss);
@@ -63,7 +66,7 @@ final class OutboxStore {
             .sorted { $0.createdAt < $1.createdAt }
     }
 
-    func enqueue(content: String, images: [UIImage], collectionId: UUID?) throws -> PendingEntry {
+    func enqueue(content: String, images: [UIImage], linkURL: String?, collectionId: UUID?) throws -> PendingEntry {
         let id = UUID()
         var filenames: [String] = []
         for (index, image) in images.enumerated() {
@@ -77,6 +80,7 @@ final class OutboxStore {
             content: content,
             collectionId: collectionId,
             imageFilenames: filenames,
+            linkURL: linkURL,
             createdAt: Date()
         )
         try persist(pending)

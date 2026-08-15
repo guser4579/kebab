@@ -13,12 +13,16 @@ struct EntryDetailView: View {
     /// When non-nil, the view is in collection context: resurface is hidden,
     /// the action sheet shows "Move entry" instead of "Add to collection".
     var onRemoveFromCollection: (() async -> Void)? = nil
+    /// Focuses the comment composer on arrival (post-capture Comment quick
+    /// action): keyboard up, zero extra taps between jot and think.
+    var autoFocusComposer: Bool = false
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.supabase) private var supabase: SupabaseClient?
 
     @State private var displayedRootEntry: Entry
     @State private var composerText: String = ""
+    @State private var composerFocusRequest = false
     @State private var activeEntryMenuEntry: Entry?
     @State private var isEntryActionSheetVisible = false
     @State private var fullScreenEditEntry: Entry?
@@ -29,11 +33,13 @@ struct EntryDetailView: View {
     init(
         entry: Entry,
         feedViewModel: FeedViewModel,
-        onRemoveFromCollection: (() async -> Void)? = nil
+        onRemoveFromCollection: (() async -> Void)? = nil,
+        autoFocusComposer: Bool = false
     ) {
         self.entry = entry
         self.feedViewModel = feedViewModel
         self.onRemoveFromCollection = onRemoveFromCollection
+        self.autoFocusComposer = autoFocusComposer
         _displayedRootEntry = State(initialValue: entry)
     }
 
@@ -109,6 +115,7 @@ struct EntryDetailView: View {
                     text: $composerText,
                     maxHeight: geometry.size.height * Style.Layout.composerMaxHeightFraction,
                     placeholder: "Add comment",
+                    requestFocus: $composerFocusRequest,
                     onSent: { content in
                         Task {
                             await feedViewModel.sendComment(
@@ -122,6 +129,15 @@ struct EntryDetailView: View {
                     },
                     onFocus: { }
                 )
+            }
+            .onAppear {
+                // Wait out the push transition so the focus lands after the
+                // screen has settled.
+                if autoFocusComposer {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                        composerFocusRequest = true
+                    }
+                }
             }
             .overlay(alignment: .bottom) {
                 if activeEntryMenuEntry != nil {
@@ -482,11 +498,62 @@ struct EntryDetailView: View {
         }
     }
 
+    @ViewBuilder
     private var contentText: some View {
-        Text(rootDisplayContent)
-            .font(.custom("DMSans-SemiBold", size: 16))
-            .foregroundColor(Style.Color.primaryText)
-            .lineSpacing(4)
-            .frame(maxWidth: .infinity, alignment: .leading)
+        if !displayedRootEntry.isContentHidden, Checklist.hasChecklist(displayedRootEntry.content) {
+            checklistContent
+        } else {
+            Text(rootDisplayContent)
+                .font(.custom("DMSans-SemiBold", size: 16))
+                .foregroundColor(Style.Color.primaryText)
+                .lineSpacing(4)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    // Checklist rendering mirrors the feed row: tappable items, strikethrough
+    // completion. Toggles patch the shared feed model and this screen's local
+    // copy in the same beat.
+    private var checklistContent: some View {
+        VStack(alignment: .leading, spacing: Style.Spacing.x2) {
+            ForEach(Checklist.segments(of: displayedRootEntry.content)) { segment in
+                switch segment {
+                case .text(_, let block):
+                    Text(block)
+                        .font(.custom("DMSans-SemiBold", size: 16))
+                        .foregroundColor(Style.Color.primaryText)
+                        .lineSpacing(4)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                case .item(_, let lineIndex, let text, let checked):
+                    Button {
+                        let entry = displayedRootEntry
+                        displayedRootEntry = entry.withContent(
+                            Checklist.toggling(entry.content, lineIndex: lineIndex)
+                        )
+                        Task {
+                            await feedViewModel.toggleChecklistItem(entry: entry, lineIndex: lineIndex)
+                        }
+                    } label: {
+                        HStack(alignment: .firstTextBaseline, spacing: Style.Spacing.x3) {
+                            Image(systemName: checked ? "checkmark.square" : "square")
+                                .font(.system(size: 17, weight: .regular))
+                                .foregroundColor(checked ? Style.Color.secondary : Style.Color.primaryText)
+
+                            Text(text)
+                                .font(.custom("DMSans-SemiBold", size: 16))
+                                .foregroundColor(checked ? Style.Color.secondary : Style.Color.primaryText)
+                                .strikethrough(checked, color: Style.Color.secondary)
+                                .lineSpacing(4)
+                                .multilineTextAlignment(.leading)
+
+                            Spacer(minLength: 0)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

@@ -15,10 +15,30 @@ import PhotosUI
 // editing. An explicit reset to .zero is always permitted so that transitions
 // from scrolling → non-scrolling mode can clear any accumulated offset.
 private final class NonScrollingTextView: UITextView {
+    /// When set, images on the pasteboard route into the composer's
+    /// attachment pipeline instead of pasting into the text.
+    var onPasteImages: (([UIImage]) -> Void)?
+
     override func setContentOffset(_ contentOffset: CGPoint, animated: Bool) {
         if isScrollEnabled || contentOffset == .zero {
             super.setContentOffset(contentOffset, animated: animated)
         }
+    }
+
+    override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
+        if action == #selector(paste(_:)), onPasteImages != nil, UIPasteboard.general.hasImages {
+            return true
+        }
+        return super.canPerformAction(action, withSender: sender)
+    }
+
+    override func paste(_ sender: Any?) {
+        if let onPasteImages, UIPasteboard.general.hasImages,
+           let images = UIPasteboard.general.images, !images.isEmpty {
+            onPasteImages(images)
+            return
+        }
+        super.paste(sender)
     }
 }
 
@@ -39,6 +59,8 @@ private struct GrowingTextView: UIViewRepresentable {
     /// Fires when the content height crosses the max-inline-height boundary
     /// (the composer's constrained state).
     var onConstrainedChange: ((Bool) -> Void)?
+    /// Routes pasted images into the attachment pipeline (root composer only).
+    var onPasteImages: (([UIImage]) -> Void)?
 
     private let textInsetTop: CGFloat    = 13
     private let textInsetBottom: CGFloat = 13
@@ -63,11 +85,13 @@ private struct GrowingTextView: UIViewRepresentable {
         textView.textColor = Style.Color.primaryTextUIColor
         textView.delegate  = context.coordinator
         textView.text      = text
+        textView.onPasteImages = onPasteImages
         return textView
     }
 
     func updateUIView(_ textView: UITextView, context: Context) {
         context.coordinator.parent = self
+        (textView as? NonScrollingTextView)?.onPasteImages = onPasteImages
         if textView.text != text {
             textView.text = text
         }
@@ -173,6 +197,9 @@ struct ComposerView: View {
     /// Images staged for the next send. Owned by the host so a failed send
     /// can restore them alongside the text draft.
     @Binding var attachedImages: [PendingImage]
+    /// Link staged for the next send as a compact chip (pasted URL). Owned by
+    /// the host — part of the same single draft as text and images.
+    @Binding var attachedLink: URL?
     /// External focus request (e.g. returning from the full-screen composer);
     /// consumed once honored.
     @Binding var requestFocus: Bool
@@ -181,6 +208,8 @@ struct ComposerView: View {
     /// Present ⇒ the constrained state shows the expand affordance, which
     /// hands this draft to the full-screen composer.
     var onExpandTapped: (() -> Void)?
+    /// Present ⇒ the + menu offers List, a purpose-built checklist accelerator.
+    var onStartList: (() -> Void)?
 
     init(
         text: Binding<String>,
@@ -188,26 +217,35 @@ struct ComposerView: View {
         placeholder: String = "Make an entry",
         allowsAttachments: Bool = false,
         attachedImages: Binding<[PendingImage]> = .constant([]),
+        attachedLink: Binding<URL?> = .constant(nil),
         requestFocus: Binding<Bool> = .constant(false),
         onSent: @escaping (String) -> Void,
         onFocus: (() -> Void)? = nil,
-        onExpandTapped: (() -> Void)? = nil
+        onExpandTapped: (() -> Void)? = nil,
+        onStartList: (() -> Void)? = nil
     ) {
         self._text = text
         self.maxHeight = maxHeight
         self.placeholder = placeholder
         self.allowsAttachments = allowsAttachments
         self._attachedImages = attachedImages
+        self._attachedLink = attachedLink
         self._requestFocus = requestFocus
         self.onSent = onSent
         self.onFocus = onFocus
         self.onExpandTapped = onExpandTapped
+        self.onStartList = onStartList
     }
 
     @State private var isFocused: Bool = false
     /// True while the text content exceeds the max inline height (internal
     /// scrolling active) — the composer's constrained state.
     @State private var isConstrained: Bool = false
+    /// True when the system pasteboard likely contains a web URL (checked via
+    /// detectPatterns, which never triggers the paste banner). Drives the
+    /// one-tap Paste affordance; the clipboard is read only on tap.
+    @State private var clipboardHasURL: Bool = false
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var voice = VoiceTranscriber()
     /// Text present when dictation started; the streaming transcript is
     /// appended after it so dictation never destroys typed text.
@@ -221,7 +259,13 @@ struct ComposerView: View {
     private let maxImages = 4
 
     private var hasContent: Bool {
-        !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachedImages.isEmpty
+        !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !attachedImages.isEmpty
+            || attachedLink != nil
+    }
+
+    private var showsPasteAffordance: Bool {
+        allowsAttachments && clipboardHasURL && attachedLink == nil
     }
 
     private let composerOuterPadding:    CGFloat = Style.Spacing.x4
@@ -247,10 +291,20 @@ struct ComposerView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if !attachedImages.isEmpty {
-                ComposerThumbnailStrip(images: $attachedImages)
-                    .padding(.top, 10)
-                    .padding(.horizontal, 12)
+            if attachedLink != nil || !attachedImages.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    if let url = attachedLink {
+                        ComposerLinkChip(url: url) {
+                            // Removing the link never touches written context.
+                            attachedLink = nil
+                        }
+                    }
+                    if !attachedImages.isEmpty {
+                        ComposerThumbnailStrip(images: $attachedImages)
+                    }
+                }
+                .padding(.top, 10)
+                .padding(.horizontal, 12)
             }
 
             // The text view keeps this exact structural slot in every state —
@@ -264,6 +318,10 @@ struct ComposerView: View {
                 }
                 textArea
                 if !isExpandedLayout {
+                    if showsPasteAffordance {
+                        pasteChip
+                            .padding(.bottom, buttonInset + 4)
+                    }
                     micButton
                         .padding(.bottom, buttonInset)
                     sendButtonColumn
@@ -277,6 +335,19 @@ struct ComposerView: View {
             }
         }
         .animation(Style.Animation.composerState, value: isExpandedLayout)
+        .onAppear {
+            refreshClipboardState()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active {
+                refreshClipboardState()
+            }
+        }
+        .onChange(of: isFocused) { _, focused in
+            if focused {
+                refreshClipboardState()
+            }
+        }
         // Liquid Glass capsule: feed content scrolls visibly behind the
         // composer. The subtle tint keeps placeholder/text contrast on the
         // dark theme without going opaque.
@@ -373,7 +444,8 @@ struct ComposerView: View {
                 leadingInset: textLeadingInset,
                 trailingInset: textTrailingInset,
                 onFocus: onFocus,
-                onConstrainedChange: { isConstrained = $0 }
+                onConstrainedChange: { isConstrained = $0 },
+                onPasteImages: allowsAttachments ? { appendPastedImages($0) } : nil
             )
             .frame(maxWidth: .infinity)
         }
@@ -413,6 +485,10 @@ struct ComposerView: View {
                 attachMenu
                     .padding(.leading, 4)
             }
+            if showsPasteAffordance {
+                pasteChip
+                    .padding(.leading, allowsAttachments ? 0 : Style.Spacing.x3)
+            }
             Spacer(minLength: 0)
             micButton
             sendButton
@@ -422,7 +498,77 @@ struct ComposerView: View {
         .padding(.bottom, buttonInset)
     }
 
-    // "+" attach menu — Camera / Photos / Files, capped at four images.
+    // MARK: - Clipboard link affordance
+
+    /// One-tap Paste for a copied URL — appears only when the pasteboard
+    /// likely holds a web URL and no link is staged yet. The clipboard is
+    /// never read (and never triggers the system banner) until tapped.
+    private var pasteChip: some View {
+        Button {
+            pasteLinkFromClipboard()
+        } label: {
+            HStack(spacing: 4) {
+                Icon("link-02", glyphSize: Style.Icon.glyphSmall)
+                    .foregroundColor(Style.Color.secondary)
+                Text("Paste")
+                    .font(Style.Typography.meta())
+                    .foregroundColor(Style.Color.secondary)
+            }
+            .padding(.horizontal, Style.Spacing.x3)
+            .frame(height: 28)
+            .background(Capsule().stroke(Style.Color.separator, lineWidth: 1))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func refreshClipboardState() {
+        guard allowsAttachments else { return }
+        UIPasteboard.general.detectPatterns(for: [\.probableWebURL]) { result in
+            DispatchQueue.main.async {
+                if case .success(let patterns) = result {
+                    clipboardHasURL = patterns.contains(\.probableWebURL)
+                } else {
+                    clipboardHasURL = false
+                }
+            }
+        }
+    }
+
+    private func pasteLinkFromClipboard() {
+        Haptics.lightTap()
+        let pasteboard = UIPasteboard.general
+        var url = pasteboard.url
+        if url == nil, let string = pasteboard.string {
+            let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let direct = URL(string: trimmed), direct.scheme != nil {
+                url = direct
+            } else if let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue),
+                      let match = detector.firstMatch(in: trimmed, range: NSRange(trimmed.startIndex..., in: trimmed)),
+                      let detected = match.url {
+                url = detected
+            } else if !trimmed.isEmpty, !trimmed.contains(" ") {
+                url = URL(string: "https://" + trimmed)
+            }
+        }
+        guard let url else {
+            clipboardHasURL = false
+            return
+        }
+        attachedLink = url
+        clipboardHasURL = false
+    }
+
+    /// Pasted images enter the exact same pipeline as picked ones.
+    private func appendPastedImages(_ images: [UIImage]) {
+        for image in images {
+            guard attachedImages.count < maxImages else { break }
+            attachedImages.append(PendingImage(image: image))
+        }
+    }
+
+    // "+" attach menu — Camera / Photos / Files (capped at four images),
+    // plus the List accelerator on the root composer.
     private var attachMenu: some View {
         Menu {
             Button {
@@ -440,6 +586,13 @@ struct ComposerView: View {
             } label: {
                 Label("Files", systemImage: "folder")
             }
+            if let onStartList {
+                Button {
+                    onStartList()
+                } label: {
+                    Label("List", systemImage: "checklist")
+                }
+            }
         } label: {
             Image(systemName: "plus")
                 .font(.system(size: 17, weight: .medium))
@@ -451,7 +604,9 @@ struct ComposerView: View {
                 .frame(width: buttonSize, height: buttonSize)
                 .contentShape(Circle())
         }
-        .disabled(attachedImages.count >= maxImages)
+        // List stays reachable even at the image cap; only fully disable the
+        // menu when it has nothing left to offer.
+        .disabled(attachedImages.count >= maxImages && onStartList == nil)
     }
 
     // Mic button — dictation toggle. While recording the glyph becomes an
@@ -473,7 +628,7 @@ struct ComposerView: View {
         } label: {
             Image(systemName: voice.isRecording ? "waveform" : "mic")
                 .font(.system(size: 17, weight: .medium))
-                .foregroundColor(voice.isRecording ? Style.Color.composerSend : Style.Color.secondary)
+                .foregroundColor(voice.isRecording ? Style.Color.destructive : Style.Color.secondary)
                 .symbolEffect(.variableColor.iterative, options: .repeating, isActive: voice.isRecording)
                 .frame(width: buttonSize, height: buttonSize)
                 .contentShape(Circle())

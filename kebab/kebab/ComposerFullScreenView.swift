@@ -15,6 +15,8 @@ struct ComposerFullScreenView: View {
 
     @Binding var text: String
     @Binding var attachedImages: [PendingImage]
+    /// Same staged link as the inline composer — one draft, every state.
+    @Binding var attachedLink: URL?
     /// Sends the current draft — the owner reads and clears the bindings,
     /// identical to the inline path.
     let onSend: () -> Void
@@ -22,20 +24,39 @@ struct ComposerFullScreenView: View {
     let onDismiss: () -> Void
 
     private var hasContent: Bool {
-        !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachedImages.isEmpty
+        !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !attachedImages.isEmpty
+            || attachedLink != nil
     }
 
     var body: some View {
         VStack(spacing: 0) {
             header
 
-            if !attachedImages.isEmpty {
-                ComposerThumbnailStrip(images: $attachedImages)
-                    .padding(.horizontal, Style.Layout.entryContentPadding)
-                    .padding(.top, 16)
+            if attachedLink != nil || !attachedImages.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    if let url = attachedLink {
+                        ComposerLinkChip(url: url) {
+                            attachedLink = nil
+                        }
+                    }
+                    if !attachedImages.isEmpty {
+                        ComposerThumbnailStrip(images: $attachedImages)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, Style.Layout.entryContentPadding)
+                .padding(.top, 16)
             }
 
-            FullScreenTextEditor(text: $text)
+            FullScreenTextEditor(
+                text: $text,
+                onPasteImages: { pasted in
+                    for image in pasted where attachedImages.count < 4 {
+                        attachedImages.append(PendingImage(image: image))
+                    }
+                }
+            )
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .padding(.horizontal, Style.Layout.entryContentPadding)
                 .padding(.top, 16)
