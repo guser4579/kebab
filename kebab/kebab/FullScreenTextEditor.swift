@@ -95,6 +95,12 @@ struct FullScreenTextEditor: UIViewRepresentable {
         tv.delegate = context.coordinator
         tv.text = text
         tv.tintColor = Style.Color.composerSendUIColor
+        // A serious writing surface: dragging the text tracks the keyboard
+        // down interactively, and alwaysBounceVertical keeps that gesture
+        // available even when the draft is shorter than the viewport. Cursor
+        // and draft survive dismissal (UIKit keeps selectedRange).
+        tv.keyboardDismissMode = .interactive
+        tv.alwaysBounceVertical = true
         tv.onPasteImages = onPasteImages
         tv.onPasteLink = onPasteLink
         return tv

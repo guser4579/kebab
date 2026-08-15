@@ -114,7 +114,9 @@ struct EditEntryFullScreenView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(Style.Color.background)
-        .ignoresSafeArea(edges: [.top, .bottom])
+        // Container edges only — `.all` would also ignore the keyboard region
+        // and break keyboard avoidance for the editor (see ComposerFullScreen).
+        .ignoresSafeArea(.container, edges: [.top, .bottom])
         .alert("Couldn’t save", isPresented: Binding(
             get: { saveErrorMessage != nil },
             set: { if !$0 { saveErrorMessage = nil } }

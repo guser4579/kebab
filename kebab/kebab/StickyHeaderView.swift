@@ -47,7 +47,8 @@ struct StickyHeaderView: View {
                 Button {
                     onSettingsTapped?()
                 } label: {
-                    Icon("settings")
+                    // Hamburger: settings lives on the left side of the app.
+                    Icon("menu")
                         .foregroundColor(Style.Color.primaryText)
                 }
                 Spacer(minLength: 0)

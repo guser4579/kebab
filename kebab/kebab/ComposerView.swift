@@ -532,23 +532,16 @@ struct ComposerView: View {
 
     // MARK: - Clipboard paste affordance
 
-    /// The chip's icon mirrors what tapping it will do; the word never changes.
-    private var pasteIconName: String {
-        switch clipboardKind {
-        case .image: return "image-02"
-        case .text, nil: return "file-02"
-        case .url: return "link-02"
-        }
-    }
-
-    /// One-tap Paste for supported clipboard content — same treatment and
-    /// location in every state, only the icon adapts to the content kind.
+    /// One-tap Paste for supported clipboard content — one generic treatment
+    /// for every kind (the system paste glyph). Routing by content kind
+    /// happens on tap; the affordance itself never changes.
     private var pasteChip: some View {
         Button {
             pasteFromClipboard()
         } label: {
             HStack(spacing: 4) {
-                Icon(pasteIconName, glyphSize: Style.Icon.glyphSmall)
+                Image(systemName: "doc.on.clipboard")
+                    .font(.system(size: 12, weight: .medium))
                     .foregroundColor(Style.Color.secondary)
                 Text("Paste")
                     .font(Style.Typography.meta())

@@ -68,7 +68,10 @@ struct ComposerFullScreenView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(Style.Color.background)
-        .ignoresSafeArea(edges: [.top, .bottom])
+        // Container edges only: the bare `.all` regions default also ignored
+        // the KEYBOARD safe area, which disabled keyboard avoidance entirely —
+        // long drafts ran beneath the keyboard with no way to reach them.
+        .ignoresSafeArea(.container, edges: [.top, .bottom])
     }
 
     private var header: some View {

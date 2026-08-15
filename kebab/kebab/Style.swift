@@ -180,6 +180,10 @@ enum Style {
         static let actionButtonSize: CGFloat = 36
         /// Capsule radius when single-line (height/2)
         static var composerCapsuleRadius: CGFloat { composerSingleLineHeight / 2 }
+        /// Constant bottom reserve the feed keeps for the floating composer.
+        /// Deliberately fixed: composer growth, focus, the quick-action strip,
+        /// and the keyboard must never change the feed's scroll insets.
+        static let feedBottomReserve: CGFloat = composerSingleLineHeight
         /// Multi-line composer corner radius
         static let composerMultiLineRadius: CGFloat = 24
         /// Link card height

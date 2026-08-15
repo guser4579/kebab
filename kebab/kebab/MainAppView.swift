@@ -28,9 +28,14 @@ struct MainAppView: View {
     @State private var fullScreenEditEntry: Entry?
     @State private var isFullScreenEditVisible = false
     @State private var isSettingsOpen: Bool = false
+    /// Live finger translation while dragging the settings panel closed.
+    @State private var settingsDragOffset: CGFloat = 0
     @State private var isSearchActive: Bool = false
     @State private var addToCollectionEntry: Entry?
     @State private var isAddToCollectionVisible: Bool = false
+    /// True when the Add-to-collection surface should appear in place (quick
+    /// action, keyboard may be mid-dismissal behind it) instead of sliding up.
+    @State private var addToCollectionAppearsInPlace = false
     // Collections sheet behind the pinned + in the nav bar. Same two-phase
     // pattern as activeEntryMenuEntry / isEntryActionSheetVisible: `presented`
     // mounts the overlay, `visible` animates it.
@@ -82,6 +87,30 @@ struct MainAppView: View {
         _collectionsViewModel = StateObject(wrappedValue: CollectionsViewModel(supabase: supabase))
         _scopeCoordinator = StateObject(wrappedValue: FeedScopeCoordinator(supabase: supabase))
         self.authViewModel = authViewModel
+    }
+
+    /// Settings panel open/close: a no-bounce spring matched to the feel of a
+    /// native navigation transition.
+    private static let settingsTransition: Animation = .spring(response: 0.36, dampingFraction: 1.0)
+
+    private func openSettings() {
+        dismissPostCapture()
+        // The keyboard is an independent surface: drop it decisively so it
+        // isn't left hovering over the settings panel.
+        UIApplication.shared.sendAction(
+            #selector(UIResponder.resignFirstResponder),
+            to: nil, from: nil, for: nil
+        )
+        withAnimation(Self.settingsTransition) {
+            isSettingsOpen = true
+        }
+    }
+
+    private func closeSettings() {
+        withAnimation(Self.settingsTransition) {
+            isSettingsOpen = false
+            settingsDragOffset = 0
+        }
     }
 
     /// "Add to <collection>" while a collection filter targets the composer.
@@ -251,19 +280,18 @@ struct MainAppView: View {
     private func openAddToCollectionQuickAction() {
         guard let entry = promotedPostCaptureEntry() else { return }
         dismissPostCapture()
-        // The keyboard is usually still up right after a send. Drop it first
-        // and let the dismissal resolve, so the full-screen sheet never
-        // presents underneath it. sendAction reports whether anything
-        // actually resigned — no dead wait when the keyboard was already gone.
-        let hadKeyboard = UIApplication.shared.sendAction(
+        // Discrete sequence, no choreography: resign the keyboard, then put
+        // the opaque full-screen surface up in its final position immediately.
+        // The keyboard finishes its exit invisibly BEHIND the surface, and the
+        // feed (keyboard-independent) never moves — one visible plane change.
+        UIApplication.shared.sendAction(
             #selector(UIResponder.resignFirstResponder),
             to: nil, from: nil, for: nil
         )
         addToCollectionEntry = entry
-        DispatchQueue.main.asyncAfter(deadline: .now() + (hadKeyboard ? 0.3 : 0)) {
-            withAnimation(.easeOut(duration: 0.25)) {
-                isAddToCollectionVisible = true
-            }
+        addToCollectionAppearsInPlace = true
+        withAnimation(.easeOut(duration: 0.15)) {
+            isAddToCollectionVisible = true
         }
     }
 
@@ -402,10 +430,7 @@ struct MainAppView: View {
                 VStack(spacing: 0) {
                     StickyHeaderView(
                         onSettingsTapped: {
-                            dismissPostCapture()
-                            // Same presentation mechanics as Search: a plain
-                            // navigationDestination push, native transition.
-                            isSettingsOpen = true
+                            openSettings()
                         },
                         onSearchTapped: {
                             dismissPostCapture()
@@ -529,6 +554,11 @@ struct MainAppView: View {
                     .frame(maxWidth: .infinity)
                     .background(Style.Color.background)
                     .foregroundColor(Style.Color.primaryText)
+                    // Constant reserve for the floating composer. This is the
+                    // feed's ONLY bottom inset: it never changes with composer
+                    // state, the quick-action strip, or the keyboard, so the
+                    // feed's scroll geometry is a stable physical surface.
+                    .safeAreaPadding(.bottom, Style.Layout.feedBottomReserve)
                     .task {
                         // Pending and freshly promoted entries render their
                         // collection breadcrumb (and match aggregate filters)
@@ -576,12 +606,11 @@ struct MainAppView: View {
                     }
                 }
                 .ignoresSafeArea(edges: .top)
-                // Keep the same modifier node in the tree at all times - only the edges parameter changes.
-                // A @ViewBuilder conditional (the prior attempt) changed the view type on toggle, causing
-                // SwiftUI to destroy and recreate the ScrollView and reset its offset to zero. A stable
-                // node with edges: [] (semantic no-op) vs edges: .bottom is a parameter update, not a
-                // type change, so the ScrollView position survives both open and close.
-                .ignoresSafeArea(.keyboard, edges: (isFullScreenEditVisible || isComposerFullScreenVisible) ? .bottom : [])
+                // The feed layer is keyboard-independent, always: the keyboard
+                // is an input surface that covers the feed, never one that
+                // resizes it. The composer floats in its own keyboard-avoiding
+                // layer below; full-screen surfaces handle their own keyboards.
+                .ignoresSafeArea(.keyboard)
                 // Left-edge swipe opens settings (same push as the gear tap),
                 // via a window-level UIScreenEdgePanGestureRecognizer so feed
                 // scrolling stays fully native — see EdgeSwipeRecognizer.
@@ -602,25 +631,25 @@ struct MainAppView: View {
                                 && (PopGestureDelegate.shared.navigationController?.viewControllers.count ?? 1) <= 1
                         },
                         onSwipe: {
-                            isSettingsOpen = true
+                            openSettings()
                         }
                     )
                 )
-                .safeAreaInset(edge: .bottom) {
-                    // Unconditional: Settings is a pushed screen that simply
-                    // covers this one. Conditionally unmounting the composer
-                    // (the old overlay approach) dropped keyboard focus and
-                    // jumped the feed's bottom inset mid-transition.
-                    VStack(spacing: 0) {
-                        // The reclaimed area above the composer hosts the
-                        // transient post-capture actions.
-                        if postCaptureEntryId != nil {
-                            postCaptureStrip
-                                .padding(.bottom, Style.Spacing.x2)
-                                .transition(.opacity)
-                        }
+                // Composer layer: a keyboard-avoiding ZStack sibling, NOT a
+                // safeAreaInset. The strip and every composer state change
+                // (focus, growth, clearing on send) float over the feed
+                // without touching its scroll insets; only this layer rides
+                // the keyboard.
+                VStack(spacing: 0) {
+                    // The area above the composer hosts the transient
+                    // post-capture actions — overlaid, never layout.
+                    if postCaptureEntryId != nil {
+                        postCaptureStrip
+                            .padding(.bottom, Style.Spacing.x2)
+                            .transition(.opacity)
+                    }
 
-                        ComposerView(
+                    ComposerView(
                             text: $composerText,
                             maxHeight: geometry.size.height * Style.Layout.composerMaxHeightFraction,
                             placeholder: composerPlaceholder,
@@ -655,22 +684,63 @@ struct MainAppView: View {
                                 }
                             }
                         )
-                    }
-                    // No opaque fill: the chips and glass composer float over
-                    // the feed, which scrolls visibly behind them. A soft
-                    // fade keeps the very bottom edge legible.
-                    .background(
-                        LinearGradient(
-                            gradient: Gradient(stops: [
-                                .init(color: Style.Color.background.opacity(0), location: 0),
-                                .init(color: Style.Color.background.opacity(0.85), location: 1.0)
-                            ]),
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                        .ignoresSafeArea(edges: .bottom)
-                    )
                 }
+                // No opaque fill: the chips and glass composer float over
+                // the feed, which scrolls visibly behind them. A soft
+                // fade keeps the very bottom edge legible.
+                .background(
+                    LinearGradient(
+                        gradient: Gradient(stops: [
+                            .init(color: Style.Color.background.opacity(0), location: 0),
+                            .init(color: Style.Color.background.opacity(0.85), location: 1.0)
+                        ]),
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                    .ignoresSafeArea(.container, edges: .bottom)
+                )
+                .frame(maxWidth: .infinity)
+                .frame(maxHeight: .infinity, alignment: .bottom)
+
+                // Settings layer: lives conceptually on the left side of the
+                // app. An always-mounted panel (stable node identity) that
+                // slides over the frozen feed — the feed's scroll state is
+                // never touched. Finger-tracked leftward drag dismisses it
+                // interactively; commit uses threshold or projected velocity.
+                SettingsView(
+                    onClose: { closeSettings() },
+                    authViewModel: authViewModel
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                // Flatten before shadowing so the shadow traces the panel's
+                // silhouette (its trailing edge during the slide), not every
+                // subview inside it.
+                .compositingGroup()
+                .shadow(color: .black.opacity(isSettingsOpen ? 0.18 : 0), radius: 24, x: 8, y: 0)
+                .offset(x: (isSettingsOpen ? 0 : -geometry.size.width) + settingsDragOffset)
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 15)
+                        .onChanged { value in
+                            guard isSettingsOpen else { return }
+                            // Track the finger directly; only leftward
+                            // movement pulls the panel out.
+                            settingsDragOffset = min(0, value.translation.width)
+                        }
+                        .onEnded { value in
+                            guard isSettingsOpen else { return }
+                            let projected = value.predictedEndTranslation.width
+                            if value.translation.width < -80 || projected < -200 {
+                                withAnimation(Self.settingsTransition) {
+                                    isSettingsOpen = false
+                                    settingsDragOffset = 0
+                                }
+                            } else {
+                                withAnimation(Self.settingsTransition) {
+                                    settingsDragOffset = 0
+                                }
+                            }
+                        }
+                )
             }
             .overlay(alignment: .bottom) {
                 if activeEntryMenuEntry != nil {
@@ -724,6 +794,7 @@ struct MainAppView: View {
                                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
                                         activeEntryMenuEntry = nil
                                         addToCollectionEntry = toAdd
+                                        addToCollectionAppearsInPlace = false
                                         withAnimation(.easeOut(duration: 0.25)) {
                                             isAddToCollectionVisible = true
                                         }
@@ -779,6 +850,7 @@ struct MainAppView: View {
                             }
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
                                 addToCollectionEntry = nil
+                                addToCollectionAppearsInPlace = false
                             }
                         },
                         onSuccess: {
@@ -792,7 +864,9 @@ struct MainAppView: View {
                             }
                         }
                     )
-                    .transition(.move(edge: .bottom))
+                    // Quick-action path appears in place (a quiet fade in its
+                    // final position); the ellipsis path keeps its slide.
+                    .transition(addToCollectionAppearsInPlace ? .opacity : .move(edge: .bottom))
                 }
             }
             // Collections sheet behind the nav bar's pinned +: creation is
@@ -977,16 +1051,6 @@ struct MainAppView: View {
                 if let userId = authViewModel.currentUserId {
                     SearchView(supabase: supabase, feedViewModel: feedViewModel, userId: userId)
                 }
-            }
-            // Settings: identical presentation mechanics to Search — a native
-            // push with the system transition and interactive swipe-back. The
-            // feed screen (and every warm scope's position) stays mounted
-            // untouched underneath.
-            .navigationDestination(isPresented: $isSettingsOpen) {
-                SettingsView(
-                    onClose: { isSettingsOpen = false },
-                    authViewModel: authViewModel
-                )
             }
             // Comment quick action: straight into the new entry's thread with
             // the comment composer focused — jot → think with zero extra taps.
