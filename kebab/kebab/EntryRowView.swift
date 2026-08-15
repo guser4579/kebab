@@ -6,8 +6,6 @@ struct EntryRowView: View {
     var feedViewModel: FeedViewModel?
     /// When false the resurface button is hidden (collection context).
     var showResurface: Bool = true
-    /// When false the collection breadcrumb is hidden (collection context).
-    var showBreadcrumb: Bool = true
     /// When false the bottom hairline is omitted — the newest (last) entry in a
     /// feed list sits flush above the composer with no stray line. Kept true for
     /// a sole entry, which rests at the top of the screen and needs closure.
@@ -60,8 +58,7 @@ struct EntryRowView: View {
                 NavigationLink(destination: EntryDetailView(
                     entry: entry,
                     feedViewModel: feedViewModel,
-                    onRemoveFromCollection: onRemoveFromCollection,
-                    showBreadcrumb: showBreadcrumb
+                    onRemoveFromCollection: onRemoveFromCollection
                 )) {
                     Color.clear
                         .contentShape(Rectangle())
@@ -182,14 +179,6 @@ struct EntryRowView: View {
                         .foregroundColor(Style.Color.fire)
                 }
                 .padding(.leading, 2)
-            }
-
-            if showBreadcrumb {
-                EntryBreadcrumbView(
-                    collectionName: entry.collection_name,
-                    collectionParentName: entry.collection_parent_name
-                )
-                .padding(.leading, 4)
             }
 
             Spacer(minLength: 0)

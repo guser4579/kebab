@@ -13,9 +13,6 @@ struct EntryDetailView: View {
     /// When non-nil, the view is in collection context: resurface is hidden,
     /// the action sheet shows "Move entry" instead of "Add to collection".
     var onRemoveFromCollection: (() async -> Void)? = nil
-    /// When false the collection breadcrumb is hidden. Set to false when navigating
-    /// from a collection/sub-collection screen; defaults to true everywhere else.
-    var showBreadcrumb: Bool = true
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.supabase) private var supabase: SupabaseClient?
@@ -32,13 +29,11 @@ struct EntryDetailView: View {
     init(
         entry: Entry,
         feedViewModel: FeedViewModel,
-        onRemoveFromCollection: (() async -> Void)? = nil,
-        showBreadcrumb: Bool = true
+        onRemoveFromCollection: (() async -> Void)? = nil
     ) {
         self.entry = entry
         self.feedViewModel = feedViewModel
         self.onRemoveFromCollection = onRemoveFromCollection
-        self.showBreadcrumb = showBreadcrumb
         _displayedRootEntry = State(initialValue: entry)
     }
 
@@ -470,14 +465,6 @@ struct EntryDetailView: View {
                         .foregroundColor(Style.Color.fire)
                 }
                 .padding(.leading, 2)
-            }
-
-            if showBreadcrumb {
-                EntryBreadcrumbView(
-                    collectionName: displayedRootEntry.collection_name,
-                    collectionParentName: displayedRootEntry.collection_parent_name
-                )
-                .padding(.leading, 4)
             }
 
             Spacer(minLength: 0)
