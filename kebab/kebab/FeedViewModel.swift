@@ -717,6 +717,13 @@ final class FeedViewModel: ObservableObject {
                 depth: depth,
                 content: trimmed
             )
+            // comment_count comes from a server-side view that paged scopes
+            // only re-read on revalidation; bump the root entry locally so
+            // feed rows update without a reload.
+            entries = entries.map {
+                $0.id == rootId ? $0.withCommentCount(($0.comment_count ?? 0) + 1) : $0
+            }
+            onEntryPatched?(rootId)
         } catch {
             print("Failed to send comment:", error)
         }

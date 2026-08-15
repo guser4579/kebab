@@ -161,6 +161,28 @@ extension Entry {
         )
     }
 
+    func withCommentCount(_ count: Int) -> Entry {
+        Entry(
+            id: id,
+            user_id: user_id,
+            parent_id: parent_id,
+            root_id: root_id,
+            depth: depth,
+            content: content,
+            created_at: created_at,
+            pinned_at: pinned_at,
+            isContentHidden: isContentHidden,
+            comment_count: count,
+            resurface_count: resurface_count,
+            fire_count: fire_count,
+            attachments: attachments,
+            collection_id: collection_id,
+            collection_name: collection_name,
+            collection_parent_id: collection_parent_id,
+            collection_parent_name: collection_parent_name
+        )
+    }
+
     func withFireCount(_ count: Int) -> Entry {
         Entry(
             id: id,
