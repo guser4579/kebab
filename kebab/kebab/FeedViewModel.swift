@@ -5,6 +5,14 @@ import Supabase
 import UIKit
 import Network
 
+/// Collection fields needed to render an entry's breadcrumb locally —
+/// resolved from the collections model instead of a server round-trip.
+struct CollectionDisplayInfo {
+    let name: String
+    let parentId: UUID?
+    let parentName: String?
+}
+
 @MainActor
 final class FeedViewModel: ObservableObject {
 
@@ -19,10 +27,11 @@ final class FeedViewModel: ObservableObject {
     /// Single-select collection scope. Also drives composer targeting: while
     /// active, new entries are added to `targetCollectionId`.
     @Published var activeCollectionFilter: CollectionFilter?
-    /// Resolves a collection id to its parent id (nil for top-level). Set by
-    /// the owner from the collections model so pending (outbox) entries filed
-    /// into a sub-collection also match the parent's aggregate filter.
-    var collectionParentResolver: ((UUID) -> UUID?)?
+    /// Resolves a collection id to display info (name + parent). Set by the
+    /// owner from the collections model so pending and freshly promoted
+    /// entries render breadcrumbs and match aggregate filters without a
+    /// server round-trip.
+    var collectionInfoResolver: ((UUID) -> CollectionDisplayInfo?)?
 
     var feedEntries: [Entry] {
         entries.filter { $0.pinned_at == nil }
@@ -58,7 +67,7 @@ final class FeedViewModel: ObservableObject {
             case .all(let parentId):
                 // Match the parent itself or any of its sub-collections, same
                 // as the aggregate filter on synced entries above.
-                let pendingParentId = pending.collectionId.flatMap { collectionParentResolver?($0) }
+                let pendingParentId = pending.collectionId.flatMap { collectionInfoResolver?($0)?.parentId }
                 guard pending.collectionId == parentId || pendingParentId == parentId else { return nil }
             case .single(let id):
                 guard pending.collectionId == id else { return nil }
@@ -88,6 +97,7 @@ final class FeedViewModel: ObservableObject {
                 image_url: nil
             )
         }
+        let info = pending.collectionId.flatMap { collectionInfoResolver?($0) }
         return Entry(
             id: pending.id,
             user_id: entries.first?.user_id ?? pending.id,
@@ -103,9 +113,9 @@ final class FeedViewModel: ObservableObject {
             fire_count: 0,
             attachments: imageAttachments.isEmpty ? nil : imageAttachments,
             collection_id: pending.collectionId,
-            collection_name: nil,
-            collection_parent_id: nil,
-            collection_parent_name: nil,
+            collection_name: info?.name,
+            collection_parent_id: info?.parentId,
+            collection_parent_name: info?.parentName,
             isPending: true,
             pendingFailed: pending.failed
         )
@@ -200,20 +210,34 @@ final class FeedViewModel: ObservableObject {
     /// pass — the path monitor retries later. Server rejections count against
     /// the entry; after repeated rejections it's marked failed and surfaces
     /// the warning state instead of silently retrying forever.
+    ///
+    /// Reconciliation is promote-in-place: on successful persistence the
+    /// pending entry becomes a regular entry in the same state update, so the
+    /// rendered row keeps its identity and position — the user never sees the
+    /// local entry disappear and the database entry reappear.
     func flushOutbox() async {
         guard !isFlushing, pendingEntries.contains(where: { !$0.failed }) else { return }
         isFlushing = true
         defer { isFlushing = false }
 
-        var syncedAny = false
-
         for pending in pendingEntries.filter({ !$0.failed }) {
             do {
                 var attachments: [EntryAttachment] = []
                 let images = outbox.loadImages(for: pending)
+                let session = try await supabase.auth.session
                 if !images.isEmpty {
-                    let session = try await supabase.auth.session
-                    attachments += try await imageStorage.uploadImages(images, userId: session.user.id)
+                    let uploaded = try await imageStorage.uploadImages(images, userId: session.user.id)
+                    // Seed the shared image cache so the promoted row renders
+                    // the uploaded URLs straight from memory — the
+                    // file:// → https:// swap never shows a placeholder.
+                    for (image, attachment) in zip(images, uploaded) {
+                        if let url = URL(string: attachment.url) {
+                            let cost = Int(image.size.width * image.size.height
+                                * image.scale * image.scale * 4)
+                            ImageCache.shared.setObject(image, forKey: url as NSURL, cost: cost)
+                        }
+                    }
+                    attachments += uploaded
                 }
                 let (cleanedContent, link) = Self.extractFirstLink(from: pending.content)
                 if let link {
@@ -231,11 +255,14 @@ final class FeedViewModel: ObservableObject {
                     // the client-generated id makes this safely idempotent.
                 }
 
+                var filedCollectionId: UUID?
                 if let collectionId = pending.collectionId {
-                    try? await collectionRepository.addEntryToCollection(
+                    if (try? await collectionRepository.addEntryToCollection(
                         entryId: pending.id,
                         collectionId: collectionId
-                    )
+                    )) != nil {
+                        filedCollectionId = collectionId
+                    }
                 }
 
                 if let link, link.title == nil {
@@ -250,9 +277,33 @@ final class FeedViewModel: ObservableObject {
                     }
                 }
 
-                outbox.remove(pending)
+                // Promote atomically: append the persisted form and drop the
+                // pending form in the same run-loop tick. Same id ⇒ SwiftUI
+                // keeps the row's identity ⇒ no blink, no scroll shift.
+                let info = filedCollectionId.flatMap { collectionInfoResolver?($0) }
+                let promoted = Entry(
+                    id: pending.id,
+                    user_id: entries.first?.user_id ?? session.user.id,
+                    parent_id: nil,
+                    root_id: nil,
+                    depth: 0,
+                    content: cleanedContent,
+                    created_at: pending.createdAt,
+                    pinned_at: nil,
+                    isContentHidden: false,
+                    comment_count: nil,
+                    resurface_count: 0,
+                    fire_count: 0,
+                    attachments: attachments.isEmpty ? nil : attachments,
+                    collection_id: filedCollectionId,
+                    collection_name: info?.name,
+                    collection_parent_id: info?.parentId,
+                    collection_parent_name: info?.parentName
+                )
+                entries.append(promoted)
                 pendingEntries.removeAll { $0.id == pending.id }
-                syncedAny = true
+                LocalStore.save(entries, as: "feed")
+                outbox.remove(pending)
             } catch let error as URLError {
                 // Offline / transport failure: stop the whole pass quietly.
                 _ = error
@@ -266,10 +317,6 @@ final class FeedViewModel: ObservableObject {
                 outbox.update(updated)
                 pendingEntries = pendingEntries.map { $0.id == updated.id ? updated : $0 }
             }
-        }
-
-        if syncedAny {
-            await loadEntries()
         }
     }
 

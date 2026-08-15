@@ -45,6 +45,12 @@ struct MainAppView: View {
     @State private var scrollToBottomOnSend = false
     /// Pending entry whose sync permanently failed; drives the Retry/Discard alert.
     @State private var pendingWarningId: UUID?
+    /// Full-screen composer — the same draft (composerText/composerImages) at
+    /// maximum accommodation, entered from the constrained state's expand control.
+    @State private var isComposerFullScreenVisible = false
+    /// One-shot signal asking the inline composer to retake keyboard focus
+    /// (set when collapsing back from the full-screen composer).
+    @State private var composerFocusRequest = false
     @Environment(\.scenePhase) private var scenePhase
 
     let authViewModel: AuthViewModel
@@ -115,6 +121,34 @@ struct MainAppView: View {
         return hasSubs
             ? "Its sub-collections will also be deleted. Entries will move to All entries."
             : "Entries will move to All entries."
+    }
+
+    /// One submission path for every composer state (inline and full-screen):
+    /// queue-then-flush, with draft restoration if the outbox write fails.
+    private func sendDraft(_ content: String) {
+        scrollToBottomOnSend = true
+        // Active collection filter targets the composer: the new
+        // entry lands in the filtered collection.
+        let targetId = feedViewModel.activeCollectionFilter?.targetCollectionId
+        let images = composerImages
+        composerImages = []
+        // Queue-then-flush: the entry appears immediately with a
+        // pending mark and syncs whenever connectivity allows.
+        let queued = feedViewModel.queueEntry(
+            content: content,
+            images: images.map(\.image),
+            collectionId: targetId
+        )
+        if !queued {
+            // Outbox write failed (disk full) — restore the draft.
+            if composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                composerText = content
+            }
+            if composerImages.isEmpty {
+                composerImages = images
+            }
+            Haptics.destructiveTap()
+        }
     }
 
     private func performDelete(_ collection: Collection) {
@@ -236,10 +270,21 @@ struct MainAppView: View {
                     .foregroundColor(Style.Color.primaryText)
                     .task {
                         Haptics.prepare()
-                        // Pending (outbox) entries filed into a sub-collection
-                        // must match the parent's aggregate filter too.
-                        feedViewModel.collectionParentResolver = { [weak collectionsViewModel] id in
-                            collectionsViewModel?.collections.first { $0.id == id }?.parentId
+                        // Pending and freshly promoted entries render their
+                        // collection breadcrumb (and match aggregate filters)
+                        // from the local collections model.
+                        feedViewModel.collectionInfoResolver = { [weak collectionsViewModel] id in
+                            guard let vm = collectionsViewModel,
+                                  let collection = vm.collections.first(where: { $0.id == id })
+                            else { return nil }
+                            let parent = collection.parentId.flatMap { pid in
+                                vm.collections.first { $0.id == pid }
+                            }
+                            return CollectionDisplayInfo(
+                                name: collection.name,
+                                parentId: collection.parentId,
+                                parentName: parent?.name
+                            )
                         }
                         await feedViewModel.loadEntries()
                         await collectionsViewModel.loadCollections()
@@ -251,7 +296,7 @@ struct MainAppView: View {
                 // SwiftUI to destroy and recreate the ScrollView and reset its offset to zero. A stable
                 // node with edges: [] (semantic no-op) vs edges: .bottom is a parameter update, not a
                 // type change, so the ScrollView position survives both open and close.
-                .ignoresSafeArea(.keyboard, edges: isFullScreenEditVisible ? .bottom : [])
+                .ignoresSafeArea(.keyboard, edges: (isFullScreenEditVisible || isComposerFullScreenVisible) ? .bottom : [])
                 // Left-edge swipe opens settings ("swipe between screens"),
                 // via a window-level UIScreenEdgePanGestureRecognizer so feed
                 // scrolling stays fully native — see EdgeSwipeRecognizer.
@@ -266,6 +311,7 @@ struct MainAppView: View {
                                 && !isRenameVisible
                                 && deleteCandidate == nil
                                 && !isFullScreenEditVisible
+                                && !isComposerFullScreenVisible
                                 && !isAddToCollectionVisible
                                 // On pushed screens the left edge means "back".
                                 && (PopGestureDelegate.shared.navigationController?.viewControllers.count ?? 1) <= 1
@@ -289,32 +335,16 @@ struct MainAppView: View {
                                 placeholder: composerPlaceholder,
                                 allowsAttachments: true,
                                 attachedImages: $composerImages,
+                                requestFocus: $composerFocusRequest,
                                 onSent: { content in
-                                    scrollToBottomOnSend = true
-                                    // Active collection filter targets the composer: the new
-                                    // entry lands in the filtered collection.
-                                    let targetId = feedViewModel.activeCollectionFilter?.targetCollectionId
-                                    let images = composerImages
-                                    composerImages = []
-                                    // Queue-then-flush: the entry appears immediately with a
-                                    // pending mark and syncs whenever connectivity allows.
-                                    let queued = feedViewModel.queueEntry(
-                                        content: content,
-                                        images: images.map(\.image),
-                                        collectionId: targetId
-                                    )
-                                    if !queued {
-                                        // Outbox write failed (disk full) — restore the draft.
-                                        if composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                                            composerText = content
-                                        }
-                                        if composerImages.isEmpty {
-                                            composerImages = images
-                                        }
-                                        Haptics.destructiveTap()
-                                    }
+                                    sendDraft(content)
                                 },
-                                onFocus: { }
+                                onFocus: { },
+                                onExpandTapped: {
+                                    withAnimation(.easeOut(duration: 0.25)) {
+                                        isComposerFullScreenVisible = true
+                                    }
+                                }
                             )
                         }
                         // No opaque fill: the chips and glass composer float over
@@ -550,6 +580,36 @@ struct MainAppView: View {
                             // straight into its (empty) view.
                             withAnimation(Style.Animation.composerState) {
                                 feedViewModel.activeCollectionFilter = .all(parentId: created.id)
+                            }
+                        }
+                    )
+                    .transition(.move(edge: .bottom))
+                }
+            }
+            // Full-screen composer: the same draft at maximum accommodation.
+            // Entering saves nothing; X collapses the draft back to the inline
+            // composer and returns keyboard focus there.
+            .overlay {
+                if isComposerFullScreenVisible {
+                    ComposerFullScreenView(
+                        text: $composerText,
+                        attachedImages: $composerImages,
+                        onSend: {
+                            let content = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
+                            sendDraft(content)
+                            composerText = ""
+                            withAnimation(.easeOut(duration: 0.25)) {
+                                isComposerFullScreenVisible = false
+                            }
+                        },
+                        onDismiss: {
+                            withAnimation(.easeOut(duration: 0.25)) {
+                                isComposerFullScreenVisible = false
+                            }
+                            // Hand the keyboard back to the inline composer once
+                            // the overlay has finished leaving.
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                                composerFocusRequest = true
                             }
                         }
                     )

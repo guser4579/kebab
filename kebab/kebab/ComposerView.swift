@@ -28,13 +28,20 @@ private struct GrowingTextView: UIViewRepresentable {
 
     @Binding var text: String
     @Binding var isFocused: Bool
+    /// External focus request (returning from full-screen) — consumed once honored.
+    @Binding var requestFocus: Bool
     let maxHeight: CGFloat
+    /// Horizontal text insets vary by composer layout: tighter next to the
+    /// inline + button, roomier when text owns the full row.
+    let leadingInset: CGFloat
+    let trailingInset: CGFloat
     var onFocus: (() -> Void)?
+    /// Fires when the content height crosses the max-inline-height boundary
+    /// (the composer's constrained state).
+    var onConstrainedChange: ((Bool) -> Void)?
 
     private let textInsetTop: CGFloat    = 13
     private let textInsetBottom: CGFloat = 13
-    private let textInsetLeft: CGFloat   = 16
-    private let textInsetRight: CGFloat  = 0
     private let minHeight: CGFloat       = 48
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
@@ -44,8 +51,8 @@ private struct GrowingTextView: UIViewRepresentable {
         textView.backgroundColor = .clear
         textView.isScrollEnabled = false
         textView.textContainerInset = UIEdgeInsets(
-            top: textInsetTop, left: textInsetLeft,
-            bottom: textInsetBottom, right: textInsetRight
+            top: textInsetTop, left: leadingInset,
+            bottom: textInsetBottom, right: trailingInset
         )
         textView.textContainer.lineFragmentPadding  = 0
         textView.textContainer.widthTracksTextView  = true
@@ -63,6 +70,21 @@ private struct GrowingTextView: UIViewRepresentable {
         context.coordinator.parent = self
         if textView.text != text {
             textView.text = text
+        }
+        if textView.textContainerInset.left != leadingInset
+            || textView.textContainerInset.right != trailingInset {
+            var inset = textView.textContainerInset
+            inset.left = leadingInset
+            inset.right = trailingInset
+            textView.textContainerInset = inset
+        }
+        if requestFocus {
+            DispatchQueue.main.async {
+                if !textView.isFirstResponder {
+                    textView.becomeFirstResponder()
+                }
+                self.requestFocus = false
+            }
         }
     }
 
@@ -104,6 +126,12 @@ private struct GrowingTextView: UIViewRepresentable {
                 uiView.contentOffset = .zero
             }
             uiView.isScrollEnabled = shouldScroll
+            // Notify outside the layout pass — the owner mutates view state
+            // (the expand affordance) in response.
+            let constrained = shouldScroll
+            DispatchQueue.main.async {
+                onConstrainedChange?(constrained)
+            }
         }
 
         return CGSize(width: width, height: min(maxHeight, max(minHeight, fittedHeight)))
@@ -145,8 +173,14 @@ struct ComposerView: View {
     /// Images staged for the next send. Owned by the host so a failed send
     /// can restore them alongside the text draft.
     @Binding var attachedImages: [PendingImage]
+    /// External focus request (e.g. returning from the full-screen composer);
+    /// consumed once honored.
+    @Binding var requestFocus: Bool
     let onSent: (String) -> Void
     var onFocus: (() -> Void)?
+    /// Present ⇒ the constrained state shows the expand affordance, which
+    /// hands this draft to the full-screen composer.
+    var onExpandTapped: (() -> Void)?
 
     init(
         text: Binding<String>,
@@ -154,19 +188,26 @@ struct ComposerView: View {
         placeholder: String = "Make an entry",
         allowsAttachments: Bool = false,
         attachedImages: Binding<[PendingImage]> = .constant([]),
+        requestFocus: Binding<Bool> = .constant(false),
         onSent: @escaping (String) -> Void,
-        onFocus: (() -> Void)? = nil
+        onFocus: (() -> Void)? = nil,
+        onExpandTapped: (() -> Void)? = nil
     ) {
         self._text = text
         self.maxHeight = maxHeight
         self.placeholder = placeholder
         self.allowsAttachments = allowsAttachments
         self._attachedImages = attachedImages
+        self._requestFocus = requestFocus
         self.onSent = onSent
         self.onFocus = onFocus
+        self.onExpandTapped = onExpandTapped
     }
 
     @State private var isFocused: Bool = false
+    /// True while the text content exceeds the max inline height (internal
+    /// scrolling active) — the composer's constrained state.
+    @State private var isConstrained: Bool = false
     @StateObject private var voice = VoiceTranscriber()
     /// Text present when dictation started; the streaming transcript is
     /// appended after it so dictation never destroys typed text.
@@ -184,32 +225,58 @@ struct ComposerView: View {
     }
 
     private let composerOuterPadding:    CGFloat = Style.Spacing.x4
-    private let textLeadingPadding:      CGFloat = 16
     private let buttonInset:             CGFloat = 6
     private let buttonSize:              CGFloat = 36
+
+    /// Focused (or holding a draft) ⇒ text owns its own region above a stable
+    /// action row — five levels of accommodation, one composer, one draft.
+    private var isExpandedLayout: Bool {
+        isFocused || !text.isEmpty
+    }
+
+    /// Leading text inset: tight next to the inline + button, roomy when the
+    /// text owns the full row.
+    private var textLeadingInset: CGFloat {
+        if isExpandedLayout { return 16 }
+        return allowsAttachments ? 8 : 16
+    }
+
+    private var textTrailingInset: CGFloat {
+        isExpandedLayout ? 16 : 0
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if !attachedImages.isEmpty {
-                thumbnailStrip
+                ComposerThumbnailStrip(images: $attachedImages)
                     .padding(.top, 10)
                     .padding(.horizontal, 12)
             }
 
+            // The text view keeps this exact structural slot in every state —
+            // only the controls around it move — so UIKit never rebuilds it
+            // and focus/cursor survive layout transitions.
             HStack(alignment: .bottom, spacing: 0) {
-                if allowsAttachments {
+                if !isExpandedLayout && allowsAttachments {
                     attachMenu
                         .padding(.leading, 4)
                         .padding(.bottom, buttonInset)
                 }
                 textArea
-                micButton
-                    .padding(.bottom, buttonInset)
-                sendButtonColumn
-                    .padding(.leading, 4)
-                    .padding(.trailing, buttonInset)
+                if !isExpandedLayout {
+                    micButton
+                        .padding(.bottom, buttonInset)
+                    sendButtonColumn
+                        .padding(.leading, 4)
+                        .padding(.trailing, buttonInset)
+                }
+            }
+
+            if isExpandedLayout {
+                actionRow
             }
         }
+        .animation(Style.Animation.composerState, value: isExpandedLayout)
         // Liquid Glass capsule: feed content scrolls visibly behind the
         // composer. The subtle tint keeps placeholder/text contrast on the
         // dark theme without going opaque.
@@ -294,19 +361,65 @@ struct ComposerView: View {
                 Text(placeholder)
                     .font(Style.Typography.composerPlaceholder())
                     .foregroundColor(Style.Color.secondary)
-                    .padding(.leading, textLeadingPadding)
+                    .padding(.leading, textLeadingInset)
                     .padding(.top, 13)
                     .padding(.bottom, 13)
             }
             GrowingTextView(
                 text: $text,
                 isFocused: $isFocused,
+                requestFocus: $requestFocus,
                 maxHeight: maxHeight,
-                onFocus: onFocus
+                leadingInset: textLeadingInset,
+                trailingInset: textTrailingInset,
+                onFocus: onFocus,
+                onConstrainedChange: { isConstrained = $0 }
             )
             .frame(maxWidth: .infinity)
         }
         .frame(maxWidth: .infinity)
+        // Restrained expand affordance: only once expansion is genuinely
+        // useful (content exceeds the max inline height), floating clear of
+        // text on a small scrim so the two never tangle.
+        .overlay(alignment: .topTrailing) {
+            if isConstrained, isExpandedLayout, onExpandTapped != nil {
+                expandButton
+                    .padding(.top, 6)
+                    .padding(.trailing, 6)
+            }
+        }
+    }
+
+    private var expandButton: some View {
+        Button {
+            Haptics.lightTap()
+            onExpandTapped?()
+        } label: {
+            Icon("doub-arrows", glyphSize: Style.Icon.glyphSmall)
+                .foregroundColor(Style.Color.secondary)
+                .frame(width: 28, height: 28)
+                .background(Circle().fill(Style.Color.composerBackground.opacity(0.85)))
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    // Stable bottom action row for the expanded layout: + at the leading
+    // edge, voice and send trailing. The row never moves while the text
+    // region above it grows.
+    private var actionRow: some View {
+        HStack(spacing: 0) {
+            if allowsAttachments {
+                attachMenu
+                    .padding(.leading, 4)
+            }
+            Spacer(minLength: 0)
+            micButton
+            sendButton
+                .padding(.leading, 4)
+        }
+        .padding(.trailing, buttonInset)
+        .padding(.bottom, buttonInset)
     }
 
     // "+" attach menu — Camera / Photos / Files, capped at four images.
@@ -339,32 +452,6 @@ struct ComposerView: View {
                 .contentShape(Circle())
         }
         .disabled(attachedImages.count >= maxImages)
-    }
-
-    // Staged image thumbnails with per-image remove.
-    private var thumbnailStrip: some View {
-        HStack(spacing: 8) {
-            ForEach(attachedImages) { pending in
-                Image(uiImage: pending.image)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: 56, height: 56)
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
-                    .overlay(alignment: .topTrailing) {
-                        Button {
-                            Haptics.lightTap()
-                            attachedImages.removeAll { $0.id == pending.id }
-                        } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .font(.system(size: 16))
-                                .foregroundStyle(.white, .black.opacity(0.6))
-                                .padding(2)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                    }
-            }
-        }
     }
 
     // Mic button — dictation toggle. While recording the glyph becomes an
