@@ -45,6 +45,10 @@ struct SettingsView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         .background(Style.Color.background)
         .ignoresSafeArea(edges: .all)
+        // Pushed screen with a custom header, exactly like Search: hide the
+        // system back button and restore the interactive edge-swipe pop.
+        .navigationBarBackButtonHidden(true)
+        .enablesSwipeBack()
     }
 
     private var headerRow: some View {
@@ -56,9 +60,9 @@ struct SettingsView: View {
             Spacer(minLength: 0)
 
             Button {
-                withAnimation(.easeInOut(duration: 0.28)) {
-                    onClose()
-                }
+                // Pops the navigation stack — the transition is the native
+                // push/pop, same as Search's Back.
+                onClose()
             } label: {
                 Icon("close")
                     .foregroundColor(Style.Color.primaryText)

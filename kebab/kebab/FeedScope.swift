@@ -130,6 +130,29 @@ final class FeedScopeCoordinator: ObservableObject {
         }
     }
 
+    /// Optimistic delete: the entry leaves every warm scope immediately.
+    /// Returns per-store snapshots so a failed backend delete can restore it.
+    func removeForDelete(id: UUID) -> [(store: FeedStore, snapshot: FeedStore.RemovalSnapshot)] {
+        stores.values.compactMap { store in
+            store.removeForDelete(id: id).map { (store, $0) }
+        }
+    }
+
+    /// Failed backend delete: restore the entry everywhere it was removed.
+    func restoreAfterFailedDelete(_ removals: [(store: FeedStore, snapshot: FeedStore.RemovalSnapshot)]) {
+        for (store, snapshot) in removals {
+            store.restore(snapshot)
+        }
+    }
+
+    /// A delete confirmed through any path (feed or detail): remove and
+    /// tombstone in every warm scope so revalidation can't resurrect it.
+    func noteDeletedEverywhere(id: UUID) {
+        for store in stores.values {
+            store.noteDeleted(id: id)
+        }
+    }
+
     /// Resurface and similar reordering events: revalidate every warm scope
     /// the entry belongs to, so each applies its own arrival rule.
     func revalidateScopes(containing entry: Entry) {

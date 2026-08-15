@@ -91,7 +91,11 @@ struct ComposerFullScreenView: View {
                         )
                         onDismiss()
                     } label: {
-                        Icon("close")
+                        // Inward chevrons: this surface collapses back into
+                        // the inline composer rather than closing outright —
+                        // the inverse of the inline expand affordance. Every
+                        // other full-screen sheet keeps its X.
+                        Icon("chevrons-collapse")
                             .foregroundColor(Style.Color.secondary)
                     }
                     .buttonStyle(.plain)

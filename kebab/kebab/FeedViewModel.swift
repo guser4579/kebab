@@ -38,6 +38,9 @@ final class FeedViewModel: ObservableObject {
     /// Fired after any in-place patch of an entry (checklist, fire, edit,
     /// enrichment, hidden toggle) so the paged All store can mirror it.
     var onEntryPatched: ((UUID) -> Void)?
+    /// Fired when a delete is confirmed by the server, whichever screen
+    /// initiated it, so every warm scope store drops (and tombstones) the row.
+    var onEntryDeleted: ((UUID) -> Void)?
 
     /// Outbox entries mapped to display form, newest first — consumed by the
     /// paged All feed, which renders pending entries at the live edge.
@@ -569,14 +572,35 @@ final class FeedViewModel: ObservableObject {
         return URL(string: trimmed, relativeTo: pageURL)?.absoluteString
     }
 
-    func deleteEntry(id: UUID) async {
+    /// Deletes on the backend, designed to succeed overwhelmingly often:
+    /// transport failures get brief in-place retries before the caller's
+    /// failure path (restore + transient notice) ever runs. No feed reload —
+    /// the local array is patched in place and warm scope stores are told
+    /// through `onEntryDeleted`.
+    @discardableResult
+    func deleteEntry(id: UUID) async -> Bool {
         errorMessage = nil
-        do {
-            try await repository.deleteEntry(id: id)
-            await loadEntries()
-        } catch {
-            errorMessage = error.localizedDescription
+        for attempt in 0..<3 {
+            do {
+                try await repository.deleteEntry(id: id)
+                entries.removeAll { $0.id == id }
+                LocalStore.save(entries, as: "feed")
+                onEntryDeleted?(id)
+                return true
+            } catch let error as URLError {
+                // Offline / transport: retry quietly, then give up.
+                if attempt < 2 {
+                    try? await Task.sleep(nanoseconds: 600_000_000)
+                    continue
+                }
+                errorMessage = error.localizedDescription
+            } catch {
+                // Server rejection: retrying won't change the answer.
+                errorMessage = error.localizedDescription
+                return false
+            }
         }
+        return false
     }
 
     /// Persists new text for an entry/comment/reply. Patches the local entries array immediately

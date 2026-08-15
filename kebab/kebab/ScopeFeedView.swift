@@ -11,6 +11,11 @@ struct ScopeFeedView: View {
     @ObservedObject var feedViewModel: FeedViewModel
     let containerHeight: CGFloat
     let settlingEntryId: UUID?
+    /// True while the post-capture quick actions occupy the area above the
+    /// composer: they take temporary priority over the FAB, which returns via
+    /// its normal transition once they dismiss. The underlying unseen/distance
+    /// state keeps updating untouched.
+    var suppressesFAB: Bool = false
     var onUserScroll: (() -> Void)?
     var onEntryOpened: (() -> Void)?
     let onMoreTapped: (Entry) -> Void
@@ -94,7 +99,8 @@ struct ScopeFeedView: View {
     private var showsUnseenCount: Bool { store.scope == .all }
 
     private var showFAB: Bool {
-        (showsUnseenCount && store.unseenCount > 0) || distanceFromLiveEdge > containerHeight
+        !suppressesFAB
+            && ((showsUnseenCount && store.unseenCount > 0) || distanceFromLiveEdge > containerHeight)
     }
 
     private var fab: some View {

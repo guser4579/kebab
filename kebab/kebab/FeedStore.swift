@@ -58,6 +58,10 @@ final class FeedStore: ObservableObject {
     /// Cursor of the oldest loaded row: verbatim (feed_order_at, id).
     private var oldestCursor: (raw: String, id: UUID)?
     private var isRevalidating = false
+    /// Optimistically deleted ids: an in-flight revalidation that started
+    /// before the delete must not resurrect the row. Cleared only when a
+    /// failed delete restores the entry.
+    private var deletedIds: Set<UUID> = []
 
     let scope: FeedScope
     var initialPageSize: Int { scope == .all ? 75 : 50 }
@@ -92,7 +96,7 @@ final class FeedStore: ObservableObject {
             ))
             .execute()
             .value
-        return rows
+        return rows.filter { !deletedIds.contains($0.entry.id) }
     }
 
     /// Silent newest-page revalidation: never replaces the array, never shows
@@ -335,6 +339,60 @@ final class FeedStore: ObservableObject {
         }
         loadedIds.remove(id)
         saveCache()
+    }
+
+    // MARK: - Optimistic deletion
+
+    /// Where a removed entry was, so a failed backend delete can put it back.
+    struct RemovalSnapshot {
+        let entry: Entry
+        let index: Int
+        /// True when the entry lived in the unseen-arrival buffer rather
+        /// than the rendered list.
+        let wasBuffered: Bool
+    }
+
+    /// Optimistic removal for a confirmed delete: the entry leaves this scope
+    /// immediately and is tombstoned so no concurrent revalidation can
+    /// resurrect it. Returns nil when the entry isn't in this scope.
+    func removeForDelete(id: UUID) -> RemovalSnapshot? {
+        deletedIds.insert(id)
+        if let idx = entries.firstIndex(where: { $0.id == id }) {
+            let snapshot = RemovalSnapshot(entry: entries[idx], index: idx, wasBuffered: false)
+            entries.remove(at: idx)
+            loadedIds.remove(id)
+            saveCache()
+            return snapshot
+        }
+        if let idx = pendingArrivals.firstIndex(where: { $0.id == id }) {
+            let snapshot = RemovalSnapshot(entry: pendingArrivals[idx], index: idx, wasBuffered: true)
+            pendingArrivals.remove(at: idx)
+            unseenCount = pendingArrivals.count
+            return snapshot
+        }
+        return nil
+    }
+
+    /// The backend delete genuinely failed: put the entry back where it was.
+    func restore(_ snapshot: RemovalSnapshot) {
+        deletedIds.remove(snapshot.entry.id)
+        if snapshot.wasBuffered {
+            guard !pendingArrivals.contains(where: { $0.id == snapshot.entry.id }) else { return }
+            pendingArrivals.insert(snapshot.entry, at: min(snapshot.index, pendingArrivals.count))
+            unseenCount = pendingArrivals.count
+        } else {
+            guard !loadedIds.contains(snapshot.entry.id) else { return }
+            entries.insert(snapshot.entry, at: min(snapshot.index, entries.count))
+            loadedIds.insert(snapshot.entry.id)
+            saveCache()
+        }
+    }
+
+    /// A delete confirmed elsewhere (e.g. from the detail screen): remove and
+    /// tombstone without any restore path.
+    func noteDeleted(id: UUID) {
+        deletedIds.insert(id)
+        remove(id: id)
     }
 
     func patch(_ entry: Entry) {

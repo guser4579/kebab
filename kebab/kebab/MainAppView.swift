@@ -67,6 +67,11 @@ struct MainAppView: View {
     // with the comment composer pre-focused.
     @State private var commentTargetEntry: Entry?
     @State private var isCommentTargetActive = false
+    /// Lightweight transient message (e.g. "Failed to delete") — a floating
+    /// capsule above the composer, never a modal.
+    @State private var transientNotice: String?
+    /// Invalidates a stale auto-clear when a newer notice replaces the text.
+    @State private var transientNoticeGeneration = 0
     @Environment(\.scenePhase) private var scenePhase
 
     let authViewModel: AuthViewModel
@@ -173,9 +178,11 @@ struct MainAppView: View {
                 // Preserve the reading position: hold the new entry out of
                 // the rendered feed and surface it through the FAB count.
                 activeStore.holdOwnEntry(id: queuedId)
-            } else {
-                beginPostCapture(for: queuedId)
             }
+            // The quick actions belong to the creation event, not to the new
+            // row's viewport position: they appear above the composer whether
+            // or not the entry itself is on screen.
+            beginPostCapture(for: queuedId)
         } else {
             // Outbox write failed (disk full) — restore the draft.
             if composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -244,9 +251,19 @@ struct MainAppView: View {
     private func openAddToCollectionQuickAction() {
         guard let entry = promotedPostCaptureEntry() else { return }
         dismissPostCapture()
+        // The keyboard is usually still up right after a send. Drop it first
+        // and let the dismissal resolve, so the full-screen sheet never
+        // presents underneath it. sendAction reports whether anything
+        // actually resigned — no dead wait when the keyboard was already gone.
+        let hadKeyboard = UIApplication.shared.sendAction(
+            #selector(UIResponder.resignFirstResponder),
+            to: nil, from: nil, for: nil
+        )
         addToCollectionEntry = entry
-        withAnimation(.easeOut(duration: 0.25)) {
-            isAddToCollectionVisible = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + (hadKeyboard ? 0.3 : 0)) {
+            withAnimation(.easeOut(duration: 0.25)) {
+                isAddToCollectionVisible = true
+            }
         }
     }
 
@@ -319,6 +336,40 @@ struct MainAppView: View {
         .buttonStyle(.plain)
     }
 
+    /// Optimistic entry deletion: the entry leaves every warm scope the
+    /// moment the user confirms, with a fast restrained collapse; the backend
+    /// delete runs invisibly (with its own transport retries). Only a genuine
+    /// failure restores the entry and surfaces a transient notice.
+    private func performEntryDelete(_ entry: Entry) {
+        let removals = withAnimation(.easeInOut(duration: 0.18)) {
+            scopeCoordinator.removeForDelete(id: entry.id)
+        }
+        Task {
+            let deleted = await feedViewModel.deleteEntry(id: entry.id)
+            if !deleted {
+                withAnimation(.easeInOut(duration: 0.18)) {
+                    scopeCoordinator.restoreAfterFailedDelete(removals)
+                }
+                showTransientNotice("Failed to delete")
+            }
+        }
+    }
+
+    private func showTransientNotice(_ message: String) {
+        transientNoticeGeneration += 1
+        let generation = transientNoticeGeneration
+        withAnimation(.easeOut(duration: 0.2)) {
+            transientNotice = message
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.4) {
+            if transientNoticeGeneration == generation {
+                withAnimation(.easeOut(duration: 0.25)) {
+                    transientNotice = nil
+                }
+            }
+        }
+    }
+
     private func performDelete(_ collection: Collection) {
         Task {
             let parentId = collection.parentId
@@ -352,9 +403,9 @@ struct MainAppView: View {
                     StickyHeaderView(
                         onSettingsTapped: {
                             dismissPostCapture()
-                            withAnimation(.easeInOut(duration: 0.28)) {
-                                isSettingsOpen = true
-                            }
+                            // Same presentation mechanics as Search: a plain
+                            // navigationDestination push, native transition.
+                            isSettingsOpen = true
                         },
                         onSearchTapped: {
                             dismissPostCapture()
@@ -439,6 +490,10 @@ struct MainAppView: View {
                                 feedViewModel: feedViewModel,
                                 containerHeight: geometry.size.height,
                                 settlingEntryId: settlingEntryId,
+                                // Quick actions take temporary priority over
+                                // the FAB; it returns via its own transition
+                                // once they dismiss.
+                                suppressesFAB: postCaptureEntryId != nil,
                                 onUserScroll: { dismissPostCapture() },
                                 onEntryOpened: { dismissPostCapture() },
                                 onMoreTapped: { entry in
@@ -501,6 +556,13 @@ struct MainAppView: View {
                                 scopeCoordinator?.reconcile(fresh)
                             }
                         }
+                        // Deletes confirmed from any screen (detail included)
+                        // drop and tombstone the row in every warm scope.
+                        // For the feed's own optimistic path this is a no-op
+                        // second removal.
+                        feedViewModel.onEntryDeleted = { [weak scopeCoordinator] id in
+                            scopeCoordinator?.noteDeletedEverywhere(id: id)
+                        }
                         // SWR: cached page already rendered; revalidate quietly.
                         scopeCoordinator.activate(.all)
                         // Legacy full-array load: still feeds post-capture entry
@@ -520,7 +582,7 @@ struct MainAppView: View {
                 // node with edges: [] (semantic no-op) vs edges: .bottom is a parameter update, not a
                 // type change, so the ScrollView position survives both open and close.
                 .ignoresSafeArea(.keyboard, edges: (isFullScreenEditVisible || isComposerFullScreenVisible) ? .bottom : [])
-                // Left-edge swipe opens settings ("swipe between screens"),
+                // Left-edge swipe opens settings (same push as the gear tap),
                 // via a window-level UIScreenEdgePanGestureRecognizer so feed
                 // scrolling stays fully native — see EdgeSwipeRecognizer.
                 .background(
@@ -540,102 +602,75 @@ struct MainAppView: View {
                                 && (PopGestureDelegate.shared.navigationController?.viewControllers.count ?? 1) <= 1
                         },
                         onSwipe: {
-                            withAnimation(.easeInOut(duration: 0.28)) {
-                                isSettingsOpen = true
-                            }
+                            isSettingsOpen = true
                         }
                     )
                 )
                 .safeAreaInset(edge: .bottom) {
-                    if !isSettingsOpen {
-                        VStack(spacing: 0) {
-                            // The reclaimed area above the composer hosts the
-                            // transient post-capture actions.
-                            if postCaptureEntryId != nil {
-                                postCaptureStrip
-                                    .padding(.bottom, Style.Spacing.x2)
-                                    .transition(.opacity)
-                            }
-
-                            ComposerView(
-                                text: $composerText,
-                                maxHeight: geometry.size.height * Style.Layout.composerMaxHeightFraction,
-                                placeholder: composerPlaceholder,
-                                allowsAttachments: true,
-                                attachedImages: $composerImages,
-                                attachedLink: $composerLink,
-                                requestFocus: $composerFocusRequest,
-                                onSent: { content in
-                                    sendDraft(content)
-                                },
-                                onFocus: {
-                                    dismissPostCapture()
-                                },
-                                onExpandTapped: {
-                                    dismissPostCapture()
-                                    withAnimation(.easeOut(duration: 0.25)) {
-                                        isComposerFullScreenVisible = true
-                                    }
-                                },
-                                onStartList: {
-                                    // List: a purpose-built accelerator — seed
-                                    // the first checkbox and open the
-                                    // full-screen accommodation state, focused.
-                                    dismissPostCapture()
-                                    if composerText.isEmpty {
-                                        composerText = Checklist.uncheckedMarker
-                                    } else {
-                                        composerText += "\n" + Checklist.uncheckedMarker
-                                    }
-                                    withAnimation(.easeOut(duration: 0.25)) {
-                                        isComposerFullScreenVisible = true
-                                    }
-                                }
-                            )
+                    // Unconditional: Settings is a pushed screen that simply
+                    // covers this one. Conditionally unmounting the composer
+                    // (the old overlay approach) dropped keyboard focus and
+                    // jumped the feed's bottom inset mid-transition.
+                    VStack(spacing: 0) {
+                        // The reclaimed area above the composer hosts the
+                        // transient post-capture actions.
+                        if postCaptureEntryId != nil {
+                            postCaptureStrip
+                                .padding(.bottom, Style.Spacing.x2)
+                                .transition(.opacity)
                         }
-                        // No opaque fill: the chips and glass composer float over
-                        // the feed, which scrolls visibly behind them. A soft
-                        // fade keeps the very bottom edge legible.
-                        .background(
-                            LinearGradient(
-                                gradient: Gradient(stops: [
-                                    .init(color: Style.Color.background.opacity(0), location: 0),
-                                    .init(color: Style.Color.background.opacity(0.85), location: 1.0)
-                                ]),
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                            .ignoresSafeArea(edges: .bottom)
+
+                        ComposerView(
+                            text: $composerText,
+                            maxHeight: geometry.size.height * Style.Layout.composerMaxHeightFraction,
+                            placeholder: composerPlaceholder,
+                            allowsAttachments: true,
+                            attachedImages: $composerImages,
+                            attachedLink: $composerLink,
+                            requestFocus: $composerFocusRequest,
+                            onSent: { content in
+                                sendDraft(content)
+                            },
+                            onFocus: {
+                                dismissPostCapture()
+                            },
+                            onExpandTapped: {
+                                dismissPostCapture()
+                                withAnimation(.easeOut(duration: 0.25)) {
+                                    isComposerFullScreenVisible = true
+                                }
+                            },
+                            onStartList: {
+                                // List: a purpose-built accelerator — seed
+                                // the first checkbox and open the
+                                // full-screen accommodation state, focused.
+                                dismissPostCapture()
+                                if composerText.isEmpty {
+                                    composerText = Checklist.uncheckedMarker
+                                } else {
+                                    composerText += "\n" + Checklist.uncheckedMarker
+                                }
+                                withAnimation(.easeOut(duration: 0.25)) {
+                                    isComposerFullScreenVisible = true
+                                }
+                            }
                         )
-                    } else {
-                        EmptyView()
                     }
+                    // No opaque fill: the chips and glass composer float over
+                    // the feed, which scrolls visibly behind them. A soft
+                    // fade keeps the very bottom edge legible.
+                    .background(
+                        LinearGradient(
+                            gradient: Gradient(stops: [
+                                .init(color: Style.Color.background.opacity(0), location: 0),
+                                .init(color: Style.Color.background.opacity(0.85), location: 1.0)
+                            ]),
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                        .ignoresSafeArea(edges: .bottom)
+                    )
                 }
-
-                SettingsView(
-                    onClose: {
-                        withAnimation(.easeInOut(duration: 0.28)) {
-                            isSettingsOpen = false
-                        }
-                    },
-                    authViewModel: authViewModel
-                )
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .offset(x: isSettingsOpen ? 0 : -UIScreen.main.bounds.width)
-                .animation(.easeInOut(duration: 0.28), value: isSettingsOpen)
-                // Leftward swipe anywhere on settings slides back to the feed.
-                .simultaneousGesture(
-                    DragGesture(minimumDistance: 20)
-                        .onEnded { value in
-                            guard isSettingsOpen else { return }
-                            let t = value.translation
-                            if t.width < -60, abs(t.width) > abs(t.height) {
-                                withAnimation(.easeInOut(duration: 0.28)) {
-                                    isSettingsOpen = false
-                                }
-                            }
-                        }
-                )
             }
             .overlay(alignment: .bottom) {
                 if activeEntryMenuEntry != nil {
@@ -658,10 +693,7 @@ struct MainAppView: View {
                             EntryActionSheetView(
                                 entry: entry,
                                 onDelete: {
-                                    Task {
-                                        await feedViewModel.deleteEntry(id: entry.id)
-                                        scopeCoordinator.removeEverywhere(id: entry.id)
-                                    }
+                                    performEntryDelete(entry)
                                 },
                                 onToggleContentHidden: {
                                     Task {
@@ -893,6 +925,25 @@ struct MainAppView: View {
                     .transition(.move(edge: .bottom))
                 }
             }
+            // Lightweight transient notice (delete failures): a floating
+            // capsule above the composer that fades in and out on its own.
+            .overlay(alignment: .bottom) {
+                if let notice = transientNotice {
+                    Text(notice)
+                        .font(Style.Typography.meta())
+                        .foregroundColor(Style.Color.primaryText)
+                        .padding(.horizontal, Style.Spacing.x4)
+                        .frame(height: 36)
+                        .background(
+                            Capsule()
+                                .fill(Style.Color.composerBackground)
+                                .overlay(Capsule().stroke(Style.Color.separator, lineWidth: 1))
+                        )
+                        .padding(.bottom, 96)
+                        .transition(.opacity)
+                        .allowsHitTesting(false)
+                }
+            }
             // Full-screen Rename launched from the contextual sheet, with the
             // existing name prefilled.
             .overlay {
@@ -926,6 +977,16 @@ struct MainAppView: View {
                 if let userId = authViewModel.currentUserId {
                     SearchView(supabase: supabase, feedViewModel: feedViewModel, userId: userId)
                 }
+            }
+            // Settings: identical presentation mechanics to Search — a native
+            // push with the system transition and interactive swipe-back. The
+            // feed screen (and every warm scope's position) stays mounted
+            // untouched underneath.
+            .navigationDestination(isPresented: $isSettingsOpen) {
+                SettingsView(
+                    onClose: { isSettingsOpen = false },
+                    authViewModel: authViewModel
+                )
             }
             // Comment quick action: straight into the new entry's thread with
             // the comment composer focused — jot → think with zero extra taps.
