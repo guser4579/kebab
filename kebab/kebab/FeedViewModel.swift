@@ -224,7 +224,6 @@ final class FeedViewModel: ObservableObject {
                 collectionId: collectionId
             )
             pendingEntries.append(pending)
-            Haptics.mediumTap()
             kickFlush()
             return pending.id
         } catch {
@@ -574,7 +573,6 @@ final class FeedViewModel: ObservableObject {
         errorMessage = nil
         do {
             try await repository.deleteEntry(id: id)
-            Haptics.destructiveTap()
             await loadEntries()
         } catch {
             errorMessage = error.localizedDescription
@@ -605,7 +603,6 @@ final class FeedViewModel: ObservableObject {
         guard newContent != entry.content else { return }
         entries = entries.map { $0.id == entry.id ? $0.withContent(newContent) : $0 }
         onEntryPatched?(entry.id)
-        Haptics.lightTap()
         do {
             try await repository.updateEntryContent(id: entry.id, content: newContent)
             LocalStore.save(entries, as: "feed")
@@ -628,7 +625,6 @@ final class FeedViewModel: ObservableObject {
                 .eq("id", value: id)
                 .execute()
 
-            Haptics.lightTap()
             await loadEntries()
             onEntryPatched?(id)
             return true
@@ -642,7 +638,6 @@ final class FeedViewModel: ObservableObject {
         guard entry.pinned_at == nil, entry.parent_id == nil else { return }
         do {
             try await repository.resurfaceEntry(id: entry.id)
-            Haptics.lightTap()
             await loadEntries()
         } catch {
             print("Failed to resurface entry:", error)
@@ -657,7 +652,6 @@ final class FeedViewModel: ObservableObject {
         guard entry.parent_id == nil else { return false }
         entries = entries.map { $0.id == entry.id ? $0.withFireCount($0.fire_count + 1) : $0 }
         onEntryPatched?(entry.id)
-        Haptics.lightTap()
         do {
             try await repository.fireEntry(id: entry.id)
             return true
@@ -672,7 +666,6 @@ final class FeedViewModel: ObservableObject {
     func togglePin(entry: Entry) async {
         do {
             try await repository.togglePin(id: entry.id, pin: entry.pinned_at == nil)
-            Haptics.lightTap()
             await loadEntries()
         } catch {
             print("Failed to toggle pin:", error)
@@ -700,7 +693,6 @@ final class FeedViewModel: ObservableObject {
                 depth: depth,
                 content: trimmed
             )
-            Haptics.mediumTap()
         } catch {
             print("Failed to send comment:", error)
         }

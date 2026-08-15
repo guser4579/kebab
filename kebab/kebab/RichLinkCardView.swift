@@ -69,7 +69,6 @@ struct RichLinkCardView: View {
                     .allowsHitTesting(false)
 
                 Button {
-                    Haptics.lightTap()
                     isShowingSafari = true
                 } label: {
                     cardFooter(title: title)
@@ -98,7 +97,6 @@ struct RichLinkCardView: View {
             }
         } else {
             Button {
-                Haptics.lightTap()
                 isShowingSafari = true
             } label: {
                 if let imgURL = parsedImageURL {

@@ -190,7 +190,6 @@ struct NewCollectionFullScreenView: View {
                     #selector(UIResponder.resignFirstResponder),
                     to: nil, from: nil, for: nil
                 )
-                Haptics.mediumTap()
                 // The reload inside renameCollection already has the fresh
                 // model; fall back to the target if it's not found.
                 let updated = collectionsViewModel.collections
@@ -216,7 +215,6 @@ struct NewCollectionFullScreenView: View {
                     #selector(UIResponder.resignFirstResponder),
                     to: nil, from: nil, for: nil
                 )
-                Haptics.mediumTap()
                 onSuccess?(created)
                 onDismiss()
             } else {
@@ -232,7 +230,6 @@ struct NewCollectionFullScreenView: View {
                     #selector(UIResponder.resignFirstResponder),
                     to: nil, from: nil, for: nil
                 )
-                Haptics.mediumTap()
                 onSuccess?(created)
                 onDismiss()
             } else {

@@ -327,7 +327,6 @@ struct AuthView: View {
             // Auto-submit once the sixth digit lands (typed or autofilled).
             // Light haptic signals "submitted" since no button was pressed.
             if filtered.count == 6 && !viewModel.isLoading {
-                Haptics.lightTap()
                 Task { await viewModel.verifyOTP() }
             }
         }
@@ -362,7 +361,6 @@ struct AuthView: View {
     /// disables while an auth request is in flight; haptic confirms the tap.
     private func primaryCTA(_ title: String, action: @escaping () -> Void) -> some View {
         Button {
-            Haptics.mediumTap()
             action()
         } label: {
             ZStack {
@@ -387,7 +385,6 @@ struct AuthView: View {
     /// Full-width secondary CTA (dark capsule); same full-capsule touch target.
     private func secondaryCTA(_ title: String, action: @escaping () -> Void) -> some View {
         Button {
-            Haptics.lightTap()
             action()
         } label: {
             Text(title)

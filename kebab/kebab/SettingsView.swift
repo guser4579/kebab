@@ -118,7 +118,6 @@ struct SettingsView: View {
     private func appearanceRow(_ label: String, value: String, symbol: String) -> some View {
         Button {
             guard appearance != value else { return }
-            Haptics.lightTap()
             withAnimation(.easeInOut(duration: 0.25)) {
                 appearance = value
             }

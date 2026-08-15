@@ -87,7 +87,6 @@ struct ComposerLinkChip: View {
                 .lineLimit(1)
 
             Button {
-                Haptics.lightTap()
                 onRemove()
             } label: {
                 Image(systemName: "xmark")
@@ -127,7 +126,6 @@ struct ComposerThumbnailStrip: View {
                         .clipShape(RoundedRectangle(cornerRadius: 10))
                         .overlay(alignment: .topTrailing) {
                             Button {
-                                Haptics.lightTap()
                                 images.removeAll { $0.id == pending.id }
                             } label: {
                                 Image(systemName: "xmark.circle.fill")

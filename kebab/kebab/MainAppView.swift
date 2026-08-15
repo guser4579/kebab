@@ -187,7 +187,6 @@ struct MainAppView: View {
             if composerLink == nil {
                 composerLink = link
             }
-            Haptics.destructiveTap()
         }
     }
 
@@ -296,7 +295,6 @@ struct MainAppView: View {
         action: @escaping () -> Void
     ) -> some View {
         Button {
-            Haptics.lightTap()
             action()
         } label: {
             HStack(spacing: 6) {
@@ -326,16 +324,14 @@ struct MainAppView: View {
             let parentId = collection.parentId
             let ok = await collectionsViewModel.deleteCollection(id: collection.id)
             if ok {
-                withAnimation(Style.Animation.composerState) {
-                    // Deleted sub → land on the parent's aggregate view;
-                    // deleted parent → back to All.
-                    if let parentId {
-                        scopeCoordinator.activate(.parent(parentId))
-                        feedViewModel.activeCollectionFilter = .all(parentId: parentId)
-                    } else {
-                        scopeCoordinator.activate(.all)
-                        feedViewModel.activeCollectionFilter = nil
-                    }
+                // Deleted sub → land on the parent's aggregate view;
+                // deleted parent → back to All.
+                if let parentId {
+                    scopeCoordinator.activate(.parent(parentId))
+                    feedViewModel.activeCollectionFilter = .all(parentId: parentId)
+                } else {
+                    scopeCoordinator.activate(.all)
+                    feedViewModel.activeCollectionFilter = nil
                 }
                 // Collection structure changed: warm scopes re-derive their
                 // membership on their own revalidation.
@@ -377,9 +373,7 @@ struct MainAppView: View {
                         onSelectAll: {
                             dismissPostCapture()
                             scopeCoordinator.activate(.all)
-                            withAnimation(Style.Animation.composerState) {
-                                feedViewModel.activeCollectionFilter = nil
-                            }
+                            feedViewModel.activeCollectionFilter = nil
                         },
                         onSelectParent: { parent in
                             dismissPostCapture()
@@ -391,24 +385,20 @@ struct MainAppView: View {
                             )
                             // Tabs don't toggle: re-tapping the selected parent
                             // stays put (already its aggregate view).
-                            withAnimation(Style.Animation.composerState) {
-                                feedViewModel.activeCollectionFilter = .all(parentId: parent.id)
-                            }
+                            feedViewModel.activeCollectionFilter = .all(parentId: parent.id)
                         },
                         onSelectSub: { sub in
                             dismissPostCapture()
                             // Chips are optional refinements that toggle:
                             // re-tapping the active one returns to the parent
                             // aggregate (no explicit "All" control).
-                            withAnimation(Style.Animation.composerState) {
-                                if feedViewModel.activeCollectionFilter == .single(id: sub.id),
-                                   let parentId = sub.parentId {
-                                    scopeCoordinator.activate(.parent(parentId))
-                                    feedViewModel.activeCollectionFilter = .all(parentId: parentId)
-                                } else {
-                                    scopeCoordinator.activate(.sub(sub.id))
-                                    feedViewModel.activeCollectionFilter = .single(id: sub.id)
-                                }
+                            if feedViewModel.activeCollectionFilter == .single(id: sub.id),
+                               let parentId = sub.parentId {
+                                scopeCoordinator.activate(.parent(parentId))
+                                feedViewModel.activeCollectionFilter = .all(parentId: parentId)
+                            } else {
+                                scopeCoordinator.activate(.sub(sub.id))
+                                feedViewModel.activeCollectionFilter = .single(id: sub.id)
                             }
                         },
                         onPlusTapped: {
@@ -485,7 +475,6 @@ struct MainAppView: View {
                     .background(Style.Color.background)
                     .foregroundColor(Style.Color.primaryText)
                     .task {
-                        Haptics.prepare()
                         // Pending and freshly promoted entries render their
                         // collection breadcrumb (and match aggregate filters)
                         // from the local collections model.
@@ -843,9 +832,7 @@ struct MainAppView: View {
                             // A new collection is a real place: navigate
                             // straight into its (empty) view.
                             scopeCoordinator.activate(.parent(created.id))
-                            withAnimation(Style.Animation.composerState) {
-                                feedViewModel.activeCollectionFilter = .all(parentId: created.id)
-                            }
+                            feedViewModel.activeCollectionFilter = .all(parentId: created.id)
                         }
                     )
                     .transition(.move(edge: .bottom))
@@ -900,9 +887,7 @@ struct MainAppView: View {
                         existingSiblingNames: collectionsViewModel.subCollections(for: parent.id).map { $0.name },
                         onSuccess: { created in
                             scopeCoordinator.activate(.sub(created.id))
-                            withAnimation(Style.Animation.composerState) {
-                                feedViewModel.activeCollectionFilter = .single(id: created.id)
-                            }
+                            feedViewModel.activeCollectionFilter = .single(id: created.id)
                         }
                     )
                     .transition(.move(edge: .bottom))

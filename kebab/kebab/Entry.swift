@@ -1,6 +1,6 @@
 import Foundation
 
-struct EntryAttachment: Codable, Sendable, Equatable {
+nonisolated struct EntryAttachment: Codable, Sendable, Equatable {
     let type: String
     let url: String
     let title: String?
@@ -17,7 +17,7 @@ struct EntryAttachment: Codable, Sendable, Equatable {
     }
 }
 
-struct Entry: Identifiable, Sendable, Equatable {
+nonisolated struct Entry: Identifiable, Sendable, Equatable {
     let id: UUID
     let user_id: UUID
     let parent_id: UUID?
@@ -71,7 +71,7 @@ struct Entry: Identifiable, Sendable, Equatable {
     }
 }
 
-extension Entry: Codable {
+nonisolated extension Entry: Codable {
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(UUID.self, forKey: .id)

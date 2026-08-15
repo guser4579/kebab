@@ -101,7 +101,6 @@ struct ScopeFeedView: View {
         Group {
             if showFAB {
                 Button {
-                    Haptics.lightTap()
                     scrollToLiveEdgeSignal += 1
                 } label: {
                     HStack(spacing: 6) {

@@ -137,7 +137,7 @@ struct CollectionsSheetView: View {
         iconName: String,
         action: @escaping () -> Void
     ) -> some View {
-        Button(action: { Haptics.lightTap(); action() }) {
+        Button(action: { action() }) {
             HStack(spacing: Style.Spacing.x3) {
                 Icon(iconName)
                     .foregroundColor(Style.Color.primaryText)

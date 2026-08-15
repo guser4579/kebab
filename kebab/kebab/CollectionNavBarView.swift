@@ -139,7 +139,7 @@ struct CollectionNavBarView: View {
         isSelected: Bool,
         action: @escaping () -> Void
     ) -> some View {
-        Button(action: { Haptics.lightTap(); action() }) {
+        Button(action: { action() }) {
             VStack(spacing: 0) {
                 Spacer(minLength: 0)
 
@@ -167,7 +167,7 @@ struct CollectionNavBarView: View {
     }
 
     private var plusButton: some View {
-        Button(action: { Haptics.lightTap(); onPlusTapped() }) {
+        Button(action: { onPlusTapped() }) {
             Image(systemName: "plus")
                 .font(.system(size: 17, weight: .semibold))
                 .foregroundColor(Style.Color.primaryText)
@@ -211,7 +211,7 @@ struct CollectionNavBarView: View {
         isSelected: Bool,
         action: @escaping () -> Void
     ) -> some View {
-        Button(action: { Haptics.lightTap(); action() }) {
+        Button(action: { action() }) {
             Text(label)
                 .font(Style.Typography.meta())
                 .foregroundColor(

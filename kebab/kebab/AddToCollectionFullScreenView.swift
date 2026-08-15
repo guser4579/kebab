@@ -476,7 +476,6 @@ struct AddToCollectionFullScreenView: View {
             }
 
             isConfirming = false
-            Haptics.mediumTap()
             onSuccess()
             onDismiss()
         } catch {

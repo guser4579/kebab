@@ -42,7 +42,6 @@ struct EntryImageStripView: View {
 
     private func cell(_ index: Int) -> some View {
         Button {
-            Haptics.lightTap()
             viewer = ViewerState(id: index)
         } label: {
             Rectangle()

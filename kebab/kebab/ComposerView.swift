@@ -478,7 +478,6 @@ struct ComposerView: View {
 
     private var expandButton: some View {
         Button {
-            Haptics.lightTap()
             onExpandTapped?()
         } label: {
             Icon("doub-arrows", glyphSize: Style.Icon.glyphSmall)
@@ -550,7 +549,6 @@ struct ComposerView: View {
     }
 
     private func pasteLinkFromClipboard() {
-        Haptics.lightTap()
         guard let url = PastedLink.current() else {
             clipboardHasURL = false
             return
@@ -620,7 +618,6 @@ struct ComposerView: View {
     // lands in the text field after whatever was already typed.
     private var micButton: some View {
         Button {
-            Haptics.lightTap()
             if voice.isRecording {
                 voice.stop()
             } else {
