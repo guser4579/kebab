@@ -47,8 +47,6 @@ enum Style {
         static let resurface = dynamic(light: "D9822B", dark: "F0A868")
         /// Fire indicator
         static let fire = dynamic(light: "E36D9A", dark: "F49CC0")
-        /// Auth welcome sticky note (same in both modes)
-        static let stickyNoteYellow = SwiftUI.Color(hex: "EBCF47")
 
         // UIKit-facing dynamics for the UITextView-backed editors.
         static let primaryTextUIColor = UIColor { trait in
@@ -200,17 +198,9 @@ enum Style {
         /// image — the large surface earns a softer corner.
         static let linkCardThumbnailCornerRadius: CGFloat = linkCardCornerRadius + 4
 
-        // MARK: - Auth Layout (Auth-specific offsets)
-
-        static let welcomeTopOffset: CGFloat = 140
+        /// Header offset from the physical top of the screen — the same
+        /// 60pt used by the Search and Settings headers.
         static let authHeaderTopOffset: CGFloat = 60
-        static let separatorSpacingBelowHeader: CGFloat = 12
-        static let kebabBelowHeader: CGFloat = 40
-        static let bodyBelowKebab: CGFloat = 4
-        static let inputBelowBody: CGFloat = 40
-        static let primaryButtonBottomOffset: CGFloat = 40
-        static let legalBelowSignIn: CGFloat = 24
-        static let signInBelowPrimary: CGFloat = 12
     }
 
     // MARK: - Animation

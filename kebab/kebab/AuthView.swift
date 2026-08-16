@@ -37,25 +37,6 @@ struct AuthView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .padding(.horizontal, Style.Layout.entryContentPadding)
-
-            if flow == .welcome {
-                RoundedRectangle(cornerRadius: 24)
-                    .fill(Style.Color.stickyNoteYellow)
-                    .frame(width: 225, height: 225)
-                    .overlay(alignment: .top) {
-                        Text("kebab")
-                            .font(Style.Typography.headerTitle())
-                            // Constant ink on the yellow note in both modes.
-                            .foregroundColor(SwiftUI.Color(hex: "161718"))
-                            .frame(height: 24)
-                            .padding(.top, 24)
-                    }
-                    .padding(.top, 60)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                    .ignoresSafeArea(.container, edges: .top)
-                    .allowsHitTesting(false)
-            }
         }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
             withAnimation(.easeOut(duration: 0.25)) { isKeyboardVisible = true }
@@ -68,15 +49,51 @@ struct AuthView: View {
     // MARK: - Welcome
 
     private var welcomeScreen: some View {
-        VStack(spacing: 0) {
-            Spacer(minLength: 0)
+        GeometryReader { geo in
+            // Hero height is measured from the physical top of the screen
+            // (the art bleeds under the status bar); cap it so smaller
+            // devices always keep room for the copy block and actions.
+            let topInset = geo.safeAreaInsets.top
+            // 1.25 is the artwork's own 4:5 ratio, so on current iPhone
+            // sizes the full composition shows uncropped; the height cap
+            // only bites (and center-crops) on very short screens.
+            let heroHeight = min(
+                geo.size.width * 1.25,
+                (geo.size.height + topInset) * 0.58
+            )
 
+            // The hero is full-bleed, so horizontal padding lives on each
+            // content element below it — never on this stack, where it would
+            // fight the fixed-width hero and shift the composition sideways.
             VStack(spacing: 0) {
-                Text("A place for thoughts you\ndon\u{2019}t want to lose.")
-                    .font(Style.Typography.authTitle())
-                    .foregroundColor(Style.Color.primaryText)
-                    .lineSpacing(8)
-                    .multilineTextAlignment(.center)
+                heroArtwork(
+                    width: geo.size.width,
+                    height: heroHeight,
+                    topInset: topInset
+                )
+                .padding(.top, -topInset)
+
+                // Open space lives here, between art and the bottom-anchored
+                // copy + CTA group, so headline → sub-copy → button read as
+                // one intentional composition.
+                Spacer(minLength: Style.Spacing.x4)
+
+                Group {
+                    Text("Keep what you notice.")
+                        .font(Style.Typography.authTitle())
+                        .foregroundColor(Style.Color.primaryText)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, Style.Layout.entryContentPadding)
+
+                    Text("Like texting yourself, but built for it. A private place for thoughts, links, questions, and the little things you want to come back to.")
+                        .font(Style.Typography.body())
+                        .foregroundColor(Style.Color.primaryText)
+                        .lineSpacing(Style.Typography.bodyLineHeight - 16)
+                        .multilineTextAlignment(.center)
+                        .padding(.top, Style.Spacing.x3)
+                        .padding(.horizontal, Style.Layout.entryContentPadding + Style.Spacing.x2)
+                }
+                .frame(maxWidth: .infinity)
 
                 Button {
                     flow = .email
@@ -99,49 +116,86 @@ struct AuthView: View {
                 }
                 .disabled(viewModel.isLoading)
                 .padding(.top, 24)
+                .padding(.horizontal, Style.Layout.entryContentPadding)
 
                 legalText
                     .font(Style.Typography.meta())
                     .multilineTextAlignment(.center)
                     .padding(.top, 24)
+                    .padding(.bottom, Style.Spacing.x3)
+                    .padding(.horizontal, Style.Layout.entryContentPadding)
             }
+            .frame(width: geo.size.width, height: geo.size.height)
         }
+    }
+
+    /// The welcome hero: full-bleed artwork whose visible edges feather into
+    /// the screen background rather than ending in a rectangle. Three layers
+    /// do the work — a heavily blurred rectangle mask softens the sides and
+    /// corners, an eased vertical gradient mask carries the long dissolve
+    /// into the copy area, and a background-colored wash smears the last of
+    /// the art into the surface so the transition tracks light/dark mode.
+    /// The image itself is never blurred; only its boundary is.
+    private func heroArtwork(width: CGFloat, height: CGFloat, topInset: CGFloat) -> some View {
+        Image("AuthHero")
+            .resizable()
+            .scaledToFill()
+            .frame(width: width, height: height)
+            .clipped()
+            .mask {
+                Rectangle()
+                    .padding(.horizontal, Style.Spacing.x4)
+                    .padding(.bottom, 56)
+                    // Pushed past the frame so the top edge stays a crisp
+                    // bleed under the status bar instead of feathering.
+                    .padding(.top, -80)
+                    .blur(radius: 36)
+            }
+            .mask {
+                LinearGradient(
+                    stops: [
+                        .init(color: .black, location: 0),
+                        .init(color: .black, location: 0.6),
+                        .init(color: .black.opacity(0.85), location: 0.76),
+                        .init(color: .black.opacity(0.5), location: 0.89),
+                        .init(color: .clear, location: 1)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            }
+            .overlay {
+                LinearGradient(
+                    stops: [
+                        .init(color: .clear, location: 0.55),
+                        .init(color: Style.Color.background.opacity(0.25), location: 0.8),
+                        .init(color: Style.Color.background.opacity(0.6), location: 1)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            }
+            .overlay(alignment: .top) {
+                // Wordmark in the screen's background color so it reads as
+                // cut out of the art — embedded, not badged.
+                Text("kebab")
+                    .font(Style.Typography.headerTitle())
+                    .foregroundColor(Style.Color.background)
+                    .padding(.top, topInset + Style.Spacing.x4)
+            }
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 
     // MARK: - Email
 
     private var emailScreen: some View {
         VStack(spacing: 0) {
-            VStack(spacing: 0) {
-                ZStack(alignment: .leading) {
-                    Text("auth")
-                        .font(.system(size: 18, weight: .medium).monospaced())
-                        .foregroundColor(Style.Color.primaryText)
-                        .frame(maxWidth: .infinity)
-
-                    Button {
-                        viewModel.email = ""
-                        viewModel.resetFlow()
-                        flow = .welcome
-                    } label: {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 18, weight: .medium))
-                            .foregroundColor(Style.Color.secondary)
-                            .frame(width: 24, height: 44)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                }
-
-                Rectangle()
-                    .fill(Style.Color.separator)
-                    .frame(height: 1)
-                    .frame(maxWidth: .infinity)
-                    .padding(.horizontal, -Style.Layout.entryContentPadding)
-                    .padding(.top, Style.Layout.separatorSpacingBelowHeader)
+            authHeader {
+                viewModel.email = ""
+                viewModel.resetFlow()
+                flow = .welcome
             }
-            .frame(maxWidth: .infinity, alignment: .center)
-            .padding(.top, 12)
 
             VStack(spacing: 0) {
                 Text("Enter your email")
@@ -177,7 +231,8 @@ struct AuthView: View {
             }
             .padding(.bottom, bottomButtonPadding)
         }
-        .ignoresSafeArea(.container, edges: .bottom)
+        .padding(.horizontal, Style.Layout.entryContentPadding)
+        .ignoresSafeArea(.container, edges: [.top, .bottom])
     }
 
     private var emailField: some View {
@@ -212,36 +267,11 @@ struct AuthView: View {
 
     private var codeScreen: some View {
         VStack(spacing: 0) {
-            VStack(spacing: 0) {
-                ZStack(alignment: .leading) {
-                    Text("auth")
-                        .font(.system(size: 18, weight: .medium).monospaced())
-                        .foregroundColor(Style.Color.primaryText)
-                        .frame(maxWidth: .infinity)
-
-                    Button {
-                        viewModel.email = ""
-                        viewModel.resetFlow()
-                        flow = .welcome
-                    } label: {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 18, weight: .medium))
-                            .foregroundColor(Style.Color.secondary)
-                            .frame(width: 24, height: 44)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                }
-
-                Rectangle()
-                    .fill(Style.Color.separator)
-                    .frame(height: 1)
-                    .frame(maxWidth: .infinity)
-                    .padding(.horizontal, -Style.Layout.entryContentPadding)
-                    .padding(.top, Style.Layout.separatorSpacingBelowHeader)
+            authHeader {
+                viewModel.email = ""
+                viewModel.resetFlow()
+                flow = .welcome
             }
-            .frame(maxWidth: .infinity, alignment: .center)
-            .padding(.top, 12)
 
             VStack(spacing: 0) {
                 Text("Enter your code")
@@ -296,7 +326,8 @@ struct AuthView: View {
             }
             .padding(.bottom, bottomButtonPadding)
         }
-        .ignoresSafeArea(.container, edges: .bottom)
+        .padding(.horizontal, Style.Layout.entryContentPadding)
+        .ignoresSafeArea(.container, edges: [.top, .bottom])
     }
 
     // Six digit boxes rendered over a single invisible full-width TextField.
@@ -363,6 +394,29 @@ struct AuthView: View {
     }
 
     // MARK: - Shared
+
+    /// Quiet sub-screen header shared by the email and OTP steps: the
+    /// app-standard 60pt offset from the physical top (Search/Settings use
+    /// the same) with a lone back chevron — no title, no divider.
+    private func authHeader(onBack: @escaping () -> Void) -> some View {
+        VStack(spacing: 0) {
+            Color.clear
+                .frame(height: Style.Layout.authHeaderTopOffset)
+
+            HStack(spacing: 0) {
+                Button(action: onBack) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundColor(Style.Color.secondary)
+                        .frame(width: 24, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+
+                Spacer(minLength: 0)
+            }
+        }
+    }
 
     /// Full-width primary CTA. The frame, background, and contentShape live
     /// INSIDE the button label so the entire capsule is the touch target —
