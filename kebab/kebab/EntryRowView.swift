@@ -23,6 +23,21 @@ struct EntryRowView: View {
     /// Post-capture settling: a brief surface emphasis so the eye lands on
     /// the thing just saved. A receipt, not a celebration.
     var isSettling: Bool = false
+    /// True only in the All scope: the entry's most specific collection home
+    /// renders quietly in the bottom-right metadata area. Collection scopes
+    /// already carry that context and pass false.
+    var showsCollectionProvenance: Bool = false
+
+    // Feed-only long-body collapsing (~8 rendered lines). Expansion is
+    // ephemeral by design: @State dies with the row, so a genuine feed
+    // reconstruction returns to collapsed. Attachments never count toward
+    // the threshold — only the body content collapses.
+    private static let collapseLineLimit = 8
+    @State private var isBodyExpanded = false
+    /// Measured natural heights of the body at full length and at the
+    /// collapse cap — a rendered-size decision, not a character count.
+    @State private var fullBodyHeight: CGFloat = 0
+    @State private var cappedBodyHeight: CGFloat = 0
 
     private var displayContent: String {
         if entry.isContentHidden {
@@ -85,6 +100,8 @@ struct EntryRowView: View {
                 if !entry.content.isEmpty {
                     contentText
 
+                    bodyToggle
+
                     Color.clear
                         .frame(height: (hasLinkCard || hasImages) ? 8 : 12)
                 }
@@ -117,7 +134,7 @@ struct EntryRowView: View {
                 Color.clear
                     .frame(height: 8)
 
-                commentCounter
+                bottomMetaRow
             }
         }
         .padding(.horizontal, Style.Layout.entryContentPadding)
@@ -208,18 +225,142 @@ struct EntryRowView: View {
         }
     }
 
+    private var isChecklistBody: Bool {
+        !entry.isContentHidden && Checklist.hasChecklist(entry.content)
+    }
+
     @ViewBuilder
     private var contentText: some View {
-        if !entry.isContentHidden, Checklist.hasChecklist(entry.content) {
+        if isChecklistBody {
             checklistContent
         } else {
             Text(displayContent)
                 .font(Style.Typography.body())
                 .foregroundColor(Style.Color.primaryText)
                 .lineSpacing(4)
+                .lineLimit(isCollapseCandidate && !isBodyExpanded ? Self.collapseLineLimit : nil)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .allowsHitTesting(false)
+                .background {
+                    // Measurement only for bodies that could plausibly exceed
+                    // the cap — every other row pays nothing.
+                    if isCollapseCandidate {
+                        bodyMeasurementTwins
+                    }
+                }
         }
+    }
+
+    // MARK: - Long-body collapsing
+
+    /// Cheap gate ahead of measurement: at 16pt DM Sans on common widths a
+    /// body needs well over 200 characters (or more hard lines than the cap)
+    /// before it can reach ~8 rendered lines.
+    private var isCollapseCandidate: Bool {
+        displayContent.count > 200
+            || displayContent.components(separatedBy: "\n").count > Self.collapseLineLimit
+    }
+
+    /// Invisible twins of the body at full length and at the collapse cap,
+    /// laid out at the same width as the visible text. Their height delta is
+    /// the truncation decision — rendered size, not character count.
+    private var bodyMeasurementTwins: some View {
+        ZStack(alignment: .topLeading) {
+            measurementText(lineLimit: nil)
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: {
+                    fullBodyHeight = $0
+                }
+            measurementText(lineLimit: Self.collapseLineLimit)
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: {
+                    cappedBodyHeight = $0
+                }
+        }
+        .hidden()
+        .accessibilityHidden(true)
+    }
+
+    private func measurementText(lineLimit: Int?) -> some View {
+        Text(displayContent)
+            .font(Style.Typography.body())
+            .lineSpacing(4)
+            .lineLimit(lineLimit)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    /// Whether the body genuinely overflows the collapsed presentation.
+    /// Checklists decide by line budget; plain text by measured height.
+    private var bodyOverflowsCollapse: Bool {
+        if isChecklistBody {
+            return checklistLineCount > Self.collapseLineLimit
+        }
+        return isCollapseCandidate && fullBodyHeight > cappedBodyHeight + 1
+    }
+
+    /// Quiet inline toggle below the body. Expansion and collapse are
+    /// deliberately instant — no height, opacity, or row-movement animation.
+    @ViewBuilder
+    private var bodyToggle: some View {
+        if bodyOverflowsCollapse || isBodyExpanded {
+            Button {
+                var transaction = Transaction()
+                transaction.disablesAnimations = true
+                withTransaction(transaction) {
+                    isBodyExpanded.toggle()
+                }
+            } label: {
+                Text(isBodyExpanded ? "Show less" : "Show more")
+                    .font(Style.Typography.meta())
+                    .foregroundColor(Style.Color.secondary)
+                    .frame(height: 24)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 2)
+        }
+    }
+
+    /// Visual line count of a checklist body: items are one line each; text
+    /// blocks count their hard lines.
+    private var checklistLineCount: Int {
+        Checklist.segments(of: entry.content).reduce(0) { total, segment in
+            switch segment {
+            case .text(_, let block):
+                return total + block.components(separatedBy: "\n").count
+            case .item:
+                return total + 1
+            }
+        }
+    }
+
+    /// Segments actually rendered: the full list, or — collapsed — a prefix
+    /// capped at the line budget. Truncating by whole segments/lines keeps
+    /// checkbox structure, paragraphs, and line breaks fully intact.
+    private var visibleChecklistSegments: [Checklist.Segment] {
+        let segments = Checklist.segments(of: entry.content)
+        guard !isBodyExpanded, checklistLineCount > Self.collapseLineLimit else {
+            return segments
+        }
+        var budget = Self.collapseLineLimit
+        var shown: [Checklist.Segment] = []
+        for segment in segments {
+            guard budget > 0 else { break }
+            switch segment {
+            case .item:
+                shown.append(segment)
+                budget -= 1
+            case .text(let id, let block):
+                let lines = block.components(separatedBy: "\n")
+                if lines.count <= budget {
+                    shown.append(segment)
+                    budget -= lines.count
+                } else {
+                    shown.append(.text(id: id, lines.prefix(budget).joined(separator: "\n")))
+                    budget = 0
+                }
+            }
+        }
+        return shown
     }
 
     // Checklist entries render their marker lines as tappable checkbox rows
@@ -228,7 +369,7 @@ struct EntryRowView: View {
     // only the checkbox buttons intercept taps.
     private var checklistContent: some View {
         VStack(alignment: .leading, spacing: Style.Spacing.x2) {
-            ForEach(Checklist.segments(of: entry.content)) { segment in
+            ForEach(visibleChecklistSegments) { segment in
                 switch segment {
                 case .text(_, let block):
                     Text(block)
@@ -275,13 +416,34 @@ struct EntryRowView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    /// Bottom metadata line: comment count leading (unchanged), and — in the
+    /// All scope only — the entry's direct collection home trailing, in the
+    /// same quiet language Search uses for collection metadata.
     @ViewBuilder
-    private var commentCounter: some View {
-        if let count = entry.comment_count, count > 0 {
-            Text(count == 1 ? "1 comment" : "\(count) comments")
-                .font(.custom("DMSans-Regular", size: 16))
-                .foregroundColor(Style.Color.secondary)
-                .frame(height: 24, alignment: .leading)
+    private var bottomMetaRow: some View {
+        let count = entry.comment_count ?? 0
+        let provenance = showsCollectionProvenance ? entry.collection_name : nil
+        if count > 0 || provenance != nil {
+            HStack(alignment: .center, spacing: Style.Spacing.x2) {
+                if count > 0 {
+                    Text(count == 1 ? "1 comment" : "\(count) comments")
+                        .font(.custom("DMSans-Regular", size: 16))
+                        .foregroundColor(Style.Color.secondary)
+                }
+
+                Spacer(minLength: 0)
+
+                if let provenance {
+                    Text(provenance)
+                        .font(Style.Typography.meta())
+                        .foregroundColor(Style.Color.secondary)
+                        .lineLimit(1)
+                }
+            }
+            .frame(height: 24)
+            // Metadata is never a tap target — the row's open behavior owns
+            // this area.
+            .allowsHitTesting(false)
         }
     }
 

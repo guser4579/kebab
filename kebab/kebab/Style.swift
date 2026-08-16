@@ -102,6 +102,12 @@ enum Style {
         static func emptyStateTitle() -> Font {
             .custom("DMSans-ExtraBold", size: 16)
         }
+        /// Pill/chip label — the app-wide selected-pill rule: a modest weight
+        /// bump on selection (medium vs regular), same 14pt size. Used by the
+        /// feed's sub-collection chips and Search's collection-filter pills.
+        static func pill(selected: Bool) -> Font {
+            selected ? .custom("DMSans-Medium", size: 14) : meta()
+        }
 
         static let bodyLineHeight: CGFloat = 24
         static let metaLineHeight: CGFloat = 24
@@ -188,8 +194,11 @@ enum Style {
         static let composerMultiLineRadius: CGFloat = 24
         /// Link card height
         static let linkCardHeight: CGFloat = 44
-        /// Link card corner radius
+        /// Link card corner radius (compact / icon-only variants)
         static let linkCardCornerRadius: CGFloat = 12
+        /// Link card corner radius for previews that include a thumbnail
+        /// image — the large surface earns a softer corner.
+        static let linkCardThumbnailCornerRadius: CGFloat = linkCardCornerRadius + 4
 
         // MARK: - Auth Layout (Auth-specific offsets)
 

@@ -262,6 +262,11 @@ struct ComposerView: View {
     /// True while the text content exceeds the max inline height (internal
     /// scrolling active) — the composer's constrained state.
     @State private var isConstrained: Bool = false
+    /// True for the render pass triggered by a send. Clearing the draft can
+    /// collapse the expanded layout (drafted-unfocused send), and the
+    /// composerState animation would walk the send button downward through
+    /// that collapse — send state changes must land instantly instead.
+    @State private var suppressLayoutAnimation = false
     /// Best supported representation of the current pasteboard, or nil when
     /// it's empty/unsupported (no affordance at all — never a disabled one).
     /// Determined via hasImages/hasStrings/detectPatterns, none of which read
@@ -362,7 +367,10 @@ struct ComposerView: View {
                 actionRow
             }
         }
-        .animation(Style.Animation.composerState, value: isExpandedLayout)
+        .animation(
+            suppressLayoutAnimation ? nil : Style.Animation.composerState,
+            value: isExpandedLayout
+        )
         .onAppear {
             refreshClipboardState()
         }
@@ -457,10 +465,16 @@ struct ComposerView: View {
     private var textArea: some View {
         ZStack(alignment: .topLeading) {
             if text.isEmpty && !isFocused {
+                // One line always: a long collection name ellipsizes within
+                // the text area's width, never wrapping or running under the
+                // trailing controls.
                 Text(placeholder)
                     .font(Style.Typography.composerPlaceholder())
                     .foregroundColor(Style.Color.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
                     .padding(.leading, textLeadingInset)
+                    .padding(.trailing, Style.Spacing.x2)
                     .padding(.top, 13)
                     .padding(.bottom, 13)
             }
@@ -744,8 +758,13 @@ struct ComposerView: View {
         // optional. The host reads attachedImages/attachedLink itself (and
         // clears them) inside onSent.
         guard !trimmed.isEmpty || !attachedImages.isEmpty || attachedLink != nil else { return }
+        suppressLayoutAnimation = true
         onSent(trimmed)
         text = ""
+        // Re-arm the layout animation once the send's render pass has landed.
+        DispatchQueue.main.async {
+            suppressLayoutAnimation = false
+        }
         // Height resets automatically: updateUIView clears the UITextView text,
         // then sizeThatFits returns single-line height in the same layout pass.
     }

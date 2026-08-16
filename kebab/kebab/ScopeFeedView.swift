@@ -82,7 +82,10 @@ struct ScopeFeedView: View {
                         onPinTapped: { onPinTapped(entry) },
                         onFireTapped: { onFireTapped(entry) },
                         onPendingWarningTapped: { onPendingWarningTapped(entry) },
-                        isSettling: entry.id == settlingEntryId
+                        isSettling: entry.id == settlingEntryId,
+                        // Only All shows an entry's collection home —
+                        // collection scopes already are that context.
+                        showsCollectionProvenance: store.scope == .all
                     )
                 }
             }

@@ -40,7 +40,7 @@ final class RecentActivityStore: ObservableObject {
 
     @Published private(set) var items: [RecentActivityItem] = []
 
-    private static let maxItems = 6
+    private static let maxItems = 8
     private var userId: UUID?
     private var storageKey: String {
         "recentActivity_\(userId?.uuidString ?? "anonymous")"

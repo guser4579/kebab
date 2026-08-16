@@ -81,13 +81,13 @@ struct RichLinkCardView: View {
             // swallow image-area taps before they reach the row's
             // NavigationLink underneath.
             .background(
-                RoundedRectangle(cornerRadius: Style.Layout.linkCardCornerRadius)
+                RoundedRectangle(cornerRadius: Style.Layout.linkCardThumbnailCornerRadius)
                     .fill(Style.Color.background)
                     .allowsHitTesting(false)
             )
-            .clipShape(RoundedRectangle(cornerRadius: Style.Layout.linkCardCornerRadius))
+            .clipShape(RoundedRectangle(cornerRadius: Style.Layout.linkCardThumbnailCornerRadius))
             .overlay(
-                RoundedRectangle(cornerRadius: Style.Layout.linkCardCornerRadius)
+                RoundedRectangle(cornerRadius: Style.Layout.linkCardThumbnailCornerRadius)
                     .strokeBorder(Style.Color.separator, lineWidth: 1)
                     .allowsHitTesting(false)
             )
@@ -122,9 +122,9 @@ struct RichLinkCardView: View {
         }
         .frame(maxWidth: .infinity)
         .background(Style.Color.background)
-        .clipShape(RoundedRectangle(cornerRadius: Style.Layout.linkCardCornerRadius))
+        .clipShape(RoundedRectangle(cornerRadius: Style.Layout.linkCardThumbnailCornerRadius))
         .overlay(
-            RoundedRectangle(cornerRadius: Style.Layout.linkCardCornerRadius)
+            RoundedRectangle(cornerRadius: Style.Layout.linkCardThumbnailCornerRadius)
                 .strokeBorder(Style.Color.separator, lineWidth: 1)
         )
     }

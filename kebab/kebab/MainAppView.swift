@@ -124,14 +124,15 @@ struct MainAppView: View {
         }
     }
 
-    /// "Add to <collection>" while a collection filter targets the composer.
+    /// While a collection filter targets the composer, the placeholder is the
+    /// active collection/sub-collection name alone — the context is enough.
     private var composerPlaceholder: String {
         guard let filter = feedViewModel.activeCollectionFilter,
               let target = collectionsViewModel.collections.first(where: {
                   $0.id == filter.targetCollectionId
               })
         else { return "Make an entry" }
-        return "Add to \(target.name)"
+        return target.name
     }
 
     /// Where the feed currently is — decides what the Collections sheet offers.
@@ -380,19 +381,16 @@ struct MainAppView: View {
     }
 
     /// Optimistic entry deletion: the entry leaves every warm scope the
-    /// moment the user confirms, with a fast restrained collapse; the backend
-    /// delete runs invisibly (with its own transport retries). Only a genuine
-    /// failure restores the entry and surfaces a transient notice.
+    /// instant the user confirms — no collapse, no fade, the row is simply
+    /// gone — while the backend delete runs invisibly (with its own transport
+    /// retries). Only a genuine failure restores the entry and surfaces a
+    /// transient notice.
     private func performEntryDelete(_ entry: Entry) {
-        let removals = withAnimation(.easeInOut(duration: 0.18)) {
-            scopeCoordinator.removeForDelete(id: entry.id)
-        }
+        let removals = scopeCoordinator.removeForDelete(id: entry.id)
         Task {
             let deleted = await feedViewModel.deleteEntry(id: entry.id)
             if !deleted {
-                withAnimation(.easeInOut(duration: 0.18)) {
-                    scopeCoordinator.restoreAfterFailedDelete(removals)
-                }
+                scopeCoordinator.restoreAfterFailedDelete(removals)
                 showTransientNotice("Failed to delete")
             }
         }

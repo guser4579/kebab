@@ -168,14 +168,25 @@ struct CollectionNavBarView: View {
 
     private var plusButton: some View {
         Button(action: { onPlusTapped() }) {
-            Image(systemName: "plus")
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundColor(Style.Color.primaryText)
-                // Same 24pt glyph frame as the header icons so the + centers
-                // under the search control.
-                .frame(width: Style.Icon.grid, height: Style.Icon.grid)
+            // All → +; any collection/sub-collection context → gear. Cosmetic
+            // only: the same contextual action sits behind both glyphs.
+            Group {
+                if activeFilter == nil {
+                    Image(systemName: "plus")
+                        .font(.system(size: 17, weight: .semibold))
+                        // Same 24pt glyph frame as the header icons so the +
+                        // centers under the search control.
+                        .frame(width: Style.Icon.grid, height: Style.Icon.grid)
+                } else {
+                    Icon("settings", glyphSize: 20)
+                }
+            }
+            .foregroundColor(Style.Color.primaryText)
         }
         .buttonStyle(.plain)
+        // The container animates on scope change; the glyph swap must not —
+        // it lands instantly.
+        .transaction { $0.animation = nil }
         // Enlarge hit area without affecting layout (EntryRowView pattern).
         .padding(10)
         .contentShape(Rectangle())
@@ -213,7 +224,7 @@ struct CollectionNavBarView: View {
     ) -> some View {
         Button(action: { action() }) {
             Text(label)
-                .font(Style.Typography.meta())
+                .font(Style.Typography.pill(selected: isSelected))
                 .foregroundColor(
                     isSelected ? Style.Color.composerSendForeground : Style.Color.secondary
                 )
