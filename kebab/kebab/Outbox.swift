@@ -111,6 +111,19 @@ final class OutboxStore {
         directory.appendingPathComponent(filename)
     }
 
+    /// Deletes every queued entry and staged image. Called when a session
+    /// definitively ends: entries flush as whoever is signed in at flush
+    /// time, so a prior account's queue must never survive into the next.
+    func purgeAll() {
+        let files = (try? FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: nil
+        )) ?? []
+        for file in files {
+            try? FileManager.default.removeItem(at: file)
+        }
+    }
+
     private func persist(_ pending: PendingEntry) throws {
         let data = try encoder.encode(pending)
         try data.write(to: jsonURL(for: pending.id), options: .atomic)

@@ -42,4 +42,17 @@ enum LocalStore {
         else { return nil }
         return try? decoder.decode(type, from: data)
     }
+
+    /// Wipes every cached snapshot. Called when a session definitively ends:
+    /// the feed and per-scope page caches are device-global (not keyed by
+    /// user), so nothing from one account may survive into the next.
+    static func removeAll() {
+        let files = (try? FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: nil
+        )) ?? []
+        for file in files {
+            try? FileManager.default.removeItem(at: file)
+        }
+    }
 }
