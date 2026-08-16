@@ -434,7 +434,7 @@ struct EntryRowView: View {
                 Spacer(minLength: 0)
 
                 if let provenance {
-                    Text(provenance)
+                    Text(provenance.collectionDisplayName)
                         .font(Style.Typography.meta())
                         .foregroundColor(Style.Color.secondary)
                         .lineLimit(1)

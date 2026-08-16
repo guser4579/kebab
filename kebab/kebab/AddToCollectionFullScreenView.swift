@@ -320,7 +320,7 @@ struct AddToCollectionFullScreenView: View {
                         .frame(width: 16)
 
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(collection.name)
+                        Text(collection.name.collectionDisplayName)
                             .font(Style.Typography.body())
                             .foregroundColor(Style.Color.primaryText)
                             .lineLimit(1)
@@ -375,7 +375,7 @@ struct AddToCollectionFullScreenView: View {
                         .frame(width: 40)
 
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(sub.name)
+                        Text(sub.name.collectionDisplayName)
                             .font(Style.Typography.body())
                             .foregroundColor(Style.Color.primaryText)
                             .lineLimit(1)

@@ -1,5 +1,15 @@
 import Foundation
 
+extension String {
+    /// Shared display rule for collection and sub-collection names in
+    /// constrained UI (chips, pills, breadcrumbs, empty states): at most 24
+    /// characters, tail-ellipsized. Presentation only — stored names are
+    /// never mutated, and editing flows always expose the full value.
+    var collectionDisplayName: String {
+        count <= 24 ? self : String(prefix(24)) + "…"
+    }
+}
+
 struct Collection: Identifiable, Codable, Sendable, Equatable {
     let id: UUID
     let name: String

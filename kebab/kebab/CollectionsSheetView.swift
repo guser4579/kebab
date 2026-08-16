@@ -104,7 +104,7 @@ struct CollectionsSheetView: View {
     // MARK: - Header
 
     private var header: some View {
-        Text(context.managed?.name ?? "")
+        Text((context.managed?.name ?? "").collectionDisplayName)
             .font(.custom("DMSans-Medium", size: 16))
             .foregroundColor(Style.Color.primaryText)
             .lineLimit(1)
@@ -175,7 +175,7 @@ struct CollectionsSheetView: View {
     private var deleteCaption: String {
         switch context {
         case .sub(let parent, _):
-            return "Entries will move to \(parent.name)."
+            return "Entries will move to \(parent.name.collectionDisplayName)."
         default:
             return "Entries will move to All entries."
         }

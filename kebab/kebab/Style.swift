@@ -105,6 +105,17 @@ enum Style {
         static func emptyStateTitle() -> Font {
             .custom("DMSans-ExtraBold", size: 16)
         }
+        /// All-feed empty-state question: one step below authTitle so the
+        /// prompt owns the screen without shouting into an empty room.
+        static func emptyStatePrompt() -> Font {
+            .custom("DMSans-ExtraBold", size: 22)
+        }
+        /// Annotation mono — the data-sky voice (glyph fields, whisper
+        /// fragments in empty states). DM Mono rather than the bold JetBrains
+        /// wordmark face: the atmosphere labels, it never speaks.
+        static func mono(size: CGFloat) -> Font {
+            .custom("DMMono-Regular", size: size)
+        }
         /// Pill/chip label — the app-wide selected-pill rule: a modest weight
         /// bump on selection (medium vs regular), same 14pt size. Used by the
         /// feed's sub-collection chips and Search's collection-filter pills.

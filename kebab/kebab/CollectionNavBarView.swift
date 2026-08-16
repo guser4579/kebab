@@ -91,7 +91,7 @@ struct CollectionNavBarView: View {
 
                         ForEach(parentCollections) { parent in
                             parentTab(
-                                label: parent.name,
+                                label: parent.name.collectionDisplayName,
                                 isSelected: selectedParentId == parent.id,
                                 action: { onSelectParent(parent) }
                             )
@@ -200,7 +200,7 @@ struct CollectionNavBarView: View {
             HStack(spacing: Style.Spacing.x2) {
                 ForEach(subs) { sub in
                     subChip(
-                        label: sub.name,
+                        label: sub.name.collectionDisplayName,
                         isSelected: activeFilter == .single(id: sub.id),
                         action: { onSelectSub(sub) }
                     )

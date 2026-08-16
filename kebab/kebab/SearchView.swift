@@ -233,7 +233,7 @@ private struct SearchContentView: View {
                     Button {
                         results.collectionRefinement = isActive ? nil : facet.collectionId
                     } label: {
-                        Text(facet.name)
+                        Text(facet.name.collectionDisplayName)
                             .font(Style.Typography.pill(selected: isActive))
                             .foregroundColor(
                                 isActive ? Style.Color.composerSendForeground : Style.Color.secondary

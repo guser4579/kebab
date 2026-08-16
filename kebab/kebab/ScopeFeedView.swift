@@ -40,20 +40,9 @@ struct ScopeFeedView: View {
             if displayEntries.isEmpty {
                 if store.hasLoadedOnce, let scopeName {
                     // An empty collection is a valid destination, not an error.
-                    Text("Nothing in \(scopeName) yet.")
-                        .font(Style.Typography.meta())
-                        .foregroundColor(Style.Color.secondary)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                        .padding(Style.Spacing.emptyStateMargin)
+                    collectionEmptyState(name: scopeName)
                 } else if store.hasLoadedOnce {
-                    EmptyStateView(
-                        iconName: "bookmark-02",
-                        title: "Save it here",
-                        primaryBody: "Kebab is a micro journal for thoughts, links, and things you don't want to lose.\n\nLike a sticky note you'll come back to.",
-                        secondaryBody: "Recipes, quotes, ideas, movies to watch, random thoughts that come to you at 3am."
-                    )
-                    .padding(Style.Spacing.emptyStateMargin)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    AllFeedEmptyStateView()
                 } else {
                     feedSkeleton
                 }
@@ -91,6 +80,42 @@ struct ScopeFeedView: View {
             }
         }
         .overlay(alignment: .bottom) { fab }
+    }
+
+    /// Quiet empty state for a collection or sub-collection scope, in the
+    /// comment empty state's visual language: meta/secondary text with two
+    /// trace glyphs anchored just outside its corners, centered in the empty
+    /// feed area. The composer below remains the action. Deliberately exempt
+    /// from the 24-character display rule: the full stored name shows here,
+    /// wrapping naturally within a capped width. Chips and other compact
+    /// labels keep the truncated form.
+    private func collectionEmptyState(name: String) -> some View {
+        Text("Add entries to \(name)")
+            .font(Style.Typography.meta())
+            .lineSpacing(Style.Typography.metaLineHeight - 14)
+            .multilineTextAlignment(.center)
+            .foregroundColor(Style.Color.secondary)
+            .overlay(alignment: .topLeading) {
+                Text("·")
+                    .font(Style.Typography.mono(size: 12))
+                    .foregroundColor(Style.Color.secondary)
+                    .opacity(0.35)
+                    .offset(x: -18, y: -16)
+            }
+            .overlay(alignment: .bottomTrailing) {
+                Text("+")
+                    .font(Style.Typography.mono(size: 11))
+                    .foregroundColor(Style.Color.secondary)
+                    .opacity(0.3)
+                    .offset(x: 16, y: 14)
+            }
+            // Cap the wrap width so long names break into centered lines
+            // instead of running edge-to-edge.
+            .frame(maxWidth: 280)
+            .padding(.horizontal, Style.Spacing.emptyStateMargin)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Add entries to \(name)")
     }
 
     // MARK: - Three-state FAB (All only)

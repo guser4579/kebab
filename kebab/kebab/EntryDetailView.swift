@@ -37,6 +37,10 @@ struct EntryDetailView: View {
     /// directly; `threadData` is always derived from it in the same beat.
     @State private var threadEntries: [Entry] = []
     @State private var threadData: ThreadData?
+    /// Viewport and entry-content heights, measured so the comment empty
+    /// state can center itself in the space the comments would occupy.
+    @State private var scrollViewportHeight: CGFloat = 0
+    @State private var entryContentHeight: CGFloat = 0
     @State private var commentSendFailed = false
 
     init(
@@ -74,6 +78,11 @@ struct EntryDetailView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
                         entryContentSection
+                            .onGeometryChange(for: CGFloat.self) {
+                                $0.size.height
+                            } action: {
+                                entryContentHeight = $0
+                            }
 
                         if !directChildren.isEmpty {
                             VStack(spacing: 0) {
@@ -107,11 +116,26 @@ struct EntryDetailView: View {
                                     .frame(maxHeight: .infinity)
                                     .padding(.leading, 16)
                             }
+                        } else if threadData != nil {
+                            // Gated on a resolved thread so the line never
+                            // flashes while comments are still loading.
+                            commentsEmptyState
+                                .frame(maxWidth: .infinity)
+                                .frame(height: max(
+                                    180,
+                                    scrollViewportHeight - entryContentHeight
+                                        - Style.Layout.feedBottomReserve
+                                ))
                         }
                     }
                 }
                 .scrollDismissesKeyboard(.interactively)
                 .frame(maxWidth: .infinity)
+                .onGeometryChange(for: CGFloat.self) {
+                    $0.size.height
+                } action: {
+                    scrollViewportHeight = $0
+                }
                 .onAppear {
                     Task { await reloadThread() }
                     syncDisplayedRootFromFeedIfPresent()
@@ -567,6 +591,30 @@ struct EntryDetailView: View {
             entryCommentCounter
         }
         .padding(.horizontal, Style.Layout.entryContentPadding)
+    }
+
+    /// Quiet functional empty state for the thread: one line in the same
+    /// voice as the collection empty state, plus two whisper glyphs from the
+    /// All field's language — atmosphere at trace level, nothing that reads
+    /// as content or control. The composer below remains the action.
+    private var commentsEmptyState: some View {
+        Text("Add comments here.")
+            .font(Style.Typography.meta())
+            .foregroundColor(Style.Color.secondary)
+            .overlay {
+                Text("·")
+                    .font(Style.Typography.mono(size: 12))
+                    .foregroundColor(Style.Color.secondary)
+                    .opacity(0.35)
+                    .offset(x: -84, y: -20)
+                Text("+")
+                    .font(Style.Typography.mono(size: 11))
+                    .foregroundColor(Style.Color.secondary)
+                    .opacity(0.3)
+                    .offset(x: 80, y: 18)
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Add comments here.")
     }
 
     @ViewBuilder
