@@ -367,10 +367,13 @@ struct CommentDetailView: View {
                 Button {
                     dismiss()
                 } label: {
-                    Text("Back")
-                        .font(.custom("DMSans-Regular", size: 16))
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 18, weight: .medium))
                         .foregroundColor(Style.Color.secondary)
+                        .frame(width: 24, height: 44)
+                        .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
 
                 Spacer(minLength: 0)
             }

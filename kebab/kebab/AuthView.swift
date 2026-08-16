@@ -119,13 +119,18 @@ struct AuthView: View {
                         .foregroundColor(Style.Color.primaryText)
                         .frame(maxWidth: .infinity)
 
-                    Button("Back") {
+                    Button {
                         viewModel.email = ""
                         viewModel.resetFlow()
                         flow = .welcome
+                    } label: {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 18, weight: .medium))
+                            .foregroundColor(Style.Color.secondary)
+                            .frame(width: 24, height: 44)
+                            .contentShape(Rectangle())
                     }
-                    .font(Style.Typography.body())
-                    .foregroundColor(Style.Color.secondary)
+                    .buttonStyle(.plain)
                 }
 
                 Rectangle()
@@ -214,13 +219,18 @@ struct AuthView: View {
                         .foregroundColor(Style.Color.primaryText)
                         .frame(maxWidth: .infinity)
 
-                    Button("Back") {
+                    Button {
                         viewModel.email = ""
                         viewModel.resetFlow()
                         flow = .welcome
+                    } label: {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 18, weight: .medium))
+                            .foregroundColor(Style.Color.secondary)
+                            .frame(width: 24, height: 44)
+                            .contentShape(Rectangle())
                     }
-                    .font(Style.Typography.body())
-                    .foregroundColor(Style.Color.secondary)
+                    .buttonStyle(.plain)
                 }
 
                 Rectangle()
