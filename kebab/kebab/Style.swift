@@ -189,7 +189,7 @@ enum Style {
         /// Link card height
         static let linkCardHeight: CGFloat = 44
         /// Link card corner radius
-        static let linkCardCornerRadius: CGFloat = 8
+        static let linkCardCornerRadius: CGFloat = 12
 
         // MARK: - Auth Layout (Auth-specific offsets)
 

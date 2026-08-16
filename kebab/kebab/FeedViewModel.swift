@@ -704,29 +704,49 @@ final class FeedViewModel: ObservableObject {
         }
     }
 
-    func sendComment(content: String, parentId: UUID, rootId: UUID, depth: Int) async {
+    /// Persists a comment. The caller owns the optimistic thread/count state
+    /// (insert the comment locally, bump the count, THEN call this) — the
+    /// return value says whether to keep or roll back that state. `id` is
+    /// the optimistic comment's client-generated id, so the server row and
+    /// the local row are the same object.
+    @discardableResult
+    func sendComment(id: UUID? = nil, content: String, parentId: UUID, rootId: UUID, depth: Int) async -> Bool {
         let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
+        guard !trimmed.isEmpty else { return false }
 
         do {
             let session = try await supabase.auth.session
             try await repository.insertComment(
+                id: id,
                 userId: session.user.id,
                 parentId: parentId,
                 rootId: rootId,
                 depth: depth,
                 content: trimmed
             )
-            // comment_count comes from a server-side view that paged scopes
-            // only re-read on revalidation; bump the root entry locally so
-            // feed rows update without a reload.
-            entries = entries.map {
-                $0.id == rootId ? $0.withCommentCount(($0.comment_count ?? 0) + 1) : $0
-            }
-            onEntryPatched?(rootId)
+            // No count bump here: the caller already applied it optimistically
+            // via applyCommentCountDelta before persistence — bumping again on
+            // success would double-count.
+            return true
         } catch {
             print("Failed to send comment:", error)
+            return false
         }
+    }
+
+    /// Local-first comment counting: the root's counter changes in the same
+    /// beat as the optimistic thread mutation, and the patch fans out through
+    /// `onEntryPatched` to every warm feed scope (and the search corpus) —
+    /// no refetch, no reload, no temporary disagreement between surfaces.
+    /// Server revalidation later merges the identical authoritative value,
+    /// so there is no double increment and no flicker.
+    func applyCommentCountDelta(rootId: UUID, delta: Int) {
+        entries = entries.map { entry in
+            guard entry.id == rootId else { return entry }
+            return entry.withCommentCount(max(0, (entry.comment_count ?? 0) + delta))
+        }
+        LocalStore.save(entries, as: "feed")
+        onEntryPatched?(rootId)
     }
 }
 

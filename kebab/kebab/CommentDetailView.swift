@@ -12,14 +12,23 @@ struct CommentDetailView: View {
     @ObservedObject var feedViewModel: FeedViewModel
 
     @Environment(\.dismiss) private var dismiss
+    // Search infrastructure: deliberate opens and thread actions are resume
+    // signals; thread mutations mark the search corpus stale.
+    @EnvironmentObject private var recentActivityStore: RecentActivityStore
+    @EnvironmentObject private var searchCorpusStore: SearchCorpusStore
 
+    @State private var didRecordOpen = false
     @State private var displayedComment: Entry
     @State private var composerText: String = ""
     @State private var activeEntryMenuEntry: Entry?
     @State private var isEntryActionSheetVisible = false
     @State private var fullScreenEditEntry: Entry?
     @State private var isFullScreenEditVisible = false
+    /// Source of truth for the thread: optimistic mutations edit this array
+    /// directly; `threadData` is always derived from it in the same beat.
+    @State private var threadEntries: [Entry] = []
     @State private var threadData: ThreadData?
+    @State private var commentSendFailed = false
 
     init(comment: Entry, rootId: UUID, feedViewModel: FeedViewModel) {
         self.comment = comment
@@ -100,15 +109,7 @@ struct CommentDetailView: View {
                     maxHeight: geometry.size.height * Style.Layout.composerMaxHeightFraction,
                     placeholder: "Add comment",
                     onSent: { content in
-                        Task {
-                            await feedViewModel.sendComment(
-                                content: content,
-                                parentId: displayedComment.id,
-                                rootId: rootId,
-                                depth: displayedComment.depth + 1
-                            )
-                            await reloadThread()
-                        }
+                        sendCommentOptimistically(content: content)
                     },
                     onFocus: { }
                 )
@@ -134,14 +135,10 @@ struct CommentDetailView: View {
                             EntryActionSheetView(
                                 entry: sheetEntry,
                                 onDelete: {
-                                    Task {
-                                        await feedViewModel.deleteEntry(id: sheetEntry.id)
-                                        if sheetEntry.id == displayedComment.id {
-                                            dismiss()
-                                        } else {
-                                            await reloadThread()
-                                        }
-                                    }
+                                    deleteCommentOptimistically(
+                                        sheetEntry,
+                                        dismissAfter: sheetEntry.id == displayedComment.id
+                                    )
                                 },
                                 onToggleContentHidden: {
                                     Task {
@@ -198,6 +195,11 @@ struct CommentDetailView: View {
                             }
                         },
                         onPersistSuccess: {
+                            recentActivityStore.record(
+                                rootId: rootId,
+                                contextEntryId: editEntry.id,
+                                kind: .edited
+                            )
                             Task { await reloadThread() }
                         },
                         onSaveSuccess: { updated in
@@ -215,14 +217,123 @@ struct CommentDetailView: View {
         .background(Style.Color.background.ignoresSafeArea())
         .navigationBarBackButtonHidden(true)
         .enablesSwipeBack()
+        .alert("Couldn\u{2019}t send comment", isPresented: $commentSendFailed) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text("Your comment wasn\u{2019}t saved. Check your connection and try again.")
+        }
         .onAppear {
             UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+            // Deliberate open of a nested comment: the exact context Recent
+            // Activity restores. Recorded once per visit.
+            if !didRecordOpen {
+                didRecordOpen = true
+                recentActivityStore.record(
+                    rootId: rootId,
+                    contextEntryId: displayedComment.id,
+                    kind: .viewed
+                )
+            }
         }
     }
 
     private func reloadThread() async {
         let entries = await feedViewModel.loadComments(rootId: rootId)
+        setThread(entries)
+    }
+
+    private func setThread(_ entries: [Entry]) {
+        threadEntries = entries
         threadData = ThreadData(entries: entries)
+    }
+
+    /// Local-first reply creation: the reply and every counter it affects
+    /// (this screen's reply count, the root's total across all feed scopes)
+    /// are true immediately; persistence reconciles behind by shared id.
+    private func sendCommentOptimistically(content: String) {
+        let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        let optimistic = Entry(
+            id: UUID(),
+            user_id: displayedComment.user_id,
+            parent_id: displayedComment.id,
+            root_id: rootId,
+            depth: displayedComment.depth + 1,
+            content: trimmed,
+            created_at: Date(),
+            pinned_at: nil,
+            isContentHidden: false,
+            comment_count: nil,
+            resurface_count: 0,
+            fire_count: 0,
+            attachments: nil,
+            collection_id: nil,
+            collection_name: nil,
+            collection_parent_id: nil,
+            collection_parent_name: nil
+        )
+        setThread(threadEntries + [optimistic])
+        feedViewModel.applyCommentCountDelta(rootId: rootId, delta: 1)
+        recentActivityStore.record(
+            rootId: rootId,
+            contextEntryId: displayedComment.id,
+            kind: .commented
+        )
+
+        Task {
+            let ok = await feedViewModel.sendComment(
+                id: optimistic.id,
+                content: trimmed,
+                parentId: displayedComment.id,
+                rootId: rootId,
+                depth: displayedComment.depth + 1
+            )
+            if ok {
+                await reloadThread()
+                searchCorpusStore.markStale()
+            } else {
+                setThread(threadEntries.filter { $0.id != optimistic.id })
+                feedViewModel.applyCommentCountDelta(rootId: rootId, delta: -1)
+                commentSendFailed = true
+            }
+        }
+    }
+
+    /// Local-first deletion of a comment (possibly this screen's own):
+    /// subtree and counters update immediately; failure restores from truth.
+    private func deleteCommentOptimistically(_ comment: Entry, dismissAfter: Bool) {
+        let removedCount = (threadData?.subtreeCount(for: comment.id) ?? 0) + 1
+        setThread(threadEntries.filter { !subtreeIds(of: comment.id).contains($0.id) })
+        feedViewModel.applyCommentCountDelta(rootId: rootId, delta: -removedCount)
+
+        Task {
+            let ok = await feedViewModel.deleteEntry(id: comment.id)
+            if !ok {
+                feedViewModel.applyCommentCountDelta(rootId: rootId, delta: removedCount)
+                await reloadThread()
+            }
+            if dismissAfter {
+                dismiss()
+            }
+        }
+    }
+
+    /// The comment plus all its descendants, resolved from the local thread.
+    private func subtreeIds(of id: UUID) -> Set<UUID> {
+        var doomed: Set<UUID> = [id]
+        var changed = true
+        while changed {
+            changed = false
+            for entry in threadEntries {
+                if let parent = entry.parent_id,
+                   doomed.contains(parent), !doomed.contains(entry.id) {
+                    doomed.insert(entry.id)
+                    changed = true
+                }
+            }
+        }
+        return doomed
     }
 
     // MARK: - Header

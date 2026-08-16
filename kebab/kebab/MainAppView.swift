@@ -31,6 +31,16 @@ struct MainAppView: View {
     /// Live finger translation while dragging the settings panel closed.
     @State private var settingsDragOffset: CGFloat = 0
     @State private var isSearchActive: Bool = false
+    /// The suspended Search session. Created when Search opens; destroyed when
+    /// the user fully backs out (fully backing out ends Search). Never
+    /// persisted — a true cold launch starts fresh.
+    @State private var searchWorkspace: SearchWorkspace?
+    /// App-lived local mirror of the committed corpus — Search's retrieval
+    /// layer, offline-complete.
+    @StateObject private var searchCorpusStore: SearchCorpusStore
+    /// Local-only resume stack behind Search's resting state.
+    @StateObject private var recentActivityStore = RecentActivityStore()
+    @StateObject private var recentSearchesStore = RecentSearchesStore()
     @State private var addToCollectionEntry: Entry?
     @State private var isAddToCollectionVisible: Bool = false
     /// True when the Add-to-collection surface should appear in place (quick
@@ -86,6 +96,7 @@ struct MainAppView: View {
         _feedViewModel = StateObject(wrappedValue: FeedViewModel(supabase: supabase))
         _collectionsViewModel = StateObject(wrappedValue: CollectionsViewModel(supabase: supabase))
         _scopeCoordinator = StateObject(wrappedValue: FeedScopeCoordinator(supabase: supabase))
+        _searchCorpusStore = StateObject(wrappedValue: SearchCorpusStore(supabase: supabase))
         self.authViewModel = authViewModel
     }
 
@@ -203,6 +214,10 @@ struct MainAppView: View {
             collectionId: targetId
         )
         if let queuedId {
+            // Creating is a strong resume signal, and the committed (pending)
+            // entry is searchable immediately — offline included.
+            recentActivityStore.record(rootId: queuedId, contextEntryId: queuedId, kind: .created)
+            searchCorpusStore.rebuildIndex()
             if !activeStore.isAtLiveEdge {
                 // Preserve the reading position: hold the new entry out of
                 // the rendered feed and surface it through the FAB count.
@@ -403,6 +418,8 @@ struct MainAppView: View {
             let parentId = collection.parentId
             let ok = await collectionsViewModel.deleteCollection(id: collection.id)
             if ok {
+                // Memberships re-home when a collection dies.
+                searchCorpusStore.markStale()
                 // Deleted sub → land on the parent's aggregate view;
                 // deleted parent → back to All.
                 if let parentId {
@@ -434,6 +451,13 @@ struct MainAppView: View {
                         },
                         onSearchTapped: {
                             dismissPostCapture()
+                            if searchWorkspace == nil {
+                                searchWorkspace = SearchWorkspace(
+                                    corpus: searchCorpusStore,
+                                    recentSearches: recentSearchesStore,
+                                    recentActivity: recentActivityStore
+                                )
+                            }
                             isSearchActive = true
                         },
                         showsBottomSeparator: false
@@ -529,6 +553,11 @@ struct MainAppView: View {
                                     }
                                 },
                                 onResurfaceTapped: { entry in
+                                    recentActivityStore.record(
+                                        rootId: entry.id,
+                                        contextEntryId: entry.id,
+                                        kind: .resurfaced
+                                    )
                                     Task {
                                         await feedViewModel.resurfaceEntry(entry: entry)
                                         // The move-to-live-edge lands as an
@@ -560,6 +589,23 @@ struct MainAppView: View {
                     // feed's scroll geometry is a stable physical surface.
                     .safeAreaPadding(.bottom, Style.Layout.feedBottomReserve)
                     .task {
+                        // Search infrastructure: per-user stores plus the
+                        // corpus mirror's data sources.
+                        if let userId = authViewModel.currentUserId {
+                            searchCorpusStore.configure(userId: userId)
+                            recentActivityStore.configure(userId: userId)
+                            recentSearchesStore.configure(userId: userId)
+                        }
+                        searchCorpusStore.pendingProvider = { [weak feedViewModel] in
+                            feedViewModel?.pendingDisplayEntries ?? []
+                        }
+                        searchCorpusStore.collectionNamesProvider = { [weak collectionsViewModel] in
+                            guard let vm = collectionsViewModel else { return [:] }
+                            return Dictionary(
+                                vm.collections.map { ($0.id, $0.name) },
+                                uniquingKeysWith: { first, _ in first }
+                            )
+                        }
                         // Pending and freshly promoted entries render their
                         // collection breadcrumb (and match aggregate filters)
                         // from the local collections model.
@@ -577,21 +623,30 @@ struct MainAppView: View {
                             )
                         }
                         // Cross-scope hooks: promoted outbox rows and in-place
-                        // patches reconcile into every warm scope by ID.
-                        feedViewModel.onEntryPromoted = { [weak scopeCoordinator] promoted in
+                        // patches reconcile into every warm scope by ID — and
+                        // mirror into the search corpus, so Search reflects
+                        // current truth essentially immediately.
+                        feedViewModel.onEntryPromoted = { [weak scopeCoordinator, weak searchCorpusStore] promoted in
                             scopeCoordinator?.fanOutPromoted(promoted)
+                            searchCorpusStore?.upsert(promoted)
                         }
-                        feedViewModel.onEntryPatched = { [weak feedViewModel, weak scopeCoordinator] id in
+                        feedViewModel.onEntryPatched = { [weak feedViewModel, weak scopeCoordinator, weak searchCorpusStore] id in
                             if let fresh = feedViewModel?.entries.first(where: { $0.id == id }) {
                                 scopeCoordinator?.reconcile(fresh)
+                                searchCorpusStore?.upsert(fresh)
+                            } else {
+                                // A comment was patched — not in the root
+                                // array; the corpus refetches on next look.
+                                searchCorpusStore?.markStale()
                             }
                         }
                         // Deletes confirmed from any screen (detail included)
                         // drop and tombstone the row in every warm scope.
                         // For the feed's own optimistic path this is a no-op
                         // second removal.
-                        feedViewModel.onEntryDeleted = { [weak scopeCoordinator] id in
+                        feedViewModel.onEntryDeleted = { [weak scopeCoordinator, weak searchCorpusStore] id in
                             scopeCoordinator?.noteDeletedEverywhere(id: id)
+                            searchCorpusStore?.removeEntry(id: id)
                         }
                         // SWR: cached page already rendered; revalidate quietly.
                         scopeCoordinator.activate(.all)
@@ -834,6 +889,14 @@ struct MainAppView: View {
                                 // to the user (same order, same text) and does not shift scroll position.
                                 Task { await feedViewModel.loadEntries() }
                             }
+                        },
+                        onPersistSuccess: {
+                            // Editing is a strong resume signal.
+                            recentActivityStore.record(
+                                rootId: editEntry.root_id ?? editEntry.id,
+                                contextEntryId: editEntry.id,
+                                kind: .edited
+                            )
                         }
                     )
                     .transition(.move(edge: .bottom))
@@ -855,6 +918,9 @@ struct MainAppView: View {
                         },
                         onSuccess: {
                             let movedId = entry.id
+                            // Membership changed: the corpus refetches on
+                            // Search's next look.
+                            searchCorpusStore.markStale()
                             Task {
                                 await collectionsViewModel.loadCollections()
                                 await feedViewModel.loadEntries()
@@ -1039,7 +1105,9 @@ struct MainAppView: View {
                                 .map { $0.name },
                         renameTarget: target,
                         onSuccess: { _ in
-                            // Refresh breadcrumb names in the feed.
+                            // Refresh breadcrumb names in the feed (and the
+                            // corpus's collection-name signal).
+                            searchCorpusStore.markStale()
                             scopeCoordinator.revalidateAllWarm()
                             Task { await feedViewModel.loadEntries() }
                         }
@@ -1048,8 +1116,16 @@ struct MainAppView: View {
                 }
             }
             .navigationDestination(isPresented: $isSearchActive) {
-                if let userId = authViewModel.currentUserId {
-                    SearchView(supabase: supabase, feedViewModel: feedViewModel, userId: userId)
+                if let workspace = searchWorkspace {
+                    SearchView(workspace: workspace, feedViewModel: feedViewModel)
+                }
+            }
+            // Fully backing out of Search ends the session; the next open
+            // starts at Recent Activity. (Entering results keeps Search
+            // suspended — this fires only when Search itself pops.)
+            .onChange(of: isSearchActive) { _, active in
+                if !active {
+                    searchWorkspace = nil
                 }
             }
             // Comment quick action: straight into the new entry's thread with
@@ -1135,6 +1211,11 @@ struct MainAppView: View {
         // pushed destinations and overlays) — the Add-to-collection picker
         // renders instantly from it instead of refetching on every open.
         .environmentObject(collectionsViewModel)
+        // Search infrastructure shared with pushed detail screens: they
+        // record resume signals (opens, comments, edits, resurfaces) and mark
+        // the corpus stale after thread mutations.
+        .environmentObject(recentActivityStore)
+        .environmentObject(searchCorpusStore)
     }
 }
 

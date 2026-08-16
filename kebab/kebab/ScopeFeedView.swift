@@ -90,17 +90,16 @@ struct ScopeFeedView: View {
         .overlay(alignment: .bottom) { fab }
     }
 
-    // MARK: - Three-state FAB
+    // MARK: - Three-state FAB (All only)
 
-    /// All communicates newness; collections preserve context quietly. The
-    /// informational unseen-count state exists only on All — collection
-    /// scopes keep the plain two-state arrow while their stores continue
-    /// buffering arrivals underneath exactly as before.
-    private var showsUnseenCount: Bool { store.scope == .all }
-
+    /// The FAB exists only on All: it communicates newness at the live edge.
+    /// Collection scopes preserve the user's context quietly and render no
+    /// FAB under any scroll condition — their stores still buffer arrivals
+    /// underneath exactly as before, revealed on returning to the live edge.
     private var showFAB: Bool {
-        !suppressesFAB
-            && ((showsUnseenCount && store.unseenCount > 0) || distanceFromLiveEdge > containerHeight)
+        store.scope == .all
+            && !suppressesFAB
+            && (store.unseenCount > 0 || distanceFromLiveEdge > containerHeight)
     }
 
     private var fab: some View {
@@ -113,7 +112,7 @@ struct ScopeFeedView: View {
                         Icon("arrow-up", glyphSize: Style.Icon.glyphSmall)
                             .rotationEffect(.degrees(180))
                             .foregroundColor(Style.Color.primaryText)
-                        if showsUnseenCount && store.unseenCount > 0 {
+                        if store.unseenCount > 0 {
                             Text(store.unseenCount == 1 ? "1 new entry" : "\(store.unseenCount) new entries")
                                 .font(Style.Typography.meta())
                                 .foregroundColor(Style.Color.primaryText)
@@ -121,7 +120,7 @@ struct ScopeFeedView: View {
                                 .transition(.opacity)
                         }
                     }
-                    .padding(.horizontal, (showsUnseenCount && store.unseenCount > 0) ? 14 : 0)
+                    .padding(.horizontal, store.unseenCount > 0 ? 14 : 0)
                     .frame(minWidth: 36)
                     .frame(height: 36)
                     .glassEffect(

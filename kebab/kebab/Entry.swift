@@ -161,7 +161,7 @@ extension Entry {
         )
     }
 
-    func withCommentCount(_ count: Int) -> Entry {
+    func withCommentCount(_ count: Int?) -> Entry {
         Entry(
             id: id,
             user_id: user_id,

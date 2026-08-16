@@ -91,22 +91,6 @@ final class EntryRepository {
             .execute()
     }
 
-    func searchEntries(query: String) async throws -> [Entry] {
-        let entries: [Entry] = try await supabase
-            .rpc("search_entries", params: ["search_query": query])
-            .execute()
-            .value
-        return entries
-    }
-
-    func searchEntriesV2(query: String) async throws -> [SearchResult] {
-        let results: [SearchResult] = try await supabase
-            .rpc("search_entries_v2", params: ["search_query": query])
-            .execute()
-            .value
-        return results
-    }
-
     func resurfaceEntry(id: UUID) async throws {
         try await supabase
             .rpc("resurface_entry", params: ["entry_id": id.uuidString])
@@ -138,8 +122,12 @@ final class EntryRepository {
             .execute()
     }
 
-    func insertComment(userId: UUID, parentId: UUID, rootId: UUID, depth: Int, content: String) async throws {
+    /// `id` lets callers supply the client-generated id of an optimistic
+    /// comment, so the local row and the server row are the same object and
+    /// reconciliation is a clean merge (same pattern as insertEntry).
+    func insertComment(id: UUID? = nil, userId: UUID, parentId: UUID, rootId: UUID, depth: Int, content: String) async throws {
         let payload = InsertCommentPayload(
+            id: id,
             user_id: userId,
             parent_id: parentId,
             root_id: rootId,
@@ -179,12 +167,30 @@ final class EntryRepository {
     }
 
     private struct InsertCommentPayload: Encodable {
+        let id: UUID?
         let user_id: UUID
         let parent_id: UUID
         let root_id: UUID
         let depth: Int
         let content: String
         let is_content_hidden: Bool
+
+        // encodeIfPresent for id: an explicit null would override the column
+        // default and violate the primary key (same as InsertEntryPayload).
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encodeIfPresent(id, forKey: .id)
+            try container.encode(user_id, forKey: .user_id)
+            try container.encode(parent_id, forKey: .parent_id)
+            try container.encode(root_id, forKey: .root_id)
+            try container.encode(depth, forKey: .depth)
+            try container.encode(content, forKey: .content)
+            try container.encode(is_content_hidden, forKey: .is_content_hidden)
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case id, user_id, parent_id, root_id, depth, content, is_content_hidden
+        }
     }
 
     private struct PinUpdatePayload: Encodable {
