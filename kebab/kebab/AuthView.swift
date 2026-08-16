@@ -179,7 +179,7 @@ struct AuthView: View {
                 // Wordmark in the screen's background color so it reads as
                 // cut out of the art — embedded, not badged.
                 Text("kebab")
-                    .font(Style.Typography.headerTitle())
+                    .font(Style.Typography.authWordmark())
                     .foregroundColor(Style.Color.background)
                     .padding(.top, topInset + Style.Spacing.x4)
             }

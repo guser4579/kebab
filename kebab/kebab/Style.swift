@@ -68,6 +68,11 @@ enum Style {
         static func headerTitle() -> Font {
             .custom("JetBrainsMonoNL-Bold", size: 18)
         }
+        /// Auth welcome wordmark: same mono face as the feed header but
+        /// sized for the hero art — deliberately independent of headerTitle.
+        static func authWordmark() -> Font {
+            .custom("JetBrainsMonoNL-Bold", size: 24)
+        }
         /// Entry body: DM Sans regular, 16pt, 24pt line height
         static func body() -> Font {
             .custom("DMSans-Regular", size: 16)
