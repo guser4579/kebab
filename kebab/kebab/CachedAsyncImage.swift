@@ -57,7 +57,14 @@ struct CachedAsyncImage: View {
     }
 
     private func load() async {
-        guard image == nil, let url else { return }
+        // Keyed to the CURRENT url, not "loaded once": a mounted instance
+        // whose url changes (the menu profile card after an avatar replace)
+        // must fetch the new image — the previous one stays visible until
+        // the swap so the change never flashes through a blank frame.
+        guard let url else {
+            image = nil
+            return
+        }
         if let cached = ImageCache.shared.object(forKey: url as NSURL) {
             image = cached
             return
