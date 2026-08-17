@@ -275,11 +275,6 @@ struct CommentDetailView: View {
         )
         setThread(threadEntries + [optimistic])
         feedViewModel.applyCommentCountDelta(rootId: rootId, delta: 1)
-        recentActivityStore.record(
-            rootId: rootId,
-            contextEntryId: displayedComment.id,
-            kind: .commented
-        )
 
         Task {
             let ok = await feedViewModel.sendComment(
@@ -290,6 +285,14 @@ struct CommentDetailView: View {
                 depth: displayedComment.depth + 1
             )
             if ok {
+                // One successful comment → one activity event. Recorded on
+                // the success path (not at optimistic insert) so a rolled-
+                // back failure never leaves a phantom event.
+                recentActivityStore.record(
+                    rootId: rootId,
+                    contextEntryId: displayedComment.id,
+                    kind: .commented
+                )
                 await reloadThread()
                 searchCorpusStore.markStale()
             } else {

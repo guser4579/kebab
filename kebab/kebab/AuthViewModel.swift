@@ -148,12 +148,11 @@ final class AuthViewModel: ObservableObject {
         let userId = currentUserId
         try await supabase.rpc("delete_account").execute()
         if let uid = userId?.uuidString {
-            // recentActivity_/searchHistory_ mirror the stores' own keys;
-            // profile_ is ProfileStore's cache. searchCorpus_ lives in
-            // LocalStore's directory, which handleSessionEnded wipes.
-            for key in ["recentActivity_\(uid)", "searchHistory_\(uid)", "profile_\(uid)"] {
-                UserDefaults.standard.removeObject(forKey: key)
-            }
+            // ProfileStore's cache is the only per-user UserDefaults entry.
+            // The per-user history files (recentActivity_/searchHistory_/
+            // searchCorpus_) live in LocalStore's directory, which
+            // handleSessionEnded wipes below.
+            UserDefaults.standard.removeObject(forKey: "profile_\(uid)")
         }
         // The auth user is already gone server-side; this just clears the
         // local token storage and may fail harmlessly.

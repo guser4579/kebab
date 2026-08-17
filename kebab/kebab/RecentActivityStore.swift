@@ -21,18 +21,39 @@ nonisolated enum RecentActivityKind: String, Codable, Sendable {
     }
 }
 
-/// One resumable thought context. `contextEntryId` is the exact object the
+/// One recorded action. Identity belongs to the EVENT, never the entry:
+/// several events may target the same root (create, then three comments,
+/// then a resurface — five rows). `contextEntryId` is the exact object the
 /// user last inhabited — a deeply nested comment reopens that comment.
 nonisolated struct RecentActivityItem: Codable, Identifiable, Equatable, Sendable {
+    let id: UUID
     let rootId: UUID
     var contextEntryId: UUID
     var kind: RecentActivityKind
     var date: Date
 
-    var id: UUID { rootId }
+    init(id: UUID = UUID(), rootId: UUID, contextEntryId: UUID, kind: RecentActivityKind, date: Date) {
+        self.id = id
+        self.rootId = rootId
+        self.contextEntryId = contextEntryId
+        self.kind = kind
+        self.date = date
+    }
+
+    // Rows persisted before events carried their own identity lack `id`;
+    // mint one on decode so existing history survives the migration.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        rootId = try container.decode(UUID.self, forKey: .rootId)
+        contextEntryId = try container.decode(UUID.self, forKey: .contextEntryId)
+        kind = try container.decode(RecentActivityKind.self, forKey: .kind)
+        date = try container.decode(Date.self, forKey: .date)
+    }
 }
 
-/// Local-only resume stack behind Search's resting state. Strong signals
+/// Local-only resume stack behind Search's resting state — a chronological
+/// event log of qualifying actions, NOT a unique-entry list. Strong signals
 /// (create / comment / edit / resurface) and deliberate opens are recorded at
 /// their call sites; passive feed exposure never reaches this store.
 @MainActor
@@ -52,11 +73,12 @@ final class RecentActivityStore: ObservableObject {
         items = LocalStore.load([RecentActivityItem].self, from: storageKey) ?? []
     }
 
-    /// Records an action on a thought. Deduplicates by root — one thought,
-    /// one slot — with the latest action defining both cue and context.
+    /// Appends one event for one action. Never deduplicates by root — all
+    /// eight slots pointing at the same thought is valid history. Overflow
+    /// drops the oldest event.
     func record(rootId: UUID, contextEntryId: UUID, kind: RecentActivityKind) {
         guard userId != nil else { return }
-        var updated = items.filter { $0.rootId != rootId }
+        var updated = items
         updated.insert(
             RecentActivityItem(rootId: rootId, contextEntryId: contextEntryId, kind: kind, date: Date()),
             at: 0
