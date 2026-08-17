@@ -145,25 +145,28 @@ struct AuthView: View {
     /// Positions the ambient demo-entry deck in the open region between the
     /// hero's fade zone and the locked copy block. An overlay (not a layout
     /// participant), so the cycling cards can never move the headline or CTA.
-    /// The deck is bottom-aligned inside its fixed region and that bottom
-    /// edge is pinned 12pt above the headline — the invisible baseline the
-    /// stack rests on. Tall cards extend upward into the hero from there; on
-    /// short screens the deck scales down (about that same baseline) rather
-    /// than climbing over the strong upper hero or the wordmark.
+    /// The deck occupies one stable location: every front card starts at the
+    /// same fixed top edge (near where the artwork begins dissolving) and
+    /// shorter cards simply end higher. The deck renders full-width; it only
+    /// scales down when the tallest example genuinely cannot fit between the
+    /// strong upper hero and the copy block (short screens).
     private func welcomeDemoStack(geo: GeometryProxy, heroHeight: CGFloat, topInset: CGFloat) -> some View {
         let copyHeight = welcomeCopyHeight > 0 ? welcomeCopyHeight : 260
         let heroBottom = heroHeight - topInset
         let stackBottom = geo.size.height - copyHeight - Style.Spacing.x3
-        // The tallest card may rise into the artwork's fade zone, but never
-        // past it into the strong upper composition.
+        // Ideal top edge: just above where the artwork starts dissolving, so
+        // the cards read as product UI emerging out of the visual world.
+        let desiredTop = heroBottom - heroHeight * 0.42
+        // The deck may sit higher than ideal (into the fade zone) before it
+        // ever scales, but never past the strong upper composition.
         let safeTop = heroBottom - heroHeight * 0.55
-        let available = stackBottom - safeTop
-        let scale = min(1, max(0.75, available / WelcomeDemoStackView.designHeight))
+        let scale = min(1, max(0.75, (stackBottom - safeTop) / WelcomeDemoStackView.designHeight))
+        let top = min(desiredTop, stackBottom - WelcomeDemoStackView.designHeight * scale)
 
         return WelcomeDemoStackView()
             .frame(width: geo.size.width)
-            .scaleEffect(scale, anchor: .bottom)
-            .offset(y: stackBottom - WelcomeDemoStackView.designHeight)
+            .scaleEffect(scale, anchor: .top)
+            .offset(y: top)
             .allowsHitTesting(false)
     }
 

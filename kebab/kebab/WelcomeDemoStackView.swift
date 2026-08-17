@@ -49,16 +49,14 @@ struct WelcomeDemoEntry: Identifiable {
 
 struct WelcomeDemoStackView: View {
 
-    /// Fixed container height for the whole deck. Cards are bottom-aligned
-    /// inside it: the container's bottom edge is the shared baseline every
-    /// front card rests on, so short cards sit low (near the headline) and
-    /// tall cards extend upward — and the welcome layout never moves.
+    /// Fixed container height for the whole deck — the front card varies in
+    /// height inside it (top-anchored) so the welcome layout never moves.
     static let designHeight: CGFloat = 320
 
-    /// How far below the baseline a hidden card waits before rising into
-    /// the front position. Kept modest so a rising card never reads as
-    /// crossing into the headline gap while it fades in.
-    private static let riseDistance: CGFloat = 28
+    /// Y of the front card's top edge; the back-card peeks live above it.
+    private static let frontTop: CGFloat = 16
+    /// Where hidden cards wait before rising into the front position.
+    private static let riseFrom: CGFloat = 60
 
     private static let dwellNanos: UInt64 = 3_800_000_000
     private static let shuffleDuration: Double = 0.35
@@ -71,14 +69,6 @@ struct WelcomeDemoStackView: View {
     /// Brief upward breath of the peek strips while a shuffle is in flight.
     @State private var stripsNudged = false
     @State private var hasAppeared = false
-    /// Natural height of each card, measured once at layout. The active
-    /// card's height is what the peek strips hang off of, so they ride the
-    /// front card's top edge instead of a fixed absolute position.
-    @State private var cardHeights: [Int: CGFloat] = [:]
-
-    private var activeCardHeight: CGFloat {
-        cardHeights[activeIndex] ?? 200
-    }
 
     private static let entries: [WelcomeDemoEntry] = [
         WelcomeDemoEntry(
@@ -130,7 +120,7 @@ struct WelcomeDemoStackView: View {
     ]
 
     var body: some View {
-        ZStack(alignment: .bottom) {
+        ZStack(alignment: .top) {
             // Persistent depth cues: two card silhouettes peeking above the
             // front card. The receding front card dissolves onto the nearer
             // strip, so the deck reads as constant while cards cycle through.
@@ -142,9 +132,6 @@ struct WelcomeDemoStackView: View {
             ForEach(Self.entries) { entry in
                 let role = ((activeIndex - entry.id) % Self.entries.count + Self.entries.count) % Self.entries.count
                 WelcomeDemoCardView(entry: entry, colorScheme: colorScheme)
-                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: {
-                        cardHeights[entry.id] = $0
-                    }
                     .scaleEffect(scale(for: role), anchor: .top)
                     .offset(y: offset(for: role))
                     .opacity(role == 0 ? 1 : 0)
@@ -153,7 +140,7 @@ struct WelcomeDemoStackView: View {
         }
         .padding(.horizontal, 24)
         .frame(maxWidth: .infinity)
-        .frame(height: Self.designHeight, alignment: .bottom)
+        .frame(height: Self.designHeight, alignment: .top)
         .opacity(hasAppeared ? 1 : 0)
         .allowsHitTesting(false)
         .accessibilityHidden(true)
@@ -195,15 +182,12 @@ struct WelcomeDemoStackView: View {
 
     // MARK: Deck geometry
 
-    /// Offsets are relative to the container's bottom baseline: the front
-    /// card rests on it (0), the receding card lifts slightly as it
-    /// dissolves, and waiting cards sit just below it, ready to rise.
     private func offset(for role: Int) -> CGFloat {
-        guard !reduceMotion else { return 0 }
+        guard !reduceMotion else { return Self.frontTop }
         switch role {
-        case 0: return 0
-        case 1: return -8
-        default: return Self.riseDistance
+        case 0: return Self.frontTop
+        case 1: return Self.frontTop - 8
+        default: return Self.riseFrom
         }
     }
 
@@ -218,9 +202,6 @@ struct WelcomeDemoStackView: View {
 
     /// Card-silhouette strip behind the deck; only its top edge shows above
     /// the front card. Level 1 is nearer (wider, lower), level 2 further.
-    /// Positioned off the measured height of the active card, so the strips
-    /// ride its top edge — and glide with it inside the shuffle animation
-    /// whenever the incoming card is a different height.
     private func peekStrip(level: Int) -> some View {
         RoundedRectangle(cornerRadius: WelcomeDemoCardView.cornerRadius)
             .fill(Style.Color.composerBackground)
@@ -230,7 +211,7 @@ struct WelcomeDemoStackView: View {
             )
             .frame(height: 44)
             .padding(.horizontal, CGFloat(level) * 10)
-            .offset(y: -(activeCardHeight + CGFloat(level) * 8 - 44) + (stripsNudged ? -2 : 0))
+            .offset(y: Self.frontTop - CGFloat(level) * 8 + (stripsNudged ? -2 : 0))
             .opacity(level == 2 ? 0.8 : 1)
     }
 }
