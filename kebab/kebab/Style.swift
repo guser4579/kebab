@@ -43,6 +43,12 @@ enum Style {
         static let linkAccent = SwiftUI.Color(hex: "2AA2FF")
         /// Destructive actions (e.g. delete)
         static let destructive = dynamic(light: "C42B44", dark: "FF6478")
+        /// Success feedback surface (transient toasts) — pale green in light,
+        /// a muted deep green in dark so the toast sits in the room instead
+        /// of glowing against it.
+        static let successBackground = dynamic(light: "E6F0E4", dark: "1E271F")
+        /// Success feedback content (text + check) on successBackground.
+        static let successForeground = dynamic(light: "3D7A47", dark: "9DCB9F")
         /// Resurface indicator
         static let resurface = dynamic(light: "D9822B", dark: "F0A868")
         /// Fire indicator

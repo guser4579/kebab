@@ -41,6 +41,7 @@ struct MainAppView: View {
     /// Local-only resume stack behind Search's resting state.
     @StateObject private var recentActivityStore = RecentActivityStore()
     @StateObject private var recentSearchesStore = RecentSearchesStore()
+    @StateObject private var profileStore: ProfileStore
     @State private var addToCollectionEntry: Entry?
     @State private var isAddToCollectionVisible: Bool = false
     /// True when the Add-to-collection surface should appear in place (quick
@@ -97,6 +98,7 @@ struct MainAppView: View {
         _collectionsViewModel = StateObject(wrappedValue: CollectionsViewModel(supabase: supabase))
         _scopeCoordinator = StateObject(wrappedValue: FeedScopeCoordinator(supabase: supabase))
         _searchCorpusStore = StateObject(wrappedValue: SearchCorpusStore(supabase: supabase))
+        _profileStore = StateObject(wrappedValue: ProfileStore(supabase: supabase))
         self.authViewModel = authViewModel
     }
 
@@ -593,6 +595,10 @@ struct MainAppView: View {
                             searchCorpusStore.configure(userId: userId)
                             recentActivityStore.configure(userId: userId)
                             recentSearchesStore.configure(userId: userId)
+                            profileStore.configure(
+                                userId: userId,
+                                email: authViewModel.currentUserEmail
+                            )
                         }
                         searchCorpusStore.pendingProvider = { [weak feedViewModel] in
                             feedViewModel?.pendingDisplayEntries ?? []
@@ -762,7 +768,8 @@ struct MainAppView: View {
                 // interactively; commit uses threshold or projected velocity.
                 SettingsView(
                     onClose: { closeSettings() },
-                    authViewModel: authViewModel
+                    authViewModel: authViewModel,
+                    profileStore: profileStore
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 // Flatten before shadowing so the shadow traces the panel's

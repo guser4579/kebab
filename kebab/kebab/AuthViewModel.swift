@@ -139,6 +139,28 @@ final class AuthViewModel: ObservableObject {
         handleSessionEnded()
     }
 
+    /// Permanently deletes the account server-side (`delete_account` RPC
+    /// removes entries, collections, storage objects, the profile, and the
+    /// auth user), then tears down local state. Unlike sign-out, the per-user
+    /// keyed stores are purged too — this account can never return.
+    /// Throws before touching anything local if the server call fails.
+    func deleteAccount() async throws {
+        let userId = currentUserId
+        try await supabase.rpc("delete_account").execute()
+        if let uid = userId?.uuidString {
+            // recentActivity_/searchHistory_ mirror the stores' own keys;
+            // profile_ is ProfileStore's cache. searchCorpus_ lives in
+            // LocalStore's directory, which handleSessionEnded wipes.
+            for key in ["recentActivity_\(uid)", "searchHistory_\(uid)", "profile_\(uid)"] {
+                UserDefaults.standard.removeObject(forKey: key)
+            }
+        }
+        // The auth user is already gone server-side; this just clears the
+        // local token storage and may fail harmlessly.
+        try? await supabase.auth.signOut()
+        handleSessionEnded()
+    }
+
     func resetFlow() {
         codeSent = false
         code = ""
