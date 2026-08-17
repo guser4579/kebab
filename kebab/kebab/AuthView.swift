@@ -16,6 +16,9 @@ struct AuthView: View {
     /// when no keyboard is shown.
     @State private var isKeyboardVisible = false
     @FocusState private var isCodeFocused: Bool
+    /// Measured height of the welcome copy + CTA + legal block, so the demo
+    /// stack overlay can bottom out above it without ever pushing it around.
+    @State private var welcomeCopyHeight: CGFloat = 0
 
     private var bottomButtonPadding: CGFloat {
         isKeyboardVisible ? 12 : 40
@@ -78,6 +81,9 @@ struct AuthView: View {
                 // one intentional composition.
                 Spacer(minLength: Style.Spacing.x4)
 
+                // Everything below the spacer is measured as one block so the
+                // demo stack knows exactly where the locked copy begins.
+                VStack(spacing: 0) {
                 Group {
                     Text("Keep what you notice.")
                         .font(Style.Typography.authTitle())
@@ -124,9 +130,39 @@ struct AuthView: View {
                     .padding(.top, 24)
                     .padding(.bottom, Style.Spacing.x3)
                     .padding(.horizontal, Style.Layout.entryContentPadding)
+                }
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: {
+                    welcomeCopyHeight = $0
+                }
             }
             .frame(width: geo.size.width, height: geo.size.height)
+            .overlay(alignment: .topLeading) {
+                welcomeDemoStack(geo: geo, heroHeight: heroHeight, topInset: topInset)
+            }
         }
+    }
+
+    /// Positions the ambient demo-entry deck in the open region between the
+    /// hero's fade zone and the locked copy block. An overlay (not a layout
+    /// participant), so the cycling cards can never move the headline or CTA.
+    /// On short screens the deck scales down (top-anchored to its bottom
+    /// edge) rather than climbing over the strong upper hero or the wordmark.
+    private func welcomeDemoStack(geo: GeometryProxy, heroHeight: CGFloat, topInset: CGFloat) -> some View {
+        let copyHeight = welcomeCopyHeight > 0 ? welcomeCopyHeight : 260
+        let heroBottom = heroHeight - topInset
+        let stackBottom = geo.size.height - copyHeight - Style.Spacing.x3
+        // Ideal top edge: just above where the artwork starts dissolving, so
+        // the cards read as product UI emerging out of the visual world.
+        let desiredTop = heroBottom - heroHeight * 0.42
+        let available = stackBottom - desiredTop
+        let scale = min(1, max(0.75, available / WelcomeDemoStackView.designHeight))
+        let top = min(desiredTop, stackBottom - WelcomeDemoStackView.designHeight * scale)
+
+        return WelcomeDemoStackView()
+            .frame(width: geo.size.width)
+            .scaleEffect(scale, anchor: .top)
+            .offset(y: top)
+            .allowsHitTesting(false)
     }
 
     /// The welcome hero: full-bleed artwork whose visible edges feather into
