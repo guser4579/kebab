@@ -17,6 +17,8 @@ struct SettingsView: View {
     private enum Detail {
         case account
         case appearance
+        case manageAccount
+        case feedback
     }
 
     /// In-panel push state: a detail slides in from the right over the menu
@@ -59,6 +61,19 @@ struct SettingsView: View {
 
                 detailPage(.appearance, geometry: geometry) {
                     appearancePage
+                }
+
+                detailPage(.manageAccount, geometry: geometry) {
+                    manageAccountPage
+                }
+
+                detailPage(.feedback, geometry: geometry) {
+                    FeedbackPageView(
+                        profileStore: profileStore,
+                        authViewModel: authViewModel,
+                        isOpen: openDetail == .feedback,
+                        onBack: { closeDetail() }
+                    )
                 }
             }
             // Detail pages wait one panel-width to the right; without
@@ -181,12 +196,18 @@ struct SettingsView: View {
                 Color.clear
                     .frame(height: Style.Spacing.x2)
 
-                accountGroup
+                manageAccountRow
             }
             .padding(.horizontal, 16)
             .padding(.top, 24)
 
             Spacer(minLength: 0)
+
+            // The feedback invitation holds the bottom edge, apart from the
+            // everyday navigation above — a window out of the room.
+            feedbackCard
+                .padding(.horizontal, 16)
+                .padding(.bottom, 48)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         .background(Style.Color.background)
@@ -260,42 +281,55 @@ struct SettingsView: View {
             .frame(maxWidth: .infinity)
     }
 
-    // MARK: - Profile card (the Account destination)
+    // MARK: - Profile card (identity display)
 
-    /// The identity card doubles as the Account entry point — avatar, name
-    /// when set, email, and a trailing chevron announcing the push.
+    /// Identity display, not a button — the card itself no longer navigates.
+    /// The single interactive element is the Edit profile action at its foot.
     private var profileCard: some View {
-        Button {
-            withAnimation(Self.pushTransition) {
-                openDetail = .account
-            }
-        } label: {
-            VStack(spacing: Style.Spacing.x3) {
-                cardAvatar
+        VStack(spacing: Style.Spacing.x3) {
+            cardAvatar
 
-                VStack(spacing: Style.Spacing.base) {
-                    if let name = profileStore.displayName, !name.isEmpty {
-                        Text(name)
-                            .font(.custom("DMSans-Medium", size: 16))
-                            .foregroundColor(Style.Color.primaryText)
-                            .lineLimit(1)
-                    }
-
-                    Text(authViewModel.currentUserEmail ?? "")
-                        .font(Style.Typography.meta())
-                        .foregroundColor(Style.Color.secondary)
+            VStack(spacing: Style.Spacing.base) {
+                if let name = profileStore.displayName, !name.isEmpty {
+                    Text(name)
+                        .font(.custom("DMSans-Medium", size: 16))
+                        .foregroundColor(Style.Color.primaryText)
                         .lineLimit(1)
-                        .truncationMode(.middle)
                 }
+
+                Text(authViewModel.currentUserEmail ?? "")
+                    .font(Style.Typography.meta())
+                    .foregroundColor(Style.Color.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
             }
-            .padding(.vertical, 24)
-            .padding(.horizontal, rowPaddingHorizontal)
-            .frame(maxWidth: .infinity)
-            .background(Style.Color.composerBackground)
-            .clipShape(RoundedRectangle(cornerRadius: containerCornerRadius))
-            .contentShape(RoundedRectangle(cornerRadius: containerCornerRadius))
+
+            Color.clear
+                .frame(height: Style.Spacing.base)
+
+            // The secondary-CTA treatment (quiet fill, full capsule),
+            // inverted for the card surface: the app background reads as the
+            // recessed button color on the raised card in both schemes.
+            Button {
+                withAnimation(Self.pushTransition) {
+                    openDetail = .account
+                }
+            } label: {
+                Text("Edit profile")
+                    .font(Style.Typography.authButton())
+                    .foregroundColor(Style.Color.primaryText)
+                    .frame(height: Style.Layout.composerSingleLineHeight)
+                    .frame(maxWidth: .infinity)
+                    .background(Style.Color.background, in: Capsule())
+                    .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
         }
-        .buttonStyle(.plain)
+        .padding(.vertical, 24)
+        .padding(.horizontal, rowPaddingHorizontal)
+        .frame(maxWidth: .infinity)
+        .background(Style.Color.composerBackground)
+        .clipShape(RoundedRectangle(cornerRadius: containerCornerRadius))
     }
 
     @ViewBuilder
@@ -388,7 +422,52 @@ struct SettingsView: View {
         .buttonStyle(.plain)
     }
 
-    // MARK: - Account group (lifecycle actions)
+    // MARK: - Account section
+
+    /// One navigation row on the Menu root; the lifecycle actions themselves
+    /// live one level deeper, on the Manage account page.
+    private var manageAccountRow: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            navigationRow(
+                label: "Manage account",
+                symbol: "person.crop.circle",
+                value: nil
+            ) {
+                withAnimation(Self.pushTransition) {
+                    openDetail = .manageAccount
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Style.Color.composerBackground)
+        .clipShape(RoundedRectangle(cornerRadius: containerCornerRadius))
+    }
+
+    // MARK: - Manage account page (pushed)
+
+    /// Account/session lifecycle only — profile editing lives behind Edit
+    /// profile, never here.
+    private var manageAccountPage: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Color.clear
+                .frame(height: contentTopOffset)
+
+            headerRow(title: "Manage account", showsBack: true)
+
+            Color.clear
+                .frame(height: 12)
+
+            divider
+
+            accountGroup
+                .padding(.horizontal, 16)
+                .padding(.top, 24)
+
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .background(Style.Color.background)
+    }
 
     /// Sign out and delete share one grouped container — the account's exit
     /// paths together, the destructive one last in red.
@@ -444,6 +523,54 @@ struct SettingsView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Style.Color.composerBackground)
         .clipShape(RoundedRectangle(cornerRadius: containerCornerRadius))
+    }
+
+    // MARK: - Feedback CTA
+
+    /// The one daylight moment in the panel: the artwork cropped to its
+    /// lower portion — the field, the solitary figure, the luminous horizon —
+    /// with the invitation resting on the grass. The scrim is the minimum
+    /// needed for the copy; the image stays luminous.
+    private var feedbackCard: some View {
+        Button {
+            withAnimation(Self.pushTransition) {
+                openDetail = .feedback
+            }
+        } label: {
+            ZStack(alignment: .bottomLeading) {
+                GeometryReader { geo in
+                    Image("FeedbackArt")
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: geo.size.width, height: geo.size.height, alignment: .bottom)
+                        .clipped()
+                }
+
+                LinearGradient(
+                    stops: [
+                        .init(color: .black.opacity(0.38), location: 0),
+                        .init(color: .clear, location: 0.6)
+                    ],
+                    startPoint: .bottom,
+                    endPoint: .top
+                )
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Offer your feedback")
+                        .font(.custom("DMSans-SemiBold", size: 16))
+                        .foregroundColor(.white)
+
+                    Text("Kebab is made by one person. What should I know?")
+                        .font(Style.Typography.meta())
+                        .foregroundColor(.white.opacity(0.85))
+                }
+                .padding(16)
+            }
+            .frame(height: 168)
+            .clipShape(RoundedRectangle(cornerRadius: containerCornerRadius))
+            .contentShape(RoundedRectangle(cornerRadius: containerCornerRadius))
+        }
+        .buttonStyle(.plain)
     }
 
     private var appearanceDisplayName: String {

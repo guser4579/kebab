@@ -121,7 +121,7 @@ struct AccountPageView: View {
             // Save never moves and content is never covered.
             VStack(spacing: 0) {
                 if isToastVisible {
-                    successToast
+                    SuccessToast(text: "Account updated")
                         .transition(.opacity)
 
                     Color.clear
@@ -443,22 +443,6 @@ struct AccountPageView: View {
     }
 
     // MARK: - Success toast
-
-    private var successToast: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundColor(Style.Color.successForeground)
-
-            Text("Account updated")
-                .font(Style.Typography.meta())
-                .foregroundColor(Style.Color.successForeground)
-        }
-        .padding(.vertical, Style.Spacing.x2)
-        .padding(.horizontal, 14)
-        .background(Style.Color.successBackground, in: Capsule())
-        .frame(maxWidth: .infinity)
-    }
 
     private func showToast() {
         toastGeneration += 1
