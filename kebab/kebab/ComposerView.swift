@@ -257,6 +257,12 @@ struct ComposerView: View {
     /// composerState animation would walk the send button downward through
     /// that collapse — send state changes must land instantly instead.
     @State private var suppressLayoutAnimation = false
+    /// Drives paste-control recreation on appearance flips — the system
+    /// control bakes its colors in at creation. The app's own appearance
+    /// setting is the authority; the environment scheme only decides the
+    /// "system" case.
+    @AppStorage("kebab.appearance") private var appearance = "dark"
+    @Environment(\.colorScheme) private var colorScheme
     @StateObject private var voice = VoiceTranscriber()
     /// Text present when dictation started; the streaming transcript is
     /// appended after it so dictation never destroys typed text.
@@ -518,10 +524,23 @@ struct ComposerView: View {
     /// Apple's own paste control (no repeated permission prompt); kebab wraps
     /// it in the chip's capsule stroke. The system supplies the payload —
     /// this path never reads UIPasteboard.
+    /// The appearance the paste control must render in: kebab's setting
+    /// wins outright; "system" follows the device.
+    private var pasteControlStyle: UIUserInterfaceStyle {
+        switch appearance {
+        case "light": return .light
+        case "dark": return .dark
+        default: return colorScheme == .light ? .light : .dark
+        }
+    }
+
     private var pasteChip: some View {
-        SystemPasteControl { providers in
+        SystemPasteControl(uiStyle: pasteControlStyle) { providers in
             handlePastePayload(providers)
         }
+        // Rebuild the control when the appearance flips: it resolves its
+        // configuration colors once at creation.
+        .id(pasteControlStyle)
         .fixedSize()
         .frame(height: 28)
         .background(Capsule().stroke(Style.Color.separator, lineWidth: 1))

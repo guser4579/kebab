@@ -19,16 +19,34 @@ import UniformTypeIdentifiers
 /// the user taps.
 struct SystemPasteControl: UIViewRepresentable {
 
+    /// Passed explicitly from the call site (derived from kebab's own
+    /// appearance setting) rather than read from the SwiftUI environment —
+    /// @Environment reads inside a representable's makeUIView proved stale
+    /// on appearance flips, leaving the control in the previous scheme.
+    let uiStyle: UIUserInterfaceStyle
     let onPaste: ([NSItemProvider]) -> Void
 
     func makeUIView(context: Context) -> UIPasteControl {
+        // The control resolves its appearance once at creation and ignores
+        // later trait changes, so every color is handed over concrete for
+        // the CURRENT app appearance — the call site recreates the control
+        // (`.id`) when the scheme flips.
+        let traits = UITraitCollection(userInterfaceStyle: uiStyle)
+
         let config = UIPasteControl.Configuration()
         config.displayMode = .iconAndLabel
         config.cornerStyle = .capsule
-        config.baseBackgroundColor = .clear
-        config.baseForegroundColor = Style.Color.secondaryUIColor
+        config.baseBackgroundColor = Style.Color.composerBackgroundUIColor.resolvedColor(with: traits)
+        config.baseForegroundColor = Style.Color.secondaryUIColor.resolvedColor(with: traits)
 
         let control = UIPasteControl(configuration: config)
+        // Some OS revisions style the pill from tintColor rather than the
+        // configuration's base background — set both to the same resolved
+        // color so whichever wins, the pill matches the app's appearance.
+        control.tintColor = Style.Color.composerBackgroundUIColor.resolvedColor(with: traits)
+        // Pin the control's own trait environment to the app's appearance —
+        // kebab's in-app appearance setting can differ from the system's.
+        control.overrideUserInterfaceStyle = uiStyle
         control.target = context.coordinator
         control.setContentHuggingPriority(.required, for: .horizontal)
         control.setContentHuggingPriority(.required, for: .vertical)
@@ -37,6 +55,7 @@ struct SystemPasteControl: UIViewRepresentable {
 
     func updateUIView(_ uiView: UIPasteControl, context: Context) {
         context.coordinator.onPaste = onPaste
+        uiView.overrideUserInterfaceStyle = uiStyle
     }
 
     func makeCoordinator() -> Coordinator {
