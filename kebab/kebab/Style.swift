@@ -55,6 +55,11 @@ enum Style {
         static let fire = dynamic(light: "E36D9A", dark: "F49CC0")
 
         // UIKit-facing dynamics for the UITextView-backed editors.
+        static let secondaryUIColor = UIColor { trait in
+            trait.userInterfaceStyle == .light
+                ? UIColor(hex: "8B8A86")
+                : UIColor(hex: "84837F")
+        }
         static let primaryTextUIColor = UIColor { trait in
             trait.userInterfaceStyle == .light
                 ? UIColor(hex: "161718")

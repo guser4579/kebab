@@ -248,16 +248,6 @@ struct ComposerView: View {
         self.onStartList = onStartList
     }
 
-    /// What the clipboard can meaningfully contribute, in preference order
-    /// (an object exposing several representations resolves to the most
-    /// specific useful one): image → attachment pipeline, URL → staged link
-    /// chip, plain text → ordinary editable text.
-    private enum ClipboardKind {
-        case image
-        case url
-        case text
-    }
-
     @State private var isFocused: Bool = false
     /// True while the text content exceeds the max inline height (internal
     /// scrolling active) — the composer's constrained state.
@@ -267,13 +257,6 @@ struct ComposerView: View {
     /// composerState animation would walk the send button downward through
     /// that collapse — send state changes must land instantly instead.
     @State private var suppressLayoutAnimation = false
-    /// Best supported representation of the current pasteboard, or nil when
-    /// it's empty/unsupported (no affordance at all — never a disabled one).
-    /// Determined via hasImages/hasStrings/detectPatterns, none of which read
-    /// the clipboard or trigger the system paste banner; actual reads happen
-    /// only on tap.
-    @State private var clipboardKind: ClipboardKind?
-    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var voice = VoiceTranscriber()
     /// Text present when dictation started; the streaming transcript is
     /// appended after it so dictation never destroys typed text.
@@ -292,13 +275,11 @@ struct ComposerView: View {
             || attachedLink != nil
     }
 
+    /// Paste is a permanent capability of attachment-capable composers — no
+    /// clipboard-state gating. The system control dims itself when nothing
+    /// acceptable is on the pasteboard; kebab never inspects availability.
     private var showsPasteAffordance: Bool {
-        guard allowsAttachments, let kind = clipboardKind else { return false }
-        switch kind {
-        case .image: return attachedImages.count < maxImages
-        case .url: return attachedLink == nil
-        case .text: return true
-        }
+        allowsAttachments
     }
 
     private let composerOuterPadding:    CGFloat = Style.Spacing.x4
@@ -371,19 +352,6 @@ struct ComposerView: View {
             suppressLayoutAnimation ? nil : Style.Animation.composerState,
             value: isExpandedLayout
         )
-        .onAppear {
-            refreshClipboardState()
-        }
-        .onChange(of: scenePhase) { _, phase in
-            if phase == .active {
-                refreshClipboardState()
-            }
-        }
-        .onChange(of: isFocused) { _, focused in
-            if focused {
-                refreshClipboardState()
-            }
-        }
         // Liquid Glass capsule: feed content scrolls visibly behind the
         // composer. The subtle tint keeps placeholder/text contrast on the
         // dark theme without going opaque.
@@ -546,98 +514,96 @@ struct ComposerView: View {
 
     // MARK: - Clipboard paste affordance
 
-    /// One-tap Paste for supported clipboard content — one generic treatment
-    /// for every kind (the system paste glyph). Routing by content kind
-    /// happens on tap; the affordance itself never changes.
+    /// One-tap Paste for supported clipboard content. The tappable element is
+    /// Apple's own paste control (no repeated permission prompt); kebab wraps
+    /// it in the chip's capsule stroke. The system supplies the payload —
+    /// this path never reads UIPasteboard.
     private var pasteChip: some View {
-        Button {
-            pasteFromClipboard()
-        } label: {
-            HStack(spacing: 4) {
-                Image(systemName: "doc.on.clipboard")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(Style.Color.secondary)
-                Text("Paste")
-                    .font(Style.Typography.meta())
-                    .foregroundColor(Style.Color.secondary)
-            }
-            .padding(.horizontal, Style.Spacing.x3)
-            .frame(height: 28)
-            .background(Capsule().stroke(Style.Color.separator, lineWidth: 1))
-            .contentShape(Capsule())
+        SystemPasteControl { providers in
+            handlePastePayload(providers)
         }
-        .buttonStyle(.plain)
+        .fixedSize()
+        .frame(height: 28)
+        .background(Capsule().stroke(Style.Color.separator, lineWidth: 1))
     }
 
-    private func refreshClipboardState() {
-        guard allowsAttachments else { return }
-        let pasteboard = UIPasteboard.general
-        // Preference order: the most specific useful representation wins.
-        if pasteboard.hasImages {
-            clipboardKind = .image
-            return
-        }
-        guard pasteboard.hasStrings || pasteboard.hasURLs else {
-            clipboardKind = nil
-            return
-        }
-        pasteboard.detectPatterns(for: [\.probableWebURL]) { result in
-            DispatchQueue.main.async {
-                if case .success(let patterns) = result, patterns.contains(\.probableWebURL) {
-                    clipboardKind = .url
-                } else if pasteboard.hasStrings {
-                    // detectPatterns is the URL authority; a string that isn't
-                    // a probable URL is text even when the pasteboard also
-                    // carries a (stale/derived) URL representation.
-                    clipboardKind = .text
-                } else if pasteboard.hasURLs {
-                    // URL-only object with no string form.
-                    clipboardKind = .url
-                } else {
-                    clipboardKind = nil
+    /// Routes the system-provided payload into the pipelines that content
+    /// already uses everywhere else: images join the attachment strip, a bare
+    /// URL becomes the staged link chip, and plain text lands in the draft as
+    /// ordinary editable text. Consumption happens only after content
+    /// actually arrives.
+    private func handlePastePayload(_ providers: [NSItemProvider]) {
+        guard !providers.isEmpty else { return }
+
+        let imageProviders = providers.filter { $0.canLoadObject(ofClass: UIImage.self) }
+        if !imageProviders.isEmpty {
+            Task { @MainActor in
+                var images: [UIImage] = []
+                for provider in imageProviders {
+                    if let image = await Self.loadImage(from: provider) {
+                        images.append(image)
+                    }
                 }
-            }
-        }
-    }
-
-    /// The tap is the first (and only) clipboard read. Each kind converges on
-    /// the pipeline that content already uses everywhere else: images join
-    /// the attachment strip, a bare URL becomes the staged link chip, and
-    /// plain text lands in the draft as ordinary editable text.
-    private func pasteFromClipboard() {
-        switch clipboardKind {
-        case .image:
-            if let images = UIPasteboard.general.images, !images.isEmpty {
+                guard !images.isEmpty else { return }
                 appendPastedImages(images)
             }
-            clipboardKind = nil
-        case .url:
-            if let url = PastedLink.current() {
+            return
+        }
+
+        Task { @MainActor in
+            // The string form is the authority when present (same rule as the
+            // pasteboard path): a bare link stages the chip, prose — even
+            // prose containing a URL — pastes as text and is parsed at send.
+            if let string = await Self.loadString(from: providers) {
+                if let url = PastedLink.from(string: string) {
+                    stageLink(url)
+                } else {
+                    insertPastedText(string)
+                }
+            } else if let url = await Self.loadURL(from: providers) {
+                // URL-only object with no string form.
                 stageLink(url)
-            } else {
-                // Detected a URL inside prose: that's text context, not a
-                // bare link — paste it as text (send-time parsing still runs).
-                insertClipboardText()
             }
-        case .text:
-            insertClipboardText()
-        case nil:
-            break
         }
     }
 
-    private func insertClipboardText() {
-        if let string = UIPasteboard.general.string, !string.isEmpty {
-            text = text.isEmpty ? string : text + string
+    private func insertPastedText(_ string: String) {
+        guard !string.isEmpty else { return }
+        text = text.isEmpty ? string : text + string
+    }
+
+    private static func loadImage(from provider: NSItemProvider) async -> UIImage? {
+        await withCheckedContinuation { continuation in
+            provider.loadObject(ofClass: UIImage.self) { object, _ in
+                continuation.resume(returning: object as? UIImage)
+            }
         }
-        clipboardKind = nil
+    }
+
+    private static func loadString(from providers: [NSItemProvider]) async -> String? {
+        guard let provider = providers.first(where: { $0.canLoadObject(ofClass: NSString.self) })
+        else { return nil }
+        return await withCheckedContinuation { continuation in
+            provider.loadObject(ofClass: NSString.self) { object, _ in
+                continuation.resume(returning: (object as? NSString).map(String.init))
+            }
+        }
+    }
+
+    private static func loadURL(from providers: [NSItemProvider]) async -> URL? {
+        guard let provider = providers.first(where: { $0.canLoadObject(ofClass: NSURL.self) })
+        else { return nil }
+        return await withCheckedContinuation { continuation in
+            provider.loadObject(ofClass: NSURL.self) { object, _ in
+                continuation.resume(returning: (object as? NSURL) as URL?)
+            }
+        }
     }
 
     /// The single place a URL becomes a staged link, whichever route brought
     /// it here (Paste affordance or standard iOS paste).
     private func stageLink(_ url: URL) {
         attachedLink = url
-        clipboardKind = nil
     }
 
     /// Pasted images enter the exact same pipeline as picked ones.

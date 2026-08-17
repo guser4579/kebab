@@ -20,29 +20,39 @@ enum PastedLink {
     /// The URL the pasteboard is currently offering, or nil when its content
     /// isn't a bare URL. Prose that merely *contains* a URL deliberately
     /// returns nil: that pastes as ordinary text and is still parsed at send.
+    /// Reads the pasteboard — only for paths where the system already
+    /// mediated the paste (the text views' edit-menu paste overrides); the
+    /// Paste chip routes system-provided payloads through `from(string:)`.
     static func current() -> URL? {
         let pasteboard = UIPasteboard.general
         if let string = pasteboard.string {
-            let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmed.isEmpty,
-                  !trimmed.contains(where: { $0.isWhitespace })
-            else { return nil }
-
-            if let direct = URL(string: trimmed), direct.scheme != nil {
-                return direct
-            }
-            if let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue),
-               let match = detector.firstMatch(in: trimmed, range: NSRange(trimmed.startIndex..., in: trimmed)),
-               let detected = match.url {
-                return detected
-            }
-            // Bare host ("nytimes.com") — only when it looks like a domain.
-            if trimmed.contains("."), let assumed = URL(string: "https://" + trimmed) {
-                return assumed
-            }
-            return nil
+            return from(string: string)
         }
         return pasteboard.url
+    }
+
+    /// Link-shape decision for a pasted string, wherever it came from —
+    /// identical normalization for the pasteboard path and the system
+    /// paste-control payload path.
+    static func from(string: String) -> URL? {
+        let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              !trimmed.contains(where: { $0.isWhitespace })
+        else { return nil }
+
+        if let direct = URL(string: trimmed), direct.scheme != nil {
+            return direct
+        }
+        if let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue),
+           let match = detector.firstMatch(in: trimmed, range: NSRange(trimmed.startIndex..., in: trimmed)),
+           let detected = match.url {
+            return detected
+        }
+        // Bare host ("nytimes.com") — only when it looks like a domain.
+        if trimmed.contains("."), let assumed = URL(string: "https://" + trimmed) {
+            return assumed
+        }
+        return nil
     }
 }
 
