@@ -10,7 +10,6 @@ struct EntryRootActionRow: View {
     var showResurface: Bool = true
     var onResultActivated: (() -> Void)?
     var onResurfaceTapped: (() -> Void)?
-    var onPinTapped: (() -> Void)?
     var onFireTapped: (() -> Void)?
 
     @State private var isResurfacing = false

@@ -401,6 +401,12 @@ final class FeedStore: ObservableObject {
         }
     }
 
+    /// This store's current copy of an entry — rendered list or arrival
+    /// buffer. Optimistic mutations resolve their base state through this.
+    func entry(id: UUID) -> Entry? {
+        entries.first { $0.id == id } ?? pendingArrivals.first { $0.id == id }
+    }
+
     /// Resurface performed locally: the entry moves to the live edge.
     func noteLocalResurface(id: UUID) async {
         await revalidateNewest()

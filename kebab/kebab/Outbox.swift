@@ -66,14 +66,19 @@ final class OutboxStore {
             .sorted { $0.createdAt < $1.createdAt }
     }
 
-    func enqueue(content: String, images: [UIImage], linkURL: String?, collectionId: UUID?) throws -> PendingEntry {
+    /// Stages pre-encoded images: attach time already produced upload-ready
+    /// JPEG bytes, so send-time staging is just small file writes — no
+    /// resize, no encode, no main-thread image work.
+    func enqueue(content: String, images: [PendingImage], linkURL: String?, collectionId: UUID?) throws -> PendingEntry {
         let id = UUID()
         var filenames: [String] = []
         for (index, image) in images.enumerated() {
-            let data = try ImageStorageRepository.jpegData(from: image)
             let filename = "\(id.uuidString)-\(index).jpg"
-            try data.write(to: directory.appendingPathComponent(filename), options: .atomic)
+            try image.jpegData.write(to: directory.appendingPathComponent(filename), options: .atomic)
             filenames.append(filename)
+            // Seed the shared cache under the pending file:// URL so the
+            // pending row renders its photos straight from memory.
+            ImageCache.insert(image.image, for: imageURL(for: filename))
         }
         let pending = PendingEntry(
             id: id,
@@ -98,10 +103,11 @@ final class OutboxStore {
         }
     }
 
-    func loadImages(for pending: PendingEntry) -> [UIImage] {
+    /// The staged bytes, exactly as written at enqueue — already resized and
+    /// JPEG-encoded, i.e. the upload payload itself.
+    func loadImageDatas(for pending: PendingEntry) -> [Data] {
         pending.imageFilenames.compactMap { filename in
-            (try? Data(contentsOf: directory.appendingPathComponent(filename)))
-                .flatMap(UIImage.init(data:))
+            try? Data(contentsOf: directory.appendingPathComponent(filename))
         }
     }
 

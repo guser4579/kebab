@@ -183,6 +183,55 @@ extension Entry {
         )
     }
 
+    func withResurfaceCount(_ count: Int) -> Entry {
+        Entry(
+            id: id,
+            user_id: user_id,
+            parent_id: parent_id,
+            root_id: root_id,
+            depth: depth,
+            content: content,
+            created_at: created_at,
+            pinned_at: pinned_at,
+            isContentHidden: isContentHidden,
+            comment_count: comment_count,
+            resurface_count: count,
+            fire_count: fire_count,
+            attachments: attachments,
+            collection_id: collection_id,
+            collection_name: collection_name,
+            collection_parent_id: collection_parent_id,
+            collection_parent_name: collection_parent_name
+        )
+    }
+
+    func withCollection(
+        id newCollectionId: UUID?,
+        name newCollectionName: String?,
+        parentId newParentId: UUID?,
+        parentName newParentName: String?
+    ) -> Entry {
+        Entry(
+            id: id,
+            user_id: user_id,
+            parent_id: parent_id,
+            root_id: root_id,
+            depth: depth,
+            content: content,
+            created_at: created_at,
+            pinned_at: pinned_at,
+            isContentHidden: isContentHidden,
+            comment_count: comment_count,
+            resurface_count: resurface_count,
+            fire_count: fire_count,
+            attachments: attachments,
+            collection_id: newCollectionId,
+            collection_name: newCollectionName,
+            collection_parent_id: newParentId,
+            collection_parent_name: newParentName
+        )
+    }
+
     func withFireCount(_ count: Int) -> Entry {
         Entry(
             id: id,

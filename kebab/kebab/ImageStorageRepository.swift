@@ -23,12 +23,13 @@ final class ImageStorageRepository {
         self.supabase = supabase
     }
 
-    /// Uploads sequentially (max 4 per entry) and returns image attachments
-    /// with their public URLs, in the order given.
-    func uploadImages(_ images: [UIImage], userId: UUID) async throws -> [EntryAttachment] {
+    /// Uploads already-encoded JPEG payloads sequentially (max 4 per entry)
+    /// and returns image attachments with their public URLs, in the order
+    /// given. The outbox stages bytes in exactly this format, so there is no
+    /// second decode/encode (and no second lossy generation) at upload time.
+    func uploadImageData(_ payloads: [Data], userId: UUID) async throws -> [EntryAttachment] {
         var attachments: [EntryAttachment] = []
-        for image in images {
-            let data = try Self.jpegData(from: image)
+        for data in payloads {
             // Lowercased to match the RLS folder check: Swift renders UUIDs
             // uppercase but Postgres's auth.uid()::text is lowercase.
             let path = "\(userId.uuidString.lowercased())/\(UUID().uuidString.lowercased()).jpg"
@@ -49,7 +50,7 @@ final class ImageStorageRepository {
         return attachments
     }
 
-    static func jpegData(
+    nonisolated static func jpegData(
         from image: UIImage,
         maxDimension: CGFloat = 2048,
         quality: CGFloat = 0.8

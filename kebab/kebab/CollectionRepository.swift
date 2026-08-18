@@ -21,10 +21,36 @@ final class CollectionRepository {
         return collections
     }
 
-    func createCollection(name: String) async throws {
-        try await supabase
+    /// The raw row the create RPCs return. It lacks `item_count` (so it can't
+    /// decode as `Collection`), but its id/name/parent_id are all a caller
+    /// needs to build the full local model with itemCount 0.
+    private struct CreatedCollectionRow: Decodable {
+        let id: UUID
+        let name: String
+        let parent_id: UUID?
+    }
+
+    /// Decodes the created row whether the RPC returns a single record or a
+    /// one-row set; nil when the shape is unexpected (callers then fall back
+    /// to reload-and-diff).
+    private static func decodeCreatedRow(_ data: Data) -> CreatedCollectionRow? {
+        let decoder = JSONDecoder()
+        if let single = try? decoder.decode(CreatedCollectionRow.self, from: data) {
+            return single
+        }
+        return (try? decoder.decode([CreatedCollectionRow].self, from: data))?.first
+    }
+
+    /// Creates a top-level collection and returns it as a full local model
+    /// (itemCount 0) decoded from the RPC's own response — no follow-up
+    /// list refetch needed. Returns nil if the response shape is unexpected.
+    func createCollection(name: String) async throws -> Collection? {
+        let response = try await supabase
             .rpc("create_collection", params: ["p_name": name])
             .execute()
+        return Self.decodeCreatedRow(response.data).map {
+            Collection(id: $0.id, name: $0.name, parentId: $0.parent_id, updatedAt: Date(), itemCount: 0)
+        }
     }
 
     func renameCollection(id: UUID, name: String) async throws {
@@ -57,17 +83,19 @@ final class CollectionRepository {
             .execute()
     }
 
-    /// Creates a sub-collection under `parentId`.
-    /// Returns Void — the raw row returned by `create_subcollection` does not carry
-    /// `item_count`, so decoding it into `Collection` would always fail.
-    /// Callers should reload via `get_my_collections()` to obtain the full model.
-    func createSubcollection(parentId: UUID, name: String) async throws {
-        try await supabase
+    /// Creates a sub-collection under `parentId` and returns it as a full
+    /// local model (itemCount 0) decoded from the RPC's own response — same
+    /// contract as `createCollection`.
+    func createSubcollection(parentId: UUID, name: String) async throws -> Collection? {
+        let response = try await supabase
             .rpc("create_subcollection", params: [
                 "p_parent_id": parentId.uuidString,
                 "p_name": name
             ])
             .execute()
+        return Self.decodeCreatedRow(response.data).map {
+            Collection(id: $0.id, name: $0.name, parentId: $0.parent_id, updatedAt: Date(), itemCount: 0)
+        }
     }
 
     /// Returns the collection ID the entry currently belongs to, or nil if unassigned.

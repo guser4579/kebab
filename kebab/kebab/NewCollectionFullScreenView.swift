@@ -20,7 +20,15 @@ struct NewCollectionFullScreenView: View {
     var renameTarget: Collection? = nil
     /// Called with the created (or renamed) collection after a successful
     /// submit, before dismissal — lets owners navigate into it or refresh.
+    /// For renames this fires immediately with the optimistic row.
     var onSuccess: ((Collection) -> Void)? = nil
+    /// Rename only: fires once the backend accepts the rename — owners run
+    /// work that must see server truth (warm-scope revalidation) here, never
+    /// in `onSuccess`, which now precedes persistence.
+    var onPersisted: (() -> Void)? = nil
+
+    /// Post-dismissal failure surface for the local-first rename path.
+    @EnvironmentObject private var noticeCenter: TransientNoticeCenter
 
     @State private var name: String = ""
     @State private var isCreating = false
@@ -178,27 +186,36 @@ struct NewCollectionFullScreenView: View {
         isCreating = true
 
         if let renameTarget {
-            // Rename path — same surface, different mutation.
-            let ok = await collectionsViewModel.renameCollection(
+            // Rename path — local-first: the row renames and the surface
+            // dismisses in the same beat; persistence runs behind with
+            // rollback + transient notice on a genuine failure.
+            hasSubmittedSuccessfully = true
+            isCreating = false
+            UIApplication.shared.sendAction(
+                #selector(UIResponder.resignFirstResponder),
+                to: nil, from: nil, for: nil
+            )
+            let renamed = collectionsViewModel.applyLocalRename(
                 id: renameTarget.id,
                 name: trimmedName
-            )
-            if ok {
-                hasSubmittedSuccessfully = true
-                isCreating = false
-                UIApplication.shared.sendAction(
-                    #selector(UIResponder.resignFirstResponder),
-                    to: nil, from: nil, for: nil
+            ) ?? renameTarget
+            onSuccess?(renamed)
+            onDismiss()
+            let viewModel = collectionsViewModel
+            let persisted = onPersisted
+            let notices = noticeCenter
+            let newName = trimmedName
+            Task {
+                let ok = await viewModel.persistRename(
+                    id: renameTarget.id,
+                    name: newName,
+                    rollbackTo: renameTarget
                 )
-                // The reload inside renameCollection already has the fresh
-                // model; fall back to the target if it's not found.
-                let updated = collectionsViewModel.collections
-                    .first { $0.id == renameTarget.id } ?? renameTarget
-                onSuccess?(updated)
-                onDismiss()
-            } else {
-                isCreating = false
-                createErrorMessage = collectionsViewModel.errorMessage ?? "Something went wrong."
+                if ok {
+                    persisted?()
+                } else {
+                    notices.show("Couldn\u{2019}t rename")
+                }
             }
         } else if let parentId {
             // Sub-collection creation path

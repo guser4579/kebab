@@ -16,14 +16,9 @@ struct CollectionDisplayInfo {
 @MainActor
 final class FeedViewModel: ObservableObject {
 
-    @Published var entries: [Entry] = []
-    @Published var isLoading: Bool = false
-    @Published var hasCompletedInitialLoad: Bool = false
     @Published var errorMessage: String?
     /// Entries composed on-device that haven't reached the server yet.
     @Published var pendingEntries: [PendingEntry] = []
-    /// Independent toggle; combines with any collection filter.
-    @Published var hasLinkFilterActive: Bool = false
     /// Single-select collection scope. Also drives composer targeting: while
     /// active, new entries are added to `targetCollectionId`.
     @Published var activeCollectionFilter: CollectionFilter?
@@ -35,69 +30,41 @@ final class FeedViewModel: ObservableObject {
     /// Fired when an outbox entry is promoted to a server row, so the paged
     /// All store can adopt it without a reload.
     var onEntryPromoted: ((Entry) -> Void)?
-    /// Fired after any in-place patch of an entry (checklist, fire, edit,
-    /// enrichment, hidden toggle) so the paged All store can mirror it.
-    var onEntryPatched: ((UUID) -> Void)?
+    /// Fired with the freshly patched entry after any optimistic mutation
+    /// (checklist, fire, resurface, edit, enrichment, hidden toggle, comment
+    /// count, membership) — the owner reconciles it into every warm scope
+    /// store and the search corpus. This replaced the retired whole-corpus
+    /// mirror's lookup-based fan-out.
+    var onEntryChanged: ((Entry) -> Void)?
+    /// Fired when content changed for something no warm store holds (a
+    /// comment, or a root beyond the loaded pages) — the owner marks the
+    /// search corpus stale so its next look refetches.
+    var onCommentContentChanged: (() -> Void)?
     /// Fired when a delete is confirmed by the server, whichever screen
     /// initiated it, so every warm scope store drops (and tombstones) the row.
     var onEntryDeleted: ((UUID) -> Void)?
+    /// Resolves the freshest warm copy of an entry (scope stores + arrival
+    /// buffers). Optimistic patches are computed against this truth; a miss
+    /// means nothing on any warm surface renders the entry.
+    var entryResolver: ((UUID) -> Entry?)?
+
+    /// The signed-in user, for display-entry construction. Set at launch.
+    private(set) var currentUserId: UUID?
+
+    func configure(userId: UUID) {
+        currentUserId = userId
+    }
+
+    /// The warm copy an optimistic patch starts from — the resolver's truth
+    /// when warm, otherwise the caller's own copy.
+    private func currentEntry(id: UUID, fallback: Entry) -> Entry {
+        entryResolver?(id) ?? fallback
+    }
 
     /// Outbox entries mapped to display form, newest first — consumed by the
     /// paged All feed, which renders pending entries at the live edge.
     var pendingDisplayEntries: [Entry] {
         pendingEntries.reversed().map { displayEntry(for: $0) }
-    }
-
-    var feedEntries: [Entry] {
-        entries.filter { $0.pinned_at == nil }
-    }
-
-    var pinnedEntries: [Entry] {
-        entries.filter { $0.pinned_at != nil }
-               .sorted { $0.pinned_at! > $1.pinned_at! }
-    }
-
-    /// Feed entries with active filters applied, followed by any not-yet-synced
-    /// pending entries. Views should consume this instead of feedEntries.
-    var filteredFeedEntries: [Entry] {
-        var result = feedEntries
-        if hasLinkFilterActive {
-            result = result.filter { $0.linkAttachment != nil }
-        }
-        switch activeCollectionFilter {
-        case .all(let parentId):
-            result = result.filter {
-                $0.collection_id == parentId || $0.collection_parent_id == parentId
-            }
-        case .single(let id):
-            result = result.filter { $0.collection_id == id }
-        case nil:
-            break
-        }
-
-        let pendingDisplay = pendingEntries.compactMap { pending -> Entry? in
-            // Pending entries have no parsed link yet.
-            if hasLinkFilterActive { return nil }
-            switch activeCollectionFilter {
-            case .all(let parentId):
-                // Match the parent itself or any of its sub-collections, same
-                // as the aggregate filter on synced entries above.
-                let pendingParentId = pending.collectionId.flatMap { collectionInfoResolver?($0)?.parentId }
-                guard pending.collectionId == parentId || pendingParentId == parentId else { return nil }
-            case .single(let id):
-                guard pending.collectionId == id else { return nil }
-            case nil:
-                break
-            }
-            return displayEntry(for: pending)
-        }
-        return result + pendingDisplay
-    }
-
-    /// Combined count the feed's scroll logic watches — pending entries are
-    /// part of the visible list.
-    var totalDisplayCount: Int {
-        entries.count + pendingEntries.count
     }
 
     /// Maps an outbox item to a display-only Entry, with file:// image
@@ -126,7 +93,7 @@ final class FeedViewModel: ObservableObject {
         let info = pending.collectionId.flatMap { collectionInfoResolver?($0) }
         return Entry(
             id: pending.id,
-            user_id: entries.first?.user_id ?? pending.id,
+            user_id: currentUserId ?? pending.id,
             parent_id: nil,
             root_id: nil,
             depth: 0,
@@ -147,11 +114,6 @@ final class FeedViewModel: ObservableObject {
         )
     }
 
-    /// Sets the collection filter, or clears it when `filter` is already active.
-    func toggleCollectionFilter(_ filter: CollectionFilter) {
-        activeCollectionFilter = (activeCollectionFilter == filter) ? nil : filter
-    }
-
     private let repository: EntryRepository
     private let collectionRepository: CollectionRepository
     private let imageStorage: ImageStorageRepository
@@ -166,9 +128,8 @@ final class FeedViewModel: ObservableObject {
         self.imageStorage = ImageStorageRepository(supabase: supabase)
         self.supabase = supabase
 
-        // Offline read layer: open instantly on the last-known feed.
-        entries = LocalStore.load([Entry].self, from: "feed") ?? []
-        hasCompletedInitialLoad = !entries.isEmpty
+        // Offline reads live in the per-scope page caches (FeedStore); this
+        // model only restores the durable outbox.
         pendingEntries = outbox.loadAll()
 
         // Flush the outbox whenever connectivity (re)appears — including the
@@ -183,23 +144,6 @@ final class FeedViewModel: ObservableObject {
         pathMonitor.start(queue: DispatchQueue(label: "kebab.connectivity"))
     }
 
-    func loadEntries() async {
-        isLoading = true
-        errorMessage = nil
-        defer {
-            isLoading = false
-            hasCompletedInitialLoad = true
-        }
-
-        do {
-            entries = try await repository.fetchRootEntries()
-            LocalStore.save(entries, as: "feed")
-        } catch {
-            // Offline or failed refresh: keep showing the cached feed.
-            errorMessage = error.localizedDescription
-        }
-    }
-
     // MARK: - Send (queue-then-flush)
 
     /// Stages the entry in the on-disk outbox and kicks a sync. The send
@@ -212,7 +156,7 @@ final class FeedViewModel: ObservableObject {
     @discardableResult
     func queueEntry(
         content: String,
-        images: [UIImage] = [],
+        images: [PendingImage] = [],
         linkURL: URL? = nil,
         collectionId: UUID? = nil
     ) -> UUID? {
@@ -256,18 +200,24 @@ final class FeedViewModel: ObservableObject {
         for pending in pendingEntries.filter({ !$0.failed }) {
             do {
                 var attachments: [EntryAttachment] = []
-                let images = outbox.loadImages(for: pending)
+                let imagePayloads = outbox.loadImageDatas(for: pending)
                 let session = try await supabase.auth.session
-                if !images.isEmpty {
-                    let uploaded = try await imageStorage.uploadImages(images, userId: session.user.id)
+                if !imagePayloads.isEmpty {
+                    // Staged bytes ARE the upload payload — no second
+                    // decode/encode generation at flush time.
+                    let uploaded = try await imageStorage.uploadImageData(imagePayloads, userId: session.user.id)
                     // Seed the shared image cache so the promoted row renders
                     // the uploaded URLs straight from memory — the
                     // file:// → https:// swap never shows a placeholder.
-                    for (image, attachment) in zip(images, uploaded) {
+                    // Decode happens off-main; the swap waits for it.
+                    for (payload, attachment) in zip(imagePayloads, uploaded) {
                         if let url = URL(string: attachment.url) {
-                            let cost = Int(image.size.width * image.size.height
-                                * image.scale * image.scale * 4)
-                            ImageCache.shared.setObject(image, forKey: url as NSURL, cost: cost)
+                            let decoded = await Task.detached(priority: .userInitiated) {
+                                ImageDecode.downsampled(payload)
+                            }.value
+                            if let decoded {
+                                ImageCache.insert(decoded, for: url)
+                            }
                         }
                     }
                     attachments += uploaded
@@ -326,13 +276,14 @@ final class FeedViewModel: ObservableObject {
                     }
                 }
 
-                // Promote atomically: append the persisted form and drop the
-                // pending form in the same run-loop tick. Same id ⇒ SwiftUI
-                // keeps the row's identity ⇒ no blink, no scroll shift.
+                // Promote atomically: hand the persisted form to the warm
+                // scopes and drop the pending form in the same run-loop tick.
+                // Same id ⇒ SwiftUI keeps the row's identity ⇒ no blink, no
+                // scroll shift.
                 let info = filedCollectionId.flatMap { collectionInfoResolver?($0) }
                 let promoted = Entry(
                     id: pending.id,
-                    user_id: entries.first?.user_id ?? session.user.id,
+                    user_id: session.user.id,
                     parent_id: nil,
                     root_id: nil,
                     depth: 0,
@@ -349,9 +300,7 @@ final class FeedViewModel: ObservableObject {
                     collection_parent_id: info?.parentId,
                     collection_parent_name: info?.parentName
                 )
-                entries.append(promoted)
                 pendingEntries.removeAll { $0.id == pending.id }
-                LocalStore.save(entries, as: "feed")
                 outbox.remove(pending)
                 onEntryPromoted?(promoted)
             } catch let error as URLError {
@@ -459,14 +408,10 @@ final class FeedViewModel: ObservableObject {
 
         do {
             try await repository.updateAttachments(entryId: entryId, attachments: updated)
-            // Patch only this entry in-memory rather than triggering a full feed reload.
-            // A full reload is not safe to fire arbitrarily — it replaces the entire entries
-            // array and can disrupt scroll position. Patching a single array element causes
-            // SwiftUI to re-render only that row, which is safe and minimal.
-            entries = entries.map { entry in
-                entry.id == entryId ? entry.withAttachments(updated) : entry
+            // Patch only this entry across warm scopes — never a reload.
+            if let current = entryResolver?(entryId) {
+                onEntryChanged?(current.withAttachments(updated))
             }
-            onEntryPatched?(entryId)
         } catch {
             // Silently ignore — entry keeps its current compact presentation.
         }
@@ -575,16 +520,13 @@ final class FeedViewModel: ObservableObject {
     /// Deletes on the backend, designed to succeed overwhelmingly often:
     /// transport failures get brief in-place retries before the caller's
     /// failure path (restore + transient notice) ever runs. No feed reload —
-    /// the local array is patched in place and warm scope stores are told
-    /// through `onEntryDeleted`.
+    /// warm scope stores are told through `onEntryDeleted`.
     @discardableResult
     func deleteEntry(id: UUID) async -> Bool {
         errorMessage = nil
         for attempt in 0..<3 {
             do {
                 try await repository.deleteEntry(id: id)
-                entries.removeAll { $0.id == id }
-                LocalStore.save(entries, as: "feed")
                 onEntryDeleted?(id)
                 return true
             } catch let error as URLError {
@@ -603,17 +545,27 @@ final class FeedViewModel: ObservableObject {
         return false
     }
 
-    /// Persists new text for an entry/comment/reply. Patches the local entries array immediately
-    /// so callers can defer any authoritative reload until their overlay is fully dismissed,
-    /// avoiding scroll position disruption while the editor is still on screen.
+    /// Local-first content edit: the patched entry fans out to every warm
+    /// scope immediately, persistence runs behind, and a genuine failure
+    /// fans the pre-edit content back out. Detail hosts patch their own
+    /// thread/root copies and use the returned Bool for their rollback.
     func updateEntryContent(id: UUID, content: String) async -> Bool {
         errorMessage = nil
+        let original = entryResolver?(id)
+        if let original {
+            onEntryChanged?(original.withContent(content))
+        }
         do {
             try await repository.updateEntryContent(id: id, content: content)
-            entries = entries.map { $0.id == id ? $0.withContent(content) : $0 }
-            onEntryPatched?(id)
+            if original == nil {
+                // A comment, or a root beyond warm pages: the corpus refetches.
+                onCommentContentChanged?()
+            }
             return true
         } catch {
+            if let original {
+                onEntryChanged?(original)
+            }
             errorMessage = error.localizedDescription
             return false
         }
@@ -622,49 +574,69 @@ final class FeedViewModel: ObservableObject {
     /// Toggles the checklist line at `lineIndex` with an immediate optimistic
     /// patch (checkbox taps must feel instant from the feed); rolls back if
     /// the server write fails. No reload — only the one row re-renders.
-    func toggleChecklistItem(entry: Entry, lineIndex: Int) async {
-        let newContent = Checklist.toggling(entry.content, lineIndex: lineIndex)
-        guard newContent != entry.content else { return }
-        entries = entries.map { $0.id == entry.id ? $0.withContent(newContent) : $0 }
-        onEntryPatched?(entry.id)
+    @discardableResult
+    func toggleChecklistItem(entry: Entry, lineIndex: Int) async -> Bool {
+        let base = currentEntry(id: entry.id, fallback: entry)
+        let newContent = Checklist.toggling(base.content, lineIndex: lineIndex)
+        guard newContent != base.content else { return true }
+        onEntryChanged?(base.withContent(newContent))
         do {
             try await repository.updateEntryContent(id: entry.id, content: newContent)
-            LocalStore.save(entries, as: "feed")
+            return true
         } catch {
-            entries = entries.map { $0.id == entry.id ? $0.withContent(entry.content) : $0 }
-            onEntryPatched?(entry.id)
+            onEntryChanged?(base)
+            return false
         }
     }
 
-    /// Toggles `is_content_hidden` on the given entry and reloads the feed.
-    /// Returns `true` if the backend write succeeded, `false` on any error.
-    /// Callers that display a local copy of the toggled entry should only patch
-    /// their local state when this returns `true`.
+    /// Toggles `is_content_hidden` with an immediate optimistic patch that
+    /// fans out to every warm scope store; persists behind and rolls back on
+    /// a genuine backend failure. No feed reload. Comments live in detail
+    /// thread state — their hosts patch locally and use the returned Bool to
+    /// keep or roll back that state.
     @discardableResult
     func toggleEntryHidden(id: UUID, currentValue: Bool) async -> Bool {
+        let warm = entryResolver?(id)
+        if let warm {
+            onEntryChanged?(warm.withIsContentHidden(!currentValue))
+        }
         do {
             try await supabase
                 .from("entries")
                 .update(["is_content_hidden": !currentValue])
                 .eq("id", value: id)
                 .execute()
-
-            await loadEntries()
-            onEntryPatched?(id)
+            if warm == nil {
+                onCommentContentChanged?()
+            }
             return true
         } catch {
+            if let warm {
+                onEntryChanged?(warm.withIsContentHidden(currentValue))
+            }
             print("Failed to toggle entry hidden state:", error)
             return false
         }
     }
 
-    func resurfaceEntry(entry: Entry) async {
-        guard entry.pinned_at == nil, entry.parent_id == nil else { return }
+    /// Increments `resurface_count` by 1 with an immediate optimistic patch
+    /// fanned into every warm scope store, so the counter updates in place
+    /// inside collections too. On backend failure the patch is rolled back
+    /// using the pre-tap value. Never reloads the feed — the move to the
+    /// live edge is reconciled by the caller's scope revalidation.
+    @discardableResult
+    func resurfaceEntry(entry: Entry) async -> Bool {
+        guard entry.pinned_at == nil, entry.parent_id == nil else { return false }
+        let base = currentEntry(id: entry.id, fallback: entry)
+        onEntryChanged?(base.withResurfaceCount(base.resurface_count + 1))
         do {
             try await repository.resurfaceEntry(id: entry.id)
-            await loadEntries()
+            return true
         } catch {
+            let now = currentEntry(id: entry.id, fallback: base)
+            onEntryChanged?(now.withResurfaceCount(base.resurface_count))
             print("Failed to resurface entry:", error)
+            return false
         }
     }
 
@@ -674,25 +646,16 @@ final class FeedViewModel: ObservableObject {
     @discardableResult
     func fireEntry(entry: Entry) async -> Bool {
         guard entry.parent_id == nil else { return false }
-        entries = entries.map { $0.id == entry.id ? $0.withFireCount($0.fire_count + 1) : $0 }
-        onEntryPatched?(entry.id)
+        let base = currentEntry(id: entry.id, fallback: entry)
+        onEntryChanged?(base.withFireCount(base.fire_count + 1))
         do {
             try await repository.fireEntry(id: entry.id)
             return true
         } catch {
-            entries = entries.map { $0.id == entry.id ? $0.withFireCount(entry.fire_count) : $0 }
-            onEntryPatched?(entry.id)
+            let now = currentEntry(id: entry.id, fallback: base)
+            onEntryChanged?(now.withFireCount(base.fire_count))
             print("Failed to fire entry:", error)
             return false
-        }
-    }
-
-    func togglePin(entry: Entry) async {
-        do {
-            try await repository.togglePin(id: entry.id, pin: entry.pinned_at == nil)
-            await loadEntries()
-        } catch {
-            print("Failed to toggle pin:", error)
         }
     }
 
@@ -735,18 +698,74 @@ final class FeedViewModel: ObservableObject {
     }
 
     /// Local-first comment counting: the root's counter changes in the same
-    /// beat as the optimistic thread mutation, and the patch fans out through
-    /// `onEntryPatched` to every warm feed scope (and the search corpus) —
-    /// no refetch, no reload, no temporary disagreement between surfaces.
-    /// Server revalidation later merges the identical authoritative value,
-    /// so there is no double increment and no flicker.
+    /// beat as the optimistic thread mutation, fanned into every warm feed
+    /// scope (and the search corpus) — no refetch, no reload, no temporary
+    /// disagreement between surfaces. Server revalidation later merges the
+    /// identical authoritative value, so there is no double increment and no
+    /// flicker.
     func applyCommentCountDelta(rootId: UUID, delta: Int) {
-        entries = entries.map { entry in
-            guard entry.id == rootId else { return entry }
-            return entry.withCommentCount(max(0, (entry.comment_count ?? 0) + delta))
+        if let current = entryResolver?(rootId) {
+            onEntryChanged?(current.withCommentCount(max(0, (current.comment_count ?? 0) + delta)))
         }
-        LocalStore.save(entries, as: "feed")
-        onEntryPatched?(rootId)
+        noteThreadChanged(rootId: rootId)
+    }
+
+    // MARK: - Collection membership (local-first move)
+
+    /// Patches an entry's collection membership and fans it out to every
+    /// warm scope store and the search corpus. Breadcrumb fields resolve
+    /// from the local collections model.
+    private func applyCollectionMembership(entryId: UUID, collectionId: UUID?) {
+        guard let current = entryResolver?(entryId) else { return }
+        let info = collectionId.flatMap { collectionInfoResolver?($0) }
+        onEntryChanged?(current.withCollection(
+            id: collectionId,
+            name: info?.name,
+            parentId: info?.parentId,
+            parentName: info?.parentName
+        ))
+    }
+
+    /// Local-first collection move: membership changes everywhere immediately
+    /// (the entry leaves/joins warm scopes in the same beat), persistence
+    /// runs behind. On a genuine failure the pre-move membership is restored.
+    /// The server move is remove-then-add — not atomic; a failure between the
+    /// two can leave the entry unfiled server-side until the next
+    /// revalidation reconciles it (flagged for backend hardening).
+    func moveEntry(id: UUID, from oldCollectionId: UUID?, to newCollectionId: UUID?) async -> Bool {
+        let previousCollectionId = entryResolver?(id)?.collection_id ?? oldCollectionId
+        applyCollectionMembership(entryId: id, collectionId: newCollectionId)
+        do {
+            if let oldCollectionId {
+                try await collectionRepository.removeEntryFromCollection(entryId: id, collectionId: oldCollectionId)
+            }
+            if let newCollectionId {
+                try await collectionRepository.addEntryToCollection(entryId: id, collectionId: newCollectionId)
+            }
+            return true
+        } catch {
+            applyCollectionMembership(entryId: id, collectionId: previousCollectionId)
+            errorMessage = error.localizedDescription
+            return false
+        }
+    }
+
+    // MARK: - Thread staleness
+
+    /// Per-root thread revision, bumped by any mutation that changes thread
+    /// content (comment insert/delete, comment edit, hidden toggle). Detail
+    /// screens compare against the revision they last rendered and refetch
+    /// only when genuinely stale — a reappearing screen whose thread hasn't
+    /// changed does no work at all. Not @Published on purpose: it's checked
+    /// on appearance, never rendered.
+    private var threadRevisions: [UUID: Int] = [:]
+
+    func noteThreadChanged(rootId: UUID) {
+        threadRevisions[rootId, default: 0] += 1
+    }
+
+    func threadRevision(rootId: UUID) -> Int {
+        threadRevisions[rootId] ?? 0
     }
 }
 

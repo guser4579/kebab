@@ -397,8 +397,8 @@ struct ComposerView: View {
                 for item in items {
                     guard attachedImages.count < maxImages else { break }
                     if let data = try? await item.loadTransferable(type: Data.self),
-                       let image = UIImage(data: data) {
-                        attachedImages.append(PendingImage(image: image))
+                       let staged = await PendingImage.staged(fromData: data) {
+                        attachedImages.append(staged)
                     }
                 }
                 photoSelection = []
@@ -406,8 +406,11 @@ struct ComposerView: View {
         }
         .fullScreenCover(isPresented: $isCameraPresented) {
             CameraPicker { image in
-                if attachedImages.count < maxImages {
-                    attachedImages.append(PendingImage(image: image))
+                Task {
+                    guard attachedImages.count < maxImages else { return }
+                    if let staged = await PendingImage.staged(fromImage: image) {
+                        attachedImages.append(staged)
+                    }
                 }
             }
             .ignoresSafeArea()
@@ -418,13 +421,19 @@ struct ComposerView: View {
             allowsMultipleSelection: true
         ) { result in
             guard case .success(let urls) = result else { return }
-            for url in urls {
-                guard attachedImages.count < maxImages else { break }
+            // Read while the security scope is open; stage (decode/encode)
+            // off-main afterwards.
+            let datas: [Data] = urls.compactMap { url in
                 let scoped = url.startAccessingSecurityScopedResource()
                 defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-                if let data = try? Data(contentsOf: url),
-                   let image = UIImage(data: data) {
-                    attachedImages.append(PendingImage(image: image))
+                return try? Data(contentsOf: url)
+            }
+            Task {
+                for data in datas {
+                    guard attachedImages.count < maxImages else { break }
+                    if let staged = await PendingImage.staged(fromData: data) {
+                        attachedImages.append(staged)
+                    }
                 }
             }
         }
@@ -627,9 +636,13 @@ struct ComposerView: View {
 
     /// Pasted images enter the exact same pipeline as picked ones.
     private func appendPastedImages(_ images: [UIImage]) {
-        for image in images {
-            guard attachedImages.count < maxImages else { break }
-            attachedImages.append(PendingImage(image: image))
+        Task {
+            for image in images {
+                guard attachedImages.count < maxImages else { break }
+                if let staged = await PendingImage.staged(fromImage: image) {
+                    attachedImages.append(staged)
+                }
+            }
         }
     }
 

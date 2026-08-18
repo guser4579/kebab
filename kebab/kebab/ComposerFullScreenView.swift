@@ -52,8 +52,13 @@ struct ComposerFullScreenView: View {
             FullScreenTextEditor(
                 text: $text,
                 onPasteImages: { pasted in
-                    for image in pasted where attachedImages.count < 4 {
-                        attachedImages.append(PendingImage(image: image))
+                    Task {
+                        for image in pasted {
+                            guard attachedImages.count < 4 else { break }
+                            if let staged = await PendingImage.staged(fromImage: image) {
+                                attachedImages.append(staged)
+                            }
+                        }
                     }
                 },
                 onPasteLink: { url in

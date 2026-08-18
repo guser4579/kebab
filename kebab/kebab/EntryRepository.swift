@@ -9,16 +9,6 @@ final class EntryRepository {
         self.supabase = supabase
     }
 
-    /// Returns root entries that are NOT assigned to any collection, ordered by feed_order_at.
-    /// Requires the `get_feed_entries` Postgres function (see backend/query contract notes).
-    func fetchRootEntries() async throws -> [Entry] {
-        let entries: [Entry] = try await supabase
-            .rpc("get_feed_entries")
-            .execute()
-            .value
-        return entries
-    }
-
     /// Returns entries belonging to `collectionId` ordered by when they were added to the collection.
     /// Requires the `get_collection_entries` Postgres function (see backend/query contract notes).
     func fetchCollectionEntries(collectionId: UUID) async throws -> [Entry] {
@@ -111,17 +101,6 @@ final class EntryRepository {
             .execute()
     }
 
-    func togglePin(id: UUID, pin: Bool) async throws {
-        let payload = PinUpdatePayload(
-            pinned_at: pin ? ISO8601DateFormatter().string(from: Date()) : nil
-        )
-        try await supabase
-            .from("entries")
-            .update(payload)
-            .eq("id", value: id)
-            .execute()
-    }
-
     /// `id` lets callers supply the client-generated id of an optimistic
     /// comment, so the local row and the server row are the same object and
     /// reconciliation is a clean merge (same pattern as insertEntry).
@@ -190,19 +169,6 @@ final class EntryRepository {
 
         enum CodingKeys: String, CodingKey {
             case id, user_id, parent_id, root_id, depth, content, is_content_hidden
-        }
-    }
-
-    private struct PinUpdatePayload: Encodable {
-        let pinned_at: String?
-
-        func encode(to encoder: Encoder) throws {
-            var container = encoder.container(keyedBy: CodingKeys.self)
-            try container.encode(pinned_at, forKey: .pinned_at)
-        }
-
-        enum CodingKeys: String, CodingKey {
-            case pinned_at
         }
     }
 

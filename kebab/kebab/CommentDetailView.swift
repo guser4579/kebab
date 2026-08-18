@@ -28,6 +28,9 @@ struct CommentDetailView: View {
     /// directly; `threadData` is always derived from it in the same beat.
     @State private var threadEntries: [Entry] = []
     @State private var threadData: ThreadData?
+    /// The thread revision this screen's local state reflects — reappearing
+    /// with an unchanged revision skips the refetch (see EntryDetailView).
+    @State private var loadedThreadRevision: Int?
     @State private var commentSendFailed = false
 
     init(comment: Entry, rootId: UUID, feedViewModel: FeedViewModel) {
@@ -98,7 +101,10 @@ struct CommentDetailView: View {
                 .scrollDismissesKeyboard(.interactively)
                 .frame(maxWidth: .infinity)
                 .onAppear {
-                    Task { await reloadThread() }
+                    let revision = feedViewModel.threadRevision(rootId: rootId)
+                    if threadData == nil || loadedThreadRevision != revision {
+                        Task { await reloadThread() }
+                    }
                 }
                 .background(Style.Color.background)
                 .foregroundColor(Style.Color.primaryText)
@@ -141,15 +147,33 @@ struct CommentDetailView: View {
                                     )
                                 },
                                 onToggleContentHidden: {
+                                    // Optimistic: this screen's copies update in
+                                    // the same beat as the tap; rollback restores
+                                    // them on a genuine failure.
+                                    let wasHidden = sheetEntry.isContentHidden
+                                    if sheetEntry.id == displayedComment.id {
+                                        displayedComment = displayedComment.withIsContentHidden(!wasHidden)
+                                    }
+                                    setThread(threadEntries.map {
+                                        $0.id == sheetEntry.id ? $0.withIsContentHidden(!wasHidden) : $0
+                                    })
+                                    feedViewModel.noteThreadChanged(rootId: rootId)
+                                    markThreadCurrent()
                                     Task {
                                         let succeeded = await feedViewModel.toggleEntryHidden(
                                             id: sheetEntry.id,
-                                            currentValue: sheetEntry.isContentHidden
+                                            currentValue: wasHidden
                                         )
-                                        if succeeded && sheetEntry.id == displayedComment.id {
-                                            displayedComment = displayedComment.withIsContentHidden(!sheetEntry.isContentHidden)
+                                        if !succeeded {
+                                            if sheetEntry.id == displayedComment.id {
+                                                displayedComment = displayedComment.withIsContentHidden(wasHidden)
+                                            }
+                                            setThread(threadEntries.map {
+                                                $0.id == sheetEntry.id ? $0.withIsContentHidden(wasHidden) : $0
+                                            })
+                                            feedViewModel.noteThreadChanged(rootId: rootId)
+                                            markThreadCurrent()
                                         }
-                                        await reloadThread()
                                     }
                                 },
                                 onBeginTextEdit: {
@@ -200,12 +224,23 @@ struct CommentDetailView: View {
                                 contextEntryId: editEntry.id,
                                 kind: .edited
                             )
-                            Task { await reloadThread() }
                         },
                         onSaveSuccess: { updated in
+                            // Immediate local patch: this screen's copy and any
+                            // thread row update in the same beat the editor closes.
                             if updated.id == displayedComment.id {
                                 displayedComment = updated
                             }
+                            setThread(threadEntries.map { $0.id == updated.id ? updated : $0 })
+                            feedViewModel.noteThreadChanged(rootId: rootId)
+                            markThreadCurrent()
+                        },
+                        onPersistFailure: {
+                            // Restore this screen's copy and thread truth.
+                            if editEntry.id == displayedComment.id {
+                                displayedComment = editEntry
+                            }
+                            Task { await reloadThread() }
                         }
                     )
                     .transition(.move(edge: .bottom))
@@ -238,8 +273,18 @@ struct CommentDetailView: View {
     }
 
     private func reloadThread() async {
+        // Capture the revision at fetch start: a mutation landing mid-fetch
+        // leaves us stale, so the next appearance refetches.
+        let revision = feedViewModel.threadRevision(rootId: rootId)
         let entries = await feedViewModel.loadComments(rootId: rootId)
         setThread(entries)
+        loadedThreadRevision = revision
+    }
+
+    /// Own optimistic mutations advance the recorded revision in the same
+    /// beat they bump it — local state is already current, no self-refetch.
+    private func markThreadCurrent() {
+        loadedThreadRevision = feedViewModel.threadRevision(rootId: rootId)
     }
 
     private func setThread(_ entries: [Entry]) {
@@ -275,6 +320,7 @@ struct CommentDetailView: View {
         )
         setThread(threadEntries + [optimistic])
         feedViewModel.applyCommentCountDelta(rootId: rootId, delta: 1)
+        markThreadCurrent()
 
         Task {
             let ok = await feedViewModel.sendComment(
@@ -293,31 +339,39 @@ struct CommentDetailView: View {
                     contextEntryId: displayedComment.id,
                     kind: .commented
                 )
-                await reloadThread()
+                // No thread refetch: the optimistic row shares the server
+                // row's id, so local state already IS the merged truth.
                 searchCorpusStore.markStale()
             } else {
                 setThread(threadEntries.filter { $0.id != optimistic.id })
                 feedViewModel.applyCommentCountDelta(rootId: rootId, delta: -1)
+                markThreadCurrent()
                 commentSendFailed = true
             }
         }
     }
 
     /// Local-first deletion of a comment (possibly this screen's own):
-    /// subtree and counters update immediately; failure restores from truth.
+    /// subtree and counters update immediately — and when deleting this
+    /// screen's own comment, the pop happens in the same beat, not after the
+    /// server answers. Failure restores from truth; the revision bump makes
+    /// the parent screen refetch on reappearance either way.
     private func deleteCommentOptimistically(_ comment: Entry, dismissAfter: Bool) {
         let removedCount = (threadData?.subtreeCount(for: comment.id) ?? 0) + 1
         setThread(threadEntries.filter { !subtreeIds(of: comment.id).contains($0.id) })
         feedViewModel.applyCommentCountDelta(rootId: rootId, delta: -removedCount)
+        markThreadCurrent()
+        if dismissAfter {
+            dismiss()
+        }
 
         Task {
             let ok = await feedViewModel.deleteEntry(id: comment.id)
             if !ok {
                 feedViewModel.applyCommentCountDelta(rootId: rootId, delta: removedCount)
-                await reloadThread()
-            }
-            if dismissAfter {
-                dismiss()
+                if !dismissAfter {
+                    await reloadThread()
+                }
             }
         }
     }

@@ -7,9 +7,39 @@ import SwiftUI
 import UIKit
 
 /// An image staged in the composer, not yet uploaded. Uploads happen on send.
+///
+/// Staging is where ALL expensive image work happens: the upload-ceiling
+/// downscale and the JPEG encode both run off the main actor at attach time,
+/// so full-resolution camera originals never survive past this point and the
+/// send tap never pays for resize/encode/decode work.
 struct PendingImage: Identifiable, Equatable {
     let id = UUID()
+    /// Display + upload-source image, already ≤ the 2048pt upload ceiling.
     let image: UIImage
+    /// Upload-ready JPEG bytes — the exact payload the outbox stages and the
+    /// flush uploads, encoded once.
+    let jpegData: Data
+
+    /// Stages raw picked/imported bytes (Photos picker, Files, image paste
+    /// data): downsampled decode + JPEG encode, off the main actor.
+    static func staged(fromData data: Data) async -> PendingImage? {
+        await Task.detached(priority: .userInitiated) {
+            guard let image = ImageDecode.downsampled(data),
+                  let jpeg = try? ImageStorageRepository.jpegData(from: image)
+            else { return nil }
+            return PendingImage(image: image, jpegData: jpeg)
+        }.value
+    }
+
+    /// Stages an in-memory capture (camera, pasted UIImage) the same way.
+    static func staged(fromImage source: UIImage) async -> PendingImage? {
+        await Task.detached(priority: .userInitiated) {
+            guard let jpeg = try? ImageStorageRepository.jpegData(from: source),
+                  let image = ImageDecode.downsampled(jpeg)
+            else { return nil }
+            return PendingImage(image: image, jpegData: jpeg)
+        }.value
+    }
 }
 
 /// One place that decides whether pasteboard content is a link, shared by the

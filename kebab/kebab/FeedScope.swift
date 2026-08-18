@@ -105,6 +105,16 @@ final class FeedScopeCoordinator: ObservableObject {
         }
     }
 
+    /// The freshest warm copy of an entry across every scope store (rendered
+    /// lists and arrival buffers). The patch hub for optimistic mutations —
+    /// replaces the retired whole-corpus mirror as the local source of truth.
+    func entry(id: UUID) -> Entry? {
+        for store in stores.values {
+            if let found = store.entry(id: id) { return found }
+        }
+        return nil
+    }
+
     // MARK: - Cross-scope reconciliation (targeted, no reloads)
 
     /// A promoted outbox entry joins every warm scope it belongs to, obeying

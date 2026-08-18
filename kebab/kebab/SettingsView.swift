@@ -181,22 +181,7 @@ struct SettingsView: View {
                 Color.clear
                     .frame(height: 28)
 
-                sectionLabel("settings")
-
-                Color.clear
-                    .frame(height: Style.Spacing.x2)
-
-                settingsGroup
-
-                Color.clear
-                    .frame(height: 28)
-
-                sectionLabel("account")
-
-                Color.clear
-                    .frame(height: Style.Spacing.x2)
-
-                manageAccountRow
+                menuGroup
             }
             .padding(.horizontal, 16)
             .padding(.top, 24)
@@ -356,19 +341,13 @@ struct SettingsView: View {
         return String(first).uppercased()
     }
 
-    // MARK: - Settings group
-
-    private func sectionLabel(_ text: String) -> some View {
-        Text(text)
-            .font(Style.Typography.meta())
-            .foregroundColor(Style.Color.secondary)
-            .padding(.leading, Style.Spacing.base)
-    }
+    // MARK: - Menu group
 
     /// One container, one row per destination. New destinations are new
-    /// rows here (or a new labeled group), never new inline controls —
-    /// detail lives one level deeper.
-    private var settingsGroup: some View {
+    /// rows here (or a new labeled group once a section grows enough to
+    /// earn a label), never new inline controls — detail lives one level
+    /// deeper.
+    private var menuGroup: some View {
         VStack(alignment: .leading, spacing: 0) {
             navigationRow(
                 label: "Appearance",
@@ -377,6 +356,18 @@ struct SettingsView: View {
             ) {
                 withAnimation(Self.pushTransition) {
                     openDetail = .appearance
+                }
+            }
+
+            rowDivider
+
+            navigationRow(
+                label: "Manage account",
+                symbol: "person.crop.circle",
+                value: nil
+            ) {
+                withAnimation(Self.pushTransition) {
+                    openDetail = .manageAccount
                 }
             }
         }
@@ -420,27 +411,6 @@ struct SettingsView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-    }
-
-    // MARK: - Account section
-
-    /// One navigation row on the Menu root; the lifecycle actions themselves
-    /// live one level deeper, on the Manage account page.
-    private var manageAccountRow: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            navigationRow(
-                label: "Manage account",
-                symbol: "person.crop.circle",
-                value: nil
-            ) {
-                withAnimation(Self.pushTransition) {
-                    openDetail = .manageAccount
-                }
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Style.Color.composerBackground)
-        .clipShape(RoundedRectangle(cornerRadius: containerCornerRadius))
     }
 
     // MARK: - Manage account page (pushed)
@@ -560,7 +530,7 @@ struct SettingsView: View {
                         .font(.custom("DMSans-SemiBold", size: 16))
                         .foregroundColor(.white)
 
-                    Text("Kebab is made by one person. What should I know?")
+                    Text("Help improve Kebab by sharing your feedback!")
                         .font(Style.Typography.meta())
                         .foregroundColor(.white.opacity(0.85))
                 }

@@ -34,6 +34,19 @@ final class SearchCorpusStore: ObservableObject {
     /// Quiet revalidation cadence when nothing marked the corpus stale.
     private static let refreshInterval: TimeInterval = 300
 
+    /// In-flight cached-snapshot load (startup decode happens off-main).
+    /// Refresh awaits it so Search never treats a still-loading corpus as
+    /// empty truth.
+    private var cacheLoad: Task<Void, Never>?
+    /// Debounce for disk persistence: a burst of mutations writes once.
+    private var persistDebounce: Task<Void, Never>?
+    /// Strictly ordered writer chain: overlapping writes can never land
+    /// out of order, so the latest snapshot always wins on disk.
+    private var persistChain: Task<Void, Never> = Task {}
+    /// Coalesce for whole-index rebuilds: N rapid corpus changes (outbox
+    /// drain on reconnect, delete fan-outs) produce one engine update.
+    private var indexPush: Task<Void, Never>?
+
     private nonisolated struct DiskSnapshot: Codable {
         let entries: [Entry]
         let membership: [UUID: UUID]
@@ -50,10 +63,20 @@ final class SearchCorpusStore: ObservableObject {
     func configure(userId: UUID) {
         guard self.userId != userId else { return }
         self.userId = userId
-        if let cached = LocalStore.load(DiskSnapshot.self, from: cacheKey) {
-            adopt(entries: cached.entries, membership: cached.membership, persist: false)
-        }
         isStale = true
+        // The whole-corpus snapshot decodes off-main; adoption hops back to
+        // the main actor when it's ready. Launch never blocks on this.
+        let key = cacheKey
+        cacheLoad = Task { [weak self] in
+            let cached = await Task.detached(priority: .userInitiated) {
+                LocalStore.load(DiskSnapshot.self, from: key)
+            }.value
+            guard let self, let cached, self.userId == userId else { return }
+            // Network truth may have landed first; disk never clobbers it.
+            if self.entries.isEmpty {
+                self.adopt(entries: cached.entries, membership: cached.membership, persist: false)
+            }
+        }
     }
 
     // MARK: - Staleness
@@ -67,6 +90,9 @@ final class SearchCorpusStore: ObservableObject {
     /// Refreshes when stale or quietly overdue. Serves current truth for
     /// Search — called whenever the Search surface (re)appears.
     func refreshIfNeeded() async {
+        // The cached corpus must finish adopting first — otherwise a refresh
+        // could compare against (and briefly present) an empty mirror.
+        await cacheLoad?.value
         guard userId != nil, !isRefreshing else { return }
         let overdue = lastRefreshAt.map {
             Date().timeIntervalSince($0) > Self.refreshInterval
@@ -93,7 +119,12 @@ final class SearchCorpusStore: ObservableObject {
                 memberships.map { ($0.entry_id, $0.collection_id) },
                 uniquingKeysWith: { first, _ in first }
             )
-            adopt(entries: freshEntries, membership: membershipMap, persist: true)
+            // No-op refresh short-circuit: a structurally identical corpus is
+            // not re-adopted — no repersist of the same snapshot, no revision
+            // bump, no whole-index rebuild just because a refresh ran.
+            if freshEntries != entries || membershipMap != membership {
+                adopt(entries: freshEntries, membership: membershipMap, persist: true)
+            }
             isStale = false
             lastRefreshAt = Date()
         } catch {
@@ -171,27 +202,54 @@ final class SearchCorpusStore: ObservableObject {
         membership = newMembership
         entryById = Dictionary(uniqueKeysWithValues: newEntries.map { ($0.id, $0) })
         if persist {
-            LocalStore.save(DiskSnapshot(entries: newEntries, membership: newMembership), as: cacheKey)
+            schedulePersist()
         }
         pushToEngine()
     }
 
+    /// Debounced, strictly ordered, off-main persistence of the whole-corpus
+    /// snapshot. A burst of mutations produces one encode+write, on a
+    /// background thread; the writer chain guarantees the latest snapshot is
+    /// the one that ends up on disk. A crash can lose at most the last
+    /// not-yet-flushed update — the server remains authoritative.
+    private func schedulePersist() {
+        persistDebounce?.cancel()
+        let snapshot = DiskSnapshot(entries: entries, membership: membership)
+        let key = cacheKey
+        persistDebounce = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(300))
+            guard !Task.isCancelled, let self else { return }
+            let previous = self.persistChain
+            self.persistChain = Task(priority: .utility) {
+                await previous.value
+                await Task.detached(priority: .utility) {
+                    LocalStore.save(snapshot, as: key)
+                }.value
+            }
+        }
+    }
+
     /// Rebuilds the engine index from the current mirror plus any pending
     /// outbox entries, then bumps `revision` so an active query re-evaluates.
+    /// Coalesced: closely spaced corpus changes fold into one rebuild instead
+    /// of queueing N full re-tokenizations on the engine actor.
     private func pushToEngine() {
-        var combined = entries
-        if let pending = pendingProvider?() {
-            let known = Set(combined.map(\.id))
-            combined += pending.filter { !known.contains($0.id) }
-        }
-        let snapshot = SearchCorpusSnapshot(
-            entries: combined,
-            membership: membership,
-            collectionNames: collectionNamesProvider?() ?? [:]
-        )
-        Task {
-            await engine.update(snapshot: snapshot)
-            revision += 1
+        indexPush?.cancel()
+        indexPush = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(150))
+            guard !Task.isCancelled, let self else { return }
+            var combined = self.entries
+            if let pending = self.pendingProvider?() {
+                let known = Set(combined.map(\.id))
+                combined += pending.filter { !known.contains($0.id) }
+            }
+            let snapshot = SearchCorpusSnapshot(
+                entries: combined,
+                membership: self.membership,
+                collectionNames: self.collectionNamesProvider?() ?? [:]
+            )
+            await self.engine.update(snapshot: snapshot)
+            self.revision += 1
         }
     }
 

@@ -83,11 +83,10 @@ struct MainAppView: View {
     // with the comment composer pre-focused.
     @State private var commentTargetEntry: Entry?
     @State private var isCommentTargetActive = false
-    /// Lightweight transient message (e.g. "Failed to delete") — a floating
-    /// capsule above the composer, never a modal.
-    @State private var transientNotice: String?
-    /// Invalidates a stale auto-clear when a newer notice replaces the text.
-    @State private var transientNoticeGeneration = 0
+    /// Lightweight transient messages (e.g. "Failed to delete") — a floating
+    /// capsule above the composer, never a modal. Shared through the
+    /// environment so pushed screens can surface failures after dismissing.
+    @StateObject private var noticeCenter = TransientNoticeCenter()
     @Environment(\.scenePhase) private var scenePhase
 
     let authViewModel: AuthViewModel
@@ -212,7 +211,7 @@ struct MainAppView: View {
         // pending mark and syncs whenever connectivity allows.
         let queuedId = feedViewModel.queueEntry(
             content: content,
-            images: images.map(\.image),
+            images: images,
             linkURL: link,
             collectionId: targetId
         )
@@ -282,10 +281,12 @@ struct MainAppView: View {
     /// The just-captured entry once promoted. Quick actions need the server
     /// row (comments, filing, editing all live there); online promotion is
     /// sub-second, offline the strip stays inert until sync — matching the
-    /// pending row's disabled actions.
+    /// pending row's disabled actions. Promoted rows live in the warm scope
+    /// stores (rendered lists or arrival buffers), never in a corpus mirror.
     private func promotedPostCaptureEntry() -> Entry? {
         guard let id = postCaptureEntryId else { return nil }
-        return feedViewModel.entries.first { $0.id == id }
+        guard let entry = scopeCoordinator.entry(id: id), !entry.isPending else { return nil }
+        return entry
     }
 
     private func openCommentQuickAction() {
@@ -399,40 +400,36 @@ struct MainAppView: View {
     }
 
     private func showTransientNotice(_ message: String) {
-        transientNoticeGeneration += 1
-        let generation = transientNoticeGeneration
-        withAnimation(.easeOut(duration: 0.2)) {
-            transientNotice = message
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.4) {
-            if transientNoticeGeneration == generation {
-                withAnimation(.easeOut(duration: 0.25)) {
-                    transientNotice = nil
-                }
-            }
-        }
+        noticeCenter.show(message)
     }
 
+    /// Local-first collection delete: the collection leaves the local model
+    /// and the feed navigates off the dead scope the instant the user
+    /// confirms; the RPC runs behind. A genuine failure restores the rows
+    /// and surfaces a transient notice.
     private func performDelete(_ collection: Collection) {
+        // Deleted sub → land on the parent's aggregate view;
+        // deleted parent → back to All.
+        if let parentId = collection.parentId {
+            scopeCoordinator.activate(.parent(parentId))
+            feedViewModel.activeCollectionFilter = .all(parentId: parentId)
+        } else {
+            scopeCoordinator.activate(.all)
+            feedViewModel.activeCollectionFilter = nil
+        }
+        let removed = collectionsViewModel.removeLocally(collectionId: collection.id)
+        // Memberships re-home when a collection dies.
+        searchCorpusStore.markStale()
         Task {
-            let parentId = collection.parentId
-            let ok = await collectionsViewModel.deleteCollection(id: collection.id)
+            let ok = await collectionsViewModel.persistDelete(id: collection.id)
             if ok {
-                // Memberships re-home when a collection dies.
-                searchCorpusStore.markStale()
-                // Deleted sub → land on the parent's aggregate view;
-                // deleted parent → back to All.
-                if let parentId {
-                    scopeCoordinator.activate(.parent(parentId))
-                    feedViewModel.activeCollectionFilter = .all(parentId: parentId)
-                } else {
-                    scopeCoordinator.activate(.all)
-                    feedViewModel.activeCollectionFilter = nil
-                }
-                // Collection structure changed: warm scopes re-derive their
-                // membership on their own revalidation.
+                // Entries re-homed server-side: warm scopes re-derive their
+                // membership on revalidation; counts reconcile quietly.
                 scopeCoordinator.revalidateAllWarm()
-                await feedViewModel.loadEntries()
+                collectionsViewModel.refreshQuietly()
+            } else {
+                collectionsViewModel.restoreLocally(removed)
+                showTransientNotice("Couldn\u{2019}t delete collection")
             }
         }
     }
@@ -559,15 +556,17 @@ struct MainAppView: View {
                                         kind: .resurfaced
                                     )
                                     Task {
-                                        await feedViewModel.resurfaceEntry(entry: entry)
-                                        // The move-to-live-edge lands as an
-                                        // arrival in every warm scope it
-                                        // belongs to (unseen while away).
-                                        scopeCoordinator.revalidateScopes(containing: entry)
+                                        // Optimistic: the count is already
+                                        // patched everywhere before the RPC
+                                        // resolves; only reconcile ordering
+                                        // once the server confirms.
+                                        if await feedViewModel.resurfaceEntry(entry: entry) {
+                                            // The move-to-live-edge lands as an
+                                            // arrival in every warm scope it
+                                            // belongs to (unseen while away).
+                                            scopeCoordinator.revalidateScopes(containing: entry)
+                                        }
                                     }
-                                },
-                                onPinTapped: { entry in
-                                    Task { await feedViewModel.togglePin(entry: entry) }
                                 },
                                 onFireTapped: { entry in
                                     Task { await feedViewModel.fireEntry(entry: entry) }
@@ -599,6 +598,7 @@ struct MainAppView: View {
                                 userId: userId,
                                 email: authViewModel.currentUserEmail
                             )
+                            feedViewModel.configure(userId: userId)
                         }
                         searchCorpusStore.pendingProvider = { [weak feedViewModel] in
                             feedViewModel?.pendingDisplayEntries ?? []
@@ -629,20 +629,24 @@ struct MainAppView: View {
                         // Cross-scope hooks: promoted outbox rows and in-place
                         // patches reconcile into every warm scope by ID — and
                         // mirror into the search corpus, so Search reflects
-                        // current truth essentially immediately.
+                        // current truth essentially immediately. The warm
+                        // stores ARE the local truth; optimistic mutations
+                        // resolve their base state from them.
+                        feedViewModel.entryResolver = { [weak scopeCoordinator] id in
+                            scopeCoordinator?.entry(id: id)
+                        }
                         feedViewModel.onEntryPromoted = { [weak scopeCoordinator, weak searchCorpusStore] promoted in
                             scopeCoordinator?.fanOutPromoted(promoted)
                             searchCorpusStore?.upsert(promoted)
                         }
-                        feedViewModel.onEntryPatched = { [weak feedViewModel, weak scopeCoordinator, weak searchCorpusStore] id in
-                            if let fresh = feedViewModel?.entries.first(where: { $0.id == id }) {
-                                scopeCoordinator?.reconcile(fresh)
-                                searchCorpusStore?.upsert(fresh)
-                            } else {
-                                // A comment was patched — not in the root
-                                // array; the corpus refetches on next look.
-                                searchCorpusStore?.markStale()
-                            }
+                        feedViewModel.onEntryChanged = { [weak scopeCoordinator, weak searchCorpusStore] fresh in
+                            scopeCoordinator?.reconcile(fresh)
+                            searchCorpusStore?.upsert(fresh)
+                        }
+                        feedViewModel.onCommentContentChanged = { [weak searchCorpusStore] in
+                            // Comments aren't in warm stores; the corpus
+                            // refetches on Search's next look.
+                            searchCorpusStore?.markStale()
                         }
                         // Deletes confirmed from any screen (detail included)
                         // drop and tombstone the row in every warm scope.
@@ -654,9 +658,6 @@ struct MainAppView: View {
                         }
                         // SWR: cached page already rendered; revalidate quietly.
                         scopeCoordinator.activate(.all)
-                        // Legacy full-array load: still feeds post-capture entry
-                        // lookup and onEntryPatched snapshots. Flagged for removal.
-                        await feedViewModel.loadEntries()
                         await collectionsViewModel.loadCollections()
                         // All is stable: warm the newest page of visible parents.
                         scopeCoordinator.prefetch(
@@ -826,11 +827,17 @@ struct MainAppView: View {
                                     performEntryDelete(entry)
                                 },
                                 onToggleContentHidden: {
+                                    // Optimistic inside toggleEntryHidden: the
+                                    // row updates instantly; a genuine failure
+                                    // rolls back and surfaces quietly.
                                     Task {
-                                        await feedViewModel.toggleEntryHidden(
+                                        let ok = await feedViewModel.toggleEntryHidden(
                                             id: entry.id,
                                             currentValue: entry.isContentHidden
                                         )
+                                        if !ok {
+                                            showTransientNotice("Couldn\u{2019}t update entry")
+                                        }
                                     }
                                 },
                                 onBeginTextEdit: {
@@ -887,13 +894,12 @@ struct MainAppView: View {
                             }
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
                                 fullScreenEditEntry = nil
-                                // Full authoritative reload runs after the overlay is completely gone and
-                                // the keyboard is dismissed, so no overlay or keyboard layout pressure
-                                // is active when entries refreshes. The local patch in updateEntryContent
-                                // already has the correct content, so this reload produces no diff visible
-                                // to the user (same order, same text) and does not shift scroll position.
-                                Task { await feedViewModel.loadEntries() }
                             }
+                            // No authoritative reload: the optimistic patch in
+                            // updateEntryContent is the visible truth and fans
+                            // out to every warm scope. A reload here could
+                            // even race the in-flight persist and briefly
+                            // revert the edit.
                         },
                         onPersistSuccess: {
                             // Editing is a strong resume signal.
@@ -902,6 +908,10 @@ struct MainAppView: View {
                                 contextEntryId: editEntry.id,
                                 kind: .edited
                             )
+                        },
+                        onPersistFailure: {
+                            // updateEntryContent already rolled the row back.
+                            showTransientNotice("Couldn\u{2019}t save edit")
                         }
                     )
                     .transition(.move(edge: .bottom))
@@ -911,7 +921,6 @@ struct MainAppView: View {
                 if isAddToCollectionVisible, let entry = addToCollectionEntry {
                     AddToCollectionFullScreenView(
                         entry: entry,
-                        supabase: supabase,
                         onDismiss: {
                             withAnimation(.easeOut(duration: 0.25)) {
                                 isAddToCollectionVisible = false
@@ -921,16 +930,16 @@ struct MainAppView: View {
                                 addToCollectionAppearsInPlace = false
                             }
                         },
-                        onSuccess: {
-                            let movedId = entry.id
-                            // Membership changed: the corpus refetches on
-                            // Search's next look.
+                        onConfirm: { oldId, newId in
+                            // Local-first move: membership patches every warm
+                            // scope immediately via the fan-out; persistence
+                            // runs behind, counts reconcile quietly.
                             searchCorpusStore.markStale()
                             Task {
-                                await collectionsViewModel.loadCollections()
-                                await feedViewModel.loadEntries()
-                                if let fresh = feedViewModel.entries.first(where: { $0.id == movedId }) {
-                                    scopeCoordinator.reconcile(fresh)
+                                let ok = await feedViewModel.moveEntry(id: entry.id, from: oldId, to: newId)
+                                collectionsViewModel.refreshQuietly()
+                                if !ok {
+                                    showTransientNotice("Couldn\u{2019}t move entry")
                                 }
                             }
                         }
@@ -1073,7 +1082,7 @@ struct MainAppView: View {
             // Lightweight transient notice (delete failures): a floating
             // capsule above the composer that fades in and out on its own.
             .overlay(alignment: .bottom) {
-                if let notice = transientNotice {
+                if let notice = noticeCenter.message {
                     Text(notice)
                         .font(Style.Typography.meta())
                         .foregroundColor(Style.Color.primaryText)
@@ -1110,11 +1119,15 @@ struct MainAppView: View {
                                 .map { $0.name },
                         renameTarget: target,
                         onSuccess: { _ in
-                            // Refresh breadcrumb names in the feed (and the
-                            // corpus's collection-name signal).
+                            // The corpus's collection-name signal is stale the
+                            // moment the local rename lands.
                             searchCorpusStore.markStale()
+                        },
+                        onPersisted: {
+                            // Breadcrumb names in warm scopes refresh only
+                            // AFTER the server rename commits — revalidating
+                            // earlier would refetch the old names.
                             scopeCoordinator.revalidateAllWarm()
-                            Task { await feedViewModel.loadEntries() }
                         }
                     )
                     .transition(.move(edge: .bottom))
@@ -1221,6 +1234,11 @@ struct MainAppView: View {
         // the corpus stale after thread mutations.
         .environmentObject(recentActivityStore)
         .environmentObject(searchCorpusStore)
+        // Warm scope stores + transient notices, shared with pushed detail
+        // screens so deletes there use the same optimistic remove/restore
+        // path (and can surface failures) after the screen has dismissed.
+        .environmentObject(scopeCoordinator)
+        .environmentObject(noticeCenter)
     }
 }
 

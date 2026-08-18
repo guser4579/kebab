@@ -18,11 +18,16 @@ struct EntryDetailView: View {
     var autoFocusComposer: Bool = false
 
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.supabase) private var supabase: SupabaseClient?
     // Search infrastructure: deliberate opens and thread actions are resume
     // signals; thread mutations mark the search corpus stale.
     @EnvironmentObject private var recentActivityStore: RecentActivityStore
     @EnvironmentObject private var searchCorpusStore: SearchCorpusStore
+    // Warm scope stores + transient notices: deletes from this screen use the
+    // same optimistic remove/restore path as the feed, and surface a failure
+    // from a place that still exists after this screen dismisses.
+    @EnvironmentObject private var scopeCoordinator: FeedScopeCoordinator
+    @EnvironmentObject private var noticeCenter: TransientNoticeCenter
+    @EnvironmentObject private var collectionsViewModel: CollectionsViewModel
 
     @State private var didRecordOpen = false
     @State private var displayedRootEntry: Entry
@@ -37,6 +42,10 @@ struct EntryDetailView: View {
     /// directly; `threadData` is always derived from it in the same beat.
     @State private var threadEntries: [Entry] = []
     @State private var threadData: ThreadData?
+    /// The thread revision this screen's local state reflects. Reappearing
+    /// with an unchanged revision does no refetch at all; own optimistic
+    /// mutations advance it in the same beat they bump it.
+    @State private var loadedThreadRevision: Int?
     /// Viewport and entry-content heights, measured so the comment empty
     /// state can center itself in the space the comments would occupy.
     @State private var scrollViewportHeight: CGFloat = 0
@@ -137,8 +146,14 @@ struct EntryDetailView: View {
                     scrollViewportHeight = $0
                 }
                 .onAppear {
-                    Task { await reloadThread() }
-                    syncDisplayedRootFromFeedIfPresent()
+                    // Refetch only when the thread genuinely changed (or was
+                    // never loaded) — popping back from a deeper screen with
+                    // nothing new does zero work.
+                    let revision = feedViewModel.threadRevision(rootId: displayedRootEntry.id)
+                    if threadData == nil || loadedThreadRevision != revision {
+                        Task { await reloadThread() }
+                    }
+                    syncDisplayedRootFromWarmScopes()
                 }
                 .background(Style.Color.background)
                 .foregroundColor(Style.Color.primaryText)
@@ -192,22 +207,38 @@ struct EntryDetailView: View {
                                     if sheetEntry.parent_id != nil {
                                         deleteCommentOptimistically(sheetEntry)
                                     } else {
-                                        Task {
-                                            await feedViewModel.deleteEntry(id: sheetEntry.id)
-                                            dismiss()
-                                        }
+                                        performRootDelete(sheetEntry)
                                     }
                                 },
                                 onToggleContentHidden: {
+                                    // Optimistic: this screen's copy updates in
+                                    // the same beat as the tap; the shared model
+                                    // patch fans out to warm scopes underneath.
+                                    let wasHidden = sheetEntry.isContentHidden
+                                    if sheetEntry.parent_id != nil {
+                                        setThread(threadEntries.map {
+                                            $0.id == sheetEntry.id ? $0.withIsContentHidden(!wasHidden) : $0
+                                        })
+                                        feedViewModel.noteThreadChanged(rootId: displayedRootEntry.id)
+                                        markThreadCurrent()
+                                    } else {
+                                        displayedRootEntry = displayedRootEntry.withIsContentHidden(!wasHidden)
+                                    }
                                     Task {
                                         let succeeded = await feedViewModel.toggleEntryHidden(
                                             id: sheetEntry.id,
-                                            currentValue: sheetEntry.isContentHidden
+                                            currentValue: wasHidden
                                         )
-                                        if sheetEntry.parent_id != nil {
-                                            await reloadThread()
-                                        } else if succeeded {
-                                            displayedRootEntry = displayedRootEntry.withIsContentHidden(!sheetEntry.isContentHidden)
+                                        if !succeeded {
+                                            if sheetEntry.parent_id != nil {
+                                                setThread(threadEntries.map {
+                                                    $0.id == sheetEntry.id ? $0.withIsContentHidden(wasHidden) : $0
+                                                })
+                                                feedViewModel.noteThreadChanged(rootId: displayedRootEntry.id)
+                                                markThreadCurrent()
+                                            } else {
+                                                displayedRootEntry = displayedRootEntry.withIsContentHidden(wasHidden)
+                                            }
                                         }
                                     }
                                 },
@@ -281,30 +312,60 @@ struct EntryDetailView: View {
                                 contextEntryId: editEntry.id,
                                 kind: .edited
                             )
-                            Task { await reloadThread() }
                         },
                         onSaveSuccess: { updated in
+                            // Immediate local patch: root copy and any thread
+                            // row update in the same beat the editor closes.
                             if updated.id == displayedRootEntry.id {
                                 displayedRootEntry = updated
                             }
+                            if updated.parent_id != nil {
+                                setThread(threadEntries.map { $0.id == updated.id ? updated : $0 })
+                                feedViewModel.noteThreadChanged(rootId: displayedRootEntry.id)
+                                markThreadCurrent()
+                            }
+                        },
+                        onPersistFailure: {
+                            // Restore this screen's copies from the pre-edit
+                            // entry; the shared fan-out already rolled back
+                            // every warm scope.
+                            if editEntry.id == displayedRootEntry.id {
+                                displayedRootEntry = editEntry
+                            }
+                            if editEntry.parent_id != nil {
+                                Task { await reloadThread() }
+                            }
+                            noticeCenter.show("Couldn\u{2019}t save edit")
                         }
                     )
                     .transition(.move(edge: .bottom))
                 }
             }
             .overlay {
-                if isAddToCollectionVisible, let supabase {
+                if isAddToCollectionVisible {
                     AddToCollectionFullScreenView(
                         entry: displayedRootEntry,
                         title: onRemoveFromCollection != nil ? "Move entry" : "Add to collection",
-                        supabase: supabase,
                         onDismiss: {
                             withAnimation(.easeOut(duration: 0.25)) {
                                 isAddToCollectionVisible = false
                             }
                         },
-                        onSuccess: {
-                            Task { await feedViewModel.loadEntries() }
+                        onConfirm: { oldId, newId in
+                            // Local-first move; the fan-out patches this
+                            // screen's root via the shared model sync.
+                            searchCorpusStore.markStale()
+                            Task {
+                                let ok = await feedViewModel.moveEntry(
+                                    id: displayedRootEntry.id,
+                                    from: oldId,
+                                    to: newId
+                                )
+                                collectionsViewModel.refreshQuietly()
+                                if !ok {
+                                    noticeCenter.show("Couldn\u{2019}t move entry")
+                                }
+                            }
                         }
                     )
                     .transition(.move(edge: .bottom))
@@ -312,9 +373,6 @@ struct EntryDetailView: View {
             }
             .background(Style.Color.background)
             .ignoresSafeArea(edges: .top)
-            .onChange(of: feedViewModel.entries) { _, _ in
-                syncDisplayedRootFromFeedIfPresent()
-            }
         }
         .background(Style.Color.background.ignoresSafeArea())
         .navigationBarBackButtonHidden(true)
@@ -341,8 +399,18 @@ struct EntryDetailView: View {
     }
 
     private func reloadThread() async {
+        // Capture the revision at fetch start: a mutation landing mid-fetch
+        // leaves us stale, so the next appearance refetches.
+        let revision = feedViewModel.threadRevision(rootId: displayedRootEntry.id)
         let entries = await feedViewModel.loadComments(rootId: displayedRootEntry.id)
         setThread(entries)
+        loadedThreadRevision = revision
+    }
+
+    /// Own optimistic mutations advance the recorded revision in the same
+    /// beat they bump it — local state is already current, no self-refetch.
+    private func markThreadCurrent() {
+        loadedThreadRevision = feedViewModel.threadRevision(rootId: displayedRootEntry.id)
     }
 
     private func setThread(_ entries: [Entry]) {
@@ -380,6 +448,7 @@ struct EntryDetailView: View {
         )
         setThread(threadEntries + [optimistic])
         feedViewModel.applyCommentCountDelta(rootId: displayedRootEntry.id, delta: 1)
+        markThreadCurrent()
 
         Task {
             let ok = await feedViewModel.sendComment(
@@ -398,12 +467,31 @@ struct EntryDetailView: View {
                     contextEntryId: displayedRootEntry.id,
                     kind: .commented
                 )
-                await reloadThread()
+                // No thread refetch: the optimistic row shares the server
+                // row's id, so local state already IS the merged truth.
                 searchCorpusStore.markStale()
             } else {
                 setThread(threadEntries.filter { $0.id != optimistic.id })
                 feedViewModel.applyCommentCountDelta(rootId: displayedRootEntry.id, delta: -1)
+                markThreadCurrent()
                 commentSendFailed = true
+            }
+        }
+    }
+
+    /// Optimistic root deletion, matching the feed's behavior: the entry
+    /// leaves every warm scope and this screen dismisses in the same beat;
+    /// the backend delete (with its own transport retries) runs invisibly.
+    /// A genuine failure restores the entry everywhere and surfaces a
+    /// transient notice from the feed, which is what's on screen by then.
+    private func performRootDelete(_ entry: Entry) {
+        let removals = scopeCoordinator.removeForDelete(id: entry.id)
+        dismiss()
+        Task {
+            let deleted = await feedViewModel.deleteEntry(id: entry.id)
+            if !deleted {
+                scopeCoordinator.restoreAfterFailedDelete(removals)
+                noticeCenter.show("Failed to delete")
             }
         }
     }
@@ -414,6 +502,7 @@ struct EntryDetailView: View {
         let removedCount = (threadData?.subtreeCount(for: comment.id) ?? 0) + 1
         setThread(threadEntries.filter { !subtreeIds(of: comment.id).contains($0.id) })
         feedViewModel.applyCommentCountDelta(rootId: displayedRootEntry.id, delta: -removedCount)
+        markThreadCurrent()
 
         Task {
             let ok = await feedViewModel.deleteEntry(id: comment.id)
@@ -441,9 +530,11 @@ struct EntryDetailView: View {
         return doomed
     }
 
-    /// Keeps local root state aligned with `feedViewModel.entries` after pin/resurface/fire.
-    private func syncDisplayedRootFromFeedIfPresent() {
-        if let updated = feedViewModel.entries.first(where: { $0.id == displayedRootEntry.id }) {
+    /// Realigns local root state with the warm scope stores on appearance —
+    /// mutations made elsewhere (feed row actions while this screen was
+    /// deeper in the stack) land here without any whole-corpus mirror.
+    private func syncDisplayedRootFromWarmScopes() {
+        if let updated = scopeCoordinator.entry(id: displayedRootEntry.id), !updated.isPending {
             displayedRootEntry = updated
         }
     }
@@ -564,26 +655,29 @@ struct EntryDetailView: View {
                 includeChat: false,
                 showResurface: onRemoveFromCollection == nil,
                 onResurfaceTapped: {
+                    // Optimistic on this screen's copy in the same beat; the
+                    // shared fan-out handles every warm scope. Rollback
+                    // restores the pre-tap count on genuine failure.
                     let current = displayedRootEntry
+                    displayedRootEntry = current.withResurfaceCount(current.resurface_count + 1)
                     recentActivityStore.record(
                         rootId: current.id,
                         contextEntryId: current.id,
                         kind: .resurfaced
                     )
                     Task {
-                        await feedViewModel.resurfaceEntry(entry: current)
-                    }
-                },
-                onPinTapped: {
-                    let current = displayedRootEntry
-                    Task {
-                        await feedViewModel.togglePin(entry: current)
+                        if await feedViewModel.resurfaceEntry(entry: current) == false {
+                            displayedRootEntry = displayedRootEntry.withResurfaceCount(current.resurface_count)
+                        }
                     }
                 },
                 onFireTapped: {
                     let current = displayedRootEntry
+                    displayedRootEntry = current.withFireCount(current.fire_count + 1)
                     Task {
-                        await feedViewModel.fireEntry(entry: current)
+                        if await feedViewModel.fireEntry(entry: current) == false {
+                            displayedRootEntry = displayedRootEntry.withFireCount(current.fire_count)
+                        }
                     }
                 }
             )
@@ -709,7 +803,9 @@ struct EntryDetailView: View {
                             Checklist.toggling(entry.content, lineIndex: lineIndex)
                         )
                         Task {
-                            await feedViewModel.toggleChecklistItem(entry: entry, lineIndex: lineIndex)
+                            if await feedViewModel.toggleChecklistItem(entry: entry, lineIndex: lineIndex) == false {
+                                displayedRootEntry = entry
+                            }
                         }
                     } label: {
                         HStack(alignment: .firstTextBaseline, spacing: Style.Spacing.x3) {

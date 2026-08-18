@@ -9,7 +9,12 @@ import Foundation
 /// collections lists are small (hundreds of rows), so whole-snapshot atomic
 /// writes of the existing Codable models are simpler and more durable than a
 /// database: no schema, no migrations, nothing to corrupt halfway.
-enum LocalStore {
+///
+/// Deliberately nonisolated: work runs on whatever thread calls it. Small
+/// snapshots keep calling synchronously from the main actor; the search
+/// corpus (unbounded) calls from detached tasks so its whole-corpus encodes
+/// never touch the main thread.
+nonisolated enum LocalStore {
 
     private static var directory: URL = {
         let base = FileManager.default.urls(

@@ -20,7 +20,6 @@ struct ScopeFeedView: View {
     var onEntryOpened: (() -> Void)?
     let onMoreTapped: (Entry) -> Void
     let onResurfaceTapped: (Entry) -> Void
-    let onPinTapped: (Entry) -> Void
     let onFireTapped: (Entry) -> Void
     let onPendingWarningTapped: (Entry) -> Void
 
@@ -68,7 +67,6 @@ struct ScopeFeedView: View {
                         onResultActivated: { onEntryOpened?() },
                         onMoreTapped: { onMoreTapped(entry) },
                         onResurfaceTapped: { onResurfaceTapped(entry) },
-                        onPinTapped: { onPinTapped(entry) },
                         onFireTapped: { onFireTapped(entry) },
                         onPendingWarningTapped: { onPendingWarningTapped(entry) },
                         isSettling: entry.id == settlingEntryId,

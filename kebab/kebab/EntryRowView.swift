@@ -13,7 +13,6 @@ struct EntryRowView: View {
     var onResultActivated: (() -> Void)?
     var onMoreTapped: (() -> Void)?
     var onResurfaceTapped: (() -> Void)?
-    var onPinTapped: (() -> Void)?
     var onFireTapped: (() -> Void)?
     /// Tapping the warning glyph on a pending entry that permanently failed
     /// to sync (Retry / Discard alert lives in the host).
@@ -455,7 +454,6 @@ struct EntryRowView: View {
             showResurface: showResurface,
             onResultActivated: onResultActivated,
             onResurfaceTapped: onResurfaceTapped,
-            onPinTapped: onPinTapped,
             onFireTapped: onFireTapped
         )
     }

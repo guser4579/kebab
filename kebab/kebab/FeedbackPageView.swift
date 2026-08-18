@@ -58,7 +58,7 @@ struct FeedbackPageView: View {
             divider
 
             VStack(alignment: .leading, spacing: 0) {
-                Text("Kebab is made by one person. If something feels wrong, missing, or especially good, I\u{2019}d love to know.")
+                Text("Help improve Kebab by sharing your feedback! If something feels wrong, missing, or especially good, I\u{2019}d love to know.")
                     .font(Style.Typography.body())
                     .foregroundColor(Style.Color.secondary)
                     .fixedSize(horizontal: false, vertical: true)

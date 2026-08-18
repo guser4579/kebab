@@ -51,10 +51,14 @@ final class SearchWorkspace {
         self.recentSearches = recentSearches
         self.recentActivity = recentActivity
 
+        // Deduplicate on the EFFECTIVE (trimmed) query: whitespace-only edits
+        // never re-run the same search or reset per-query state (like an
+        // active collection refinement).
         field.$query
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .removeDuplicates()
-            .sink { [weak self] query in
-                self?.queryDidChange(query)
+            .sink { [weak self] trimmed in
+                self?.queryDidChange(trimmed)
             }
             .store(in: &cancellables)
 
@@ -72,10 +76,13 @@ final class SearchWorkspace {
         field.query.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// The current effective query, for render-time gating (e.g. the empty
+    /// state only shows once results for THIS query have arrived).
+    var effectiveQuery: String { trimmedQuery }
+
     // MARK: - Query pipeline
 
-    private func queryDidChange(_ raw: String) {
-        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+    private func queryDidChange(_ trimmed: String) {
         recentSearches.queryChanged(to: trimmed)
 
         guard !trimmed.isEmpty else {

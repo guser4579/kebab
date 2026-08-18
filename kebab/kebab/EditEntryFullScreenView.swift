@@ -17,14 +17,18 @@ struct EditEntryFullScreenView: View {
     let initialText: String
     @ObservedObject var feedViewModel: FeedViewModel
     let onDismiss: () -> Void
-    /// Called after a successful save, before dismiss.
+    /// Called once the backend accepts the edit (resume-signal recording).
     var onPersistSuccess: (() -> Void)?
-    /// Merge updated text into local detail state when the edited row is the screen’s root item.
+    /// Called IMMEDIATELY on submit with the edited entry, before dismissal —
+    /// hosts patch their local copies (detail root, thread rows) in the same
+    /// beat the editor closes.
     var onSaveSuccess: ((Entry) -> Void)?
+    /// Called if persistence genuinely fails after the editor has dismissed —
+    /// hosts roll back / restore truth and surface a notice.
+    var onPersistFailure: (() -> Void)?
 
     @State private var text: String
-    @State private var isSaving = false
-    @State private var saveErrorMessage: String?
+    @State private var hasSubmitted = false
 
     init(
         entry: Entry,
@@ -32,7 +36,8 @@ struct EditEntryFullScreenView: View {
         feedViewModel: FeedViewModel,
         onDismiss: @escaping () -> Void,
         onPersistSuccess: (() -> Void)? = nil,
-        onSaveSuccess: ((Entry) -> Void)? = nil
+        onSaveSuccess: ((Entry) -> Void)? = nil,
+        onPersistFailure: (() -> Void)? = nil
     ) {
         self.entry = entry
         self.initialText = initialText
@@ -40,6 +45,7 @@ struct EditEntryFullScreenView: View {
         self.onDismiss = onDismiss
         self.onPersistSuccess = onPersistSuccess
         self.onSaveSuccess = onSaveSuccess
+        self.onPersistFailure = onPersistFailure
         _text = State(initialValue: initialText)
     }
 
@@ -53,7 +59,7 @@ struct EditEntryFullScreenView: View {
 
     /// Save control: never persist empty trimmed text; allow tick when unchanged to dismiss only.
     private var tickInteractive: Bool {
-        !trimmedDraft.isEmpty && !isSaving
+        !trimmedDraft.isEmpty && !hasSubmitted
     }
 
     private var needsBackendSave: Bool {
@@ -117,18 +123,6 @@ struct EditEntryFullScreenView: View {
         // Container edges only — `.all` would also ignore the keyboard region
         // and break keyboard avoidance for the editor (see ComposerFullScreen).
         .ignoresSafeArea(.container, edges: [.top, .bottom])
-        .alert("Couldn’t save", isPresented: Binding(
-            get: { saveErrorMessage != nil },
-            set: { if !$0 { saveErrorMessage = nil } }
-        )) {
-            Button("OK", role: .cancel) {
-                saveErrorMessage = nil
-            }
-        } message: {
-            if let saveErrorMessage {
-                Text(saveErrorMessage)
-            }
-        }
     }
 
     private var editHeader: some View {
@@ -154,7 +148,7 @@ struct EditEntryFullScreenView: View {
                     Spacer(minLength: 0)
 
                     Button {
-                        Task { await handlePrimaryAction() }
+                        handlePrimaryAction()
                     } label: {
                         Icon("tick-02")
                             .foregroundColor(
@@ -183,26 +177,33 @@ struct EditEntryFullScreenView: View {
         .background(Style.Color.background)
     }
 
+    /// Local-first save: hosts patch their copies and the editor dismisses in
+    /// the same beat; persistence runs behind. `updateEntryContent` patches
+    /// the shared feed model (root entries) with rollback on failure; hosts
+    /// receive onPersistFailure to restore any thread-local state and surface
+    /// a notice. Content-only persistence can't clobber concurrent attachment
+    /// writers (link enrichment updates attachments in a separate payload).
     @MainActor
-    private func handlePrimaryAction() async {
+    private func handlePrimaryAction() {
         guard tickInteractive else { return }
-        if !needsBackendSave {
-            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-            onDismiss()
-            return
-        }
-
-        isSaving = true
-        let ok = await feedViewModel.updateEntryContent(id: entry.id, content: trimmedDraft)
-        isSaving = false
-
-        if ok {
-            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-            onPersistSuccess?()
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        if needsBackendSave {
+            hasSubmitted = true
             onSaveSuccess?(entry.withContent(trimmedDraft))
-            onDismiss()
-        } else {
-            saveErrorMessage = feedViewModel.errorMessage ?? "Something went wrong."
+            let persistSuccess = onPersistSuccess
+            let persistFailure = onPersistFailure
+            let entryId = entry.id
+            let draft = trimmedDraft
+            let viewModel = feedViewModel
+            Task {
+                let ok = await viewModel.updateEntryContent(id: entryId, content: draft)
+                if ok {
+                    persistSuccess?()
+                } else {
+                    persistFailure?()
+                }
+            }
         }
+        onDismiss()
     }
 }

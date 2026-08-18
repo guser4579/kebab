@@ -179,11 +179,17 @@ private struct SearchContentView: View {
                 }
 
                 if results.resultSet.isEmpty {
-                    Text("No matches")
-                        .font(Style.Typography.body())
-                        .foregroundColor(Style.Color.secondary)
-                        .frame(maxWidth: .infinity)
-                        .padding(.top, 120)
+                    // "No matches" only when evaluation for the CURRENT query
+                    // has definitively come back empty — never while a fresh
+                    // query is still evaluating (no false-negative flash).
+                    if !results.resultSet.query.isEmpty,
+                       results.resultSet.query == workspace.effectiveQuery {
+                        Text("No matches")
+                            .font(Style.Typography.body())
+                            .foregroundColor(Style.Color.secondary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.top, 120)
+                    }
                 } else {
                     ForEach(displayResults) { item in
                         row(for: item)
@@ -233,7 +239,7 @@ private struct SearchContentView: View {
                     Button {
                         results.collectionRefinement = isActive ? nil : facet.collectionId
                     } label: {
-                        Text(facet.name.collectionDisplayName)
+                        Text(facet.name.collectionCompactDisplayName)
                             .font(Style.Typography.pill(selected: isActive))
                             .foregroundColor(
                                 isActive ? Style.Color.composerSendForeground : Style.Color.secondary

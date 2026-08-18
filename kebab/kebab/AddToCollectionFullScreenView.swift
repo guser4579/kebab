@@ -1,5 +1,4 @@
 import SwiftUI
-import Supabase
 
 struct AddToCollectionFullScreenView: View {
 
@@ -7,35 +6,32 @@ struct AddToCollectionFullScreenView: View {
     /// Sticky header title. Defaults to "Add to collection"; pass "Move entry" for the move flow.
     let title: String
     let onDismiss: () -> Void
-    /// Called after a successful mutation so the caller can reload shared collection state.
-    let onSuccess: () -> Void
+    /// Called on tick with (oldCollectionId, newCollectionId). The surface
+    /// dismisses in the same beat — the host owns the local-first membership
+    /// patch, background persistence, and failure rollback.
+    let onConfirm: (UUID?, UUID?) -> Void
 
     /// Shared, already-loaded collections model (injected via environment) —
     /// the picker renders instantly instead of refetching on every open.
     @EnvironmentObject private var collectionsVM: CollectionsViewModel
-    private let repository: CollectionRepository
 
     @State private var selectedCollectionId: UUID?
     @State private var initialCollectionId: UUID?
     /// The parent collection currently expanded in the picker; nil = all collapsed.
     @State private var expandedCollectionId: UUID?
-    @State private var isConfirming = false
-    @State private var confirmError: String?
     @State private var isNewCollectionVisible = false
     @State private var isNewSubVisible = false
 
     init(
         entry: Entry,
         title: String = "Add to collection",
-        supabase: SupabaseClient,
         onDismiss: @escaping () -> Void,
-        onSuccess: @escaping () -> Void
+        onConfirm: @escaping (UUID?, UUID?) -> Void
     ) {
         self.entry = entry
         self.title = title
         self.onDismiss = onDismiss
-        self.onSuccess = onSuccess
-        self.repository = CollectionRepository(supabase: supabase)
+        self.onConfirm = onConfirm
     }
 
     private var hasChange: Bool {
@@ -43,7 +39,7 @@ struct AddToCollectionFullScreenView: View {
     }
 
     private var tickInteractive: Bool {
-        hasChange && !isConfirming
+        hasChange
     }
 
     // MARK: - Helpers
@@ -120,16 +116,6 @@ struct AddToCollectionFullScreenView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(Style.Color.background)
         .ignoresSafeArea(edges: [.top, .bottom])
-        .alert("Couldn't update collection", isPresented: Binding(
-            get: { confirmError != nil },
-            set: { if !$0 { confirmError = nil } }
-        )) {
-            Button("OK", role: .cancel) { confirmError = nil }
-        } message: {
-            if let confirmError {
-                Text(confirmError)
-            }
-        }
         .overlay {
             if isNewCollectionVisible {
                 NewCollectionFullScreenView(
@@ -138,10 +124,11 @@ struct AddToCollectionFullScreenView: View {
                         withAnimation(.easeOut(duration: 0.25)) {
                             isNewCollectionVisible = false
                         }
-                        // Auto-select the newly created top-level collection.
-                        if let newest = collectionsVM.collections.first(where: { $0.parentId == nil }) {
-                            selectedCollectionId = newest.id
-                        }
+                    },
+                    onSuccess: { created in
+                        // Auto-select the newly created top-level collection by
+                        // its actual id; cancelling never changes the selection.
+                        selectedCollectionId = created.id
                     }
                 )
                 .transition(.move(edge: .bottom))
@@ -213,7 +200,7 @@ struct AddToCollectionFullScreenView: View {
                     Spacer(minLength: 0)
 
                     Button {
-                        Task { await handleConfirm() }
+                        handleConfirm()
                     } label: {
                         Icon("tick-02")
                             .foregroundColor(
@@ -461,26 +448,12 @@ struct AddToCollectionFullScreenView: View {
 
     // MARK: - Confirm
 
+    /// Local-first: report the change and dismiss in the same beat. The host
+    /// patches membership locally and persists behind with rollback.
     @MainActor
-    private func handleConfirm() async {
+    private func handleConfirm() {
         guard tickInteractive else { return }
-
-        isConfirming = true
-
-        do {
-            if let oldId = initialCollectionId {
-                try await repository.removeEntryFromCollection(entryId: entry.id, collectionId: oldId)
-            }
-            if let newId = selectedCollectionId {
-                try await repository.addEntryToCollection(entryId: entry.id, collectionId: newId)
-            }
-
-            isConfirming = false
-            onSuccess()
-            onDismiss()
-        } catch {
-            isConfirming = false
-            confirmError = error.localizedDescription
-        }
+        onConfirm(initialCollectionId, selectedCollectionId)
+        onDismiss()
     }
 }
