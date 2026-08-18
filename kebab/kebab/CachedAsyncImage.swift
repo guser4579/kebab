@@ -74,6 +74,19 @@ nonisolated enum ImageDiskCache {
     static func write(_ data: Data, for remote: URL) {
         try? data.write(to: fileURL(for: remote), options: .atomic)
     }
+
+    /// Deletes every cached image byte. Called when a session definitively
+    /// ends so one account's entry/avatar imagery cannot linger on disk into
+    /// the next account (the memory cache and URLCache are cleared alongside).
+    static func removeAll() {
+        let files = (try? FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: nil
+        )) ?? []
+        for file in files {
+            try? FileManager.default.removeItem(at: file)
+        }
+    }
 }
 
 /// URLs that failed definitively this session (HTTP 4xx or undecodable

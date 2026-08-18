@@ -58,7 +58,9 @@ final class EntryRepository {
             return inserted.id
 
         } catch {
-            print("INSERT ERROR:", error)
+            // Never log the error object: PostgrestError.detail can echo the
+            // failing row, which includes the entry's full text. Rethrow so
+            // the caller's outbox/UI handles it; the code is enough to triage.
             throw error
         }
     }

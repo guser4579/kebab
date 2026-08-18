@@ -83,6 +83,20 @@ final class CollectionRepository {
             .execute()
     }
 
+    /// Atomically moves `entryId` to `collectionId` (nil = All / unfiled) via a
+    /// single server-side transaction that verifies ownership of both the entry
+    /// and the destination. Replaces the non-atomic remove-then-add pair so a
+    /// failure can never leave the entry unfiled. `params` is `[String: String?]`
+    /// so a nil destination encodes a JSON null (move to All).
+    func moveEntryToCollection(entryId: UUID, collectionId: UUID?) async throws {
+        try await supabase
+            .rpc("move_entry_to_collection", params: [
+                "p_entry_id": entryId.uuidString,
+                "p_collection_id": collectionId?.uuidString
+            ] as [String: String?])
+            .execute()
+    }
+
     /// Creates a sub-collection under `parentId` and returns it as a full
     /// local model (itemCount 0) decoded from the RPC's own response — same
     /// contract as `createCollection`.

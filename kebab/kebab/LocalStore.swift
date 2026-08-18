@@ -22,8 +22,23 @@ nonisolated enum LocalStore {
             in: .userDomainMask
         )[0].appendingPathComponent("kebab-cache", isDirectory: true)
         try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+        // The offline mirror (feed pages, collections, and the full search
+        // corpus — every entry and comment in cleartext) is a rebuildable
+        // copy of server data. Keep it out of iCloud/Finder backups so a
+        // user's private content is not duplicated into backup archives; it
+        // re-downloads on next launch.
+        excludeFromBackup(base)
         return base
     }()
+
+    /// Marks a file/directory as excluded from iTunes/iCloud backup. Best
+    /// effort — a failure just leaves the default (included) behavior.
+    static func excludeFromBackup(_ url: URL) {
+        var url = url
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        try? url.setResourceValues(values)
+    }
 
     private static let encoder: JSONEncoder = {
         let encoder = JSONEncoder()

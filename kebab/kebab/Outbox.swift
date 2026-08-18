@@ -24,6 +24,12 @@ struct PendingEntry: Codable, Identifiable, Equatable {
     /// True after repeated server rejections (not mere connectivity loss);
     /// surfaces the tappable warning state in the feed.
     var failed: Bool = false
+    /// The account that authored this entry. Optional so entries queued by
+    /// older builds still decode (nil = legacy, pre-binding). The flush
+    /// refuses to upload an item whose author differs from the signed-in
+    /// user, so a queued entry can never post into another account even if
+    /// the sign-out purge races an in-flight flush.
+    var authorUserId: UUID? = nil
 }
 
 /// File-backed outbox: one JSON per pending entry plus its image files.
@@ -39,6 +45,11 @@ final class OutboxStore {
             in: .userDomainMask
         )[0].appendingPathComponent("kebab-outbox", isDirectory: true)
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        // Unsent private drafts (and their staged JPEGs) must not travel to
+        // iCloud/Finder backups: a restore onto another device could re-post
+        // them, and they are cleartext personal content. They re-derive from
+        // nothing — losing them on restore is the correct outcome.
+        LocalStore.excludeFromBackup(directory)
     }
 
     private let encoder: JSONEncoder = {
@@ -69,7 +80,7 @@ final class OutboxStore {
     /// Stages pre-encoded images: attach time already produced upload-ready
     /// JPEG bytes, so send-time staging is just small file writes — no
     /// resize, no encode, no main-thread image work.
-    func enqueue(content: String, images: [PendingImage], linkURL: String?, collectionId: UUID?) throws -> PendingEntry {
+    func enqueue(content: String, images: [PendingImage], linkURL: String?, collectionId: UUID?, authorUserId: UUID?) throws -> PendingEntry {
         let id = UUID()
         var filenames: [String] = []
         for (index, image) in images.enumerated() {
@@ -86,7 +97,8 @@ final class OutboxStore {
             collectionId: collectionId,
             imageFilenames: filenames,
             linkURL: linkURL,
-            createdAt: Date()
+            createdAt: Date(),
+            authorUserId: authorUserId
         )
         try persist(pending)
         return pending

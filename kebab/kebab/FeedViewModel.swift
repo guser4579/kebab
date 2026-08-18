@@ -168,7 +168,8 @@ final class FeedViewModel: ObservableObject {
                 content: trimmed,
                 images: images,
                 linkURL: linkURL?.absoluteString,
-                collectionId: collectionId
+                collectionId: collectionId,
+                authorUserId: supabase.auth.currentSession?.user.id
             )
             pendingEntries.append(pending)
             kickFlush()
@@ -200,8 +201,19 @@ final class FeedViewModel: ObservableObject {
         for pending in pendingEntries.filter({ !$0.failed }) {
             do {
                 var attachments: [EntryAttachment] = []
-                let imagePayloads = outbox.loadImageDatas(for: pending)
                 let session = try await supabase.auth.session
+                // Account-boundary guard: never upload one account's queued
+                // entry into another. If the signed-in user differs from the
+                // entry's author (a sign-out/sign-in raced this flush), drop
+                // the item instead of posting it as the wrong user. Legacy
+                // items (nil author, queued before author-binding) keep the
+                // old behavior — they predate multi-account on this device.
+                if let author = pending.authorUserId, author != session.user.id {
+                    pendingEntries.removeAll { $0.id == pending.id }
+                    outbox.remove(pending)
+                    continue
+                }
+                let imagePayloads = outbox.loadImageDatas(for: pending)
                 if !imagePayloads.isEmpty {
                     // Staged bytes ARE the upload payload — no second
                     // decode/encode generation at flush time.
@@ -308,6 +320,12 @@ final class FeedViewModel: ObservableObject {
                 _ = error
                 break
             } catch {
+                // No signed-in session (e.g. `auth.session` threw because a
+                // sign-out raced this flush): stop the pass and do NOT write
+                // the item back. Re-persisting here would resurrect a purged
+                // entry, which could then flush into the next account. The
+                // item, if genuinely the current user's, is already on disk.
+                if supabase.auth.currentSession == nil { break }
                 var updated = pending
                 updated.attempts += 1
                 if updated.attempts >= 3 {
@@ -614,7 +632,6 @@ final class FeedViewModel: ObservableObject {
             if let warm {
                 onEntryChanged?(warm.withIsContentHidden(currentValue))
             }
-            print("Failed to toggle entry hidden state:", error)
             return false
         }
     }
@@ -635,7 +652,6 @@ final class FeedViewModel: ObservableObject {
         } catch {
             let now = currentEntry(id: entry.id, fallback: base)
             onEntryChanged?(now.withResurfaceCount(base.resurface_count))
-            print("Failed to resurface entry:", error)
             return false
         }
     }
@@ -654,7 +670,6 @@ final class FeedViewModel: ObservableObject {
         } catch {
             let now = currentEntry(id: entry.id, fallback: base)
             onEntryChanged?(now.withFireCount(base.fire_count))
-            print("Failed to fire entry:", error)
             return false
         }
     }
@@ -692,7 +707,8 @@ final class FeedViewModel: ObservableObject {
             // success would double-count.
             return true
         } catch {
-            print("Failed to send comment:", error)
+            // Don't log the error: PostgrestError.detail can carry the comment
+            // text. The boolean return drives the caller's rollback.
             return false
         }
     }
@@ -736,11 +752,20 @@ final class FeedViewModel: ObservableObject {
         let previousCollectionId = entryResolver?(id)?.collection_id ?? oldCollectionId
         applyCollectionMembership(entryId: id, collectionId: newCollectionId)
         do {
-            if let oldCollectionId {
-                try await collectionRepository.removeEntryFromCollection(entryId: id, collectionId: oldCollectionId)
-            }
-            if let newCollectionId {
-                try await collectionRepository.addEntryToCollection(entryId: id, collectionId: newCollectionId)
+            do {
+                // Preferred path: one atomic, ownership-checked server move.
+                try await collectionRepository.moveEntryToCollection(entryId: id, collectionId: newCollectionId)
+            } catch where Self.isMissingFunction(error) {
+                // The atomic RPC isn't deployed yet (older backend). Fall back
+                // to the legacy remove-then-add so the move still works; the
+                // atomic path takes over automatically once the migration
+                // (20260818_atomic_move_entry.sql) is applied.
+                if let oldCollectionId {
+                    try await collectionRepository.removeEntryFromCollection(entryId: id, collectionId: oldCollectionId)
+                }
+                if let newCollectionId {
+                    try await collectionRepository.addEntryToCollection(entryId: id, collectionId: newCollectionId)
+                }
             }
             return true
         } catch {
@@ -748,6 +773,13 @@ final class FeedViewModel: ObservableObject {
             errorMessage = error.localizedDescription
             return false
         }
+    }
+
+    /// True when PostgREST reports the RPC signature doesn't exist (schema
+    /// cache miss, code PGRST202) — i.e. the atomic move function hasn't been
+    /// deployed. Any other error is a real failure and must not fall back.
+    private static func isMissingFunction(_ error: Error) -> Bool {
+        (error as? PostgrestError)?.code == "PGRST202"
     }
 
     // MARK: - Thread staleness
