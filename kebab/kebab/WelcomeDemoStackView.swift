@@ -58,7 +58,7 @@ struct WelcomeDemoStackView: View {
     /// Where hidden cards wait before rising into the front position.
     private static let riseFrom: CGFloat = 60
 
-    private static let dwellNanos: UInt64 = 3_800_000_000
+    private static let dwellNanos: UInt64 = 2_400_000_000
     private static let shuffleDuration: Double = 0.35
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
