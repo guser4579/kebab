@@ -18,7 +18,15 @@ struct InvertedFeedScrollView<Item: Identifiable, Row: View>: View where Item.ID
 
     let items: [Item]                       // newest first
     /// Points from the live edge within which the feed still counts as live.
-    var liveEdgeTolerance: CGFloat = 60
+    ///
+    /// Deliberately tight. The tolerance exists to absorb settling and
+    /// rounding at rest, not to forgive real scrolling: anything wider lets
+    /// an arrival insert at index 0 while the viewport stays put, landing
+    /// the new row just above the visible area with no FAB to announce it —
+    /// the store believes the user is watching the live edge, so it never
+    /// buffers. Below this threshold the user is at the top and arrivals
+    /// flow in; above it they are browsing history and arrivals wait.
+    var liveEdgeTolerance: CGFloat = 12
     /// Screens of remaining history below which the next page is prefetched.
     var prefetchScreens: CGFloat = 2.5
     @Binding var scrollToLiveEdgeSignal: Int
