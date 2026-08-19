@@ -33,6 +33,14 @@ final class SearchCorpusStore: ObservableObject {
     private var lastRefreshAt: Date?
     /// Quiet revalidation cadence when nothing marked the corpus stale.
     private static let refreshInterval: TimeInterval = 300
+    /// Rows per corpus request. The mirror must be COMPLETE — Search accuracy
+    /// and first-frame thread geometry both depend on it — so the fetch pages
+    /// explicitly instead of issuing one unbounded request whose size a
+    /// server-side `db-max-rows` could silently clip. Each request stays well
+    /// under any realistic cap.
+    private static let corpusPageSize = 1000
+    /// Backstop so a misbehaving server can never spin the paging loop.
+    private static let corpusMaxPages = 500
 
     /// In-flight cached-snapshot load (startup decode happens off-main).
     /// Refresh awaits it so Search never treats a still-loading corpus as
@@ -102,17 +110,28 @@ final class SearchCorpusStore: ObservableObject {
         defer { isRefreshing = false }
 
         do {
-            async let fetchedEntries: [Entry] = supabase
-                .from("entries")
-                .select("id,user_id,parent_id,root_id,depth,content,created_at,pinned_at,is_content_hidden,resurface_count,fire_count,attachments")
-                .order("created_at", ascending: false)
-                .execute()
-                .value
-            async let fetchedMemberships: [MembershipRow] = supabase
-                .from("collection_entries")
-                .select("entry_id,collection_id")
-                .execute()
-                .value
+            // Both orderings are TOTAL (a tiebreaker after the sort key), so
+            // rows can't shuffle between pages and get skipped or duplicated.
+            async let fetchedEntries: [Entry] = fetchAllPages { from, to in
+                try await supabase
+                    .from("entries")
+                    .select("id,user_id,parent_id,root_id,depth,content,created_at,pinned_at,is_content_hidden,resurface_count,fire_count,attachments")
+                    .order("created_at", ascending: false)
+                    .order("id", ascending: false)
+                    .range(from: from, to: to)
+                    .execute()
+                    .value
+            }
+            async let fetchedMemberships: [MembershipRow] = fetchAllPages { from, to in
+                try await supabase
+                    .from("collection_entries")
+                    .select("entry_id,collection_id")
+                    .order("entry_id", ascending: false)
+                    .order("collection_id", ascending: false)
+                    .range(from: from, to: to)
+                    .execute()
+                    .value
+            }
 
             let (freshEntries, memberships) = try await (fetchedEntries, fetchedMemberships)
             let membershipMap = Dictionary(
@@ -130,6 +149,27 @@ final class SearchCorpusStore: ObservableObject {
         } catch {
             // Offline or failed refresh: the cached corpus stays authoritative.
         }
+    }
+
+    /// Reads every row of a table by explicit ranges, so the result is the
+    /// whole set regardless of any server row cap.
+    ///
+    /// Termination advances by the number of rows actually returned and stops
+    /// only on an empty page — correct whether a short page means "end of
+    /// data" or "the server clipped this request", which a `count < pageSize`
+    /// test would get wrong in the second case.
+    private func fetchAllPages<T: Decodable & Sendable>(
+        _ page: (_ from: Int, _ to: Int) async throws -> [T]
+    ) async throws -> [T] {
+        var all: [T] = []
+        var offset = 0
+        for _ in 0..<Self.corpusMaxPages {
+            let rows = try await page(offset, offset + Self.corpusPageSize - 1)
+            guard !rows.isEmpty else { return all }
+            all.append(contentsOf: rows)
+            offset += rows.count
+        }
+        return all
     }
 
     // MARK: - Immediate local truth
