@@ -1,8 +1,9 @@
 import SwiftUI
 
-/// One feed scope's surface: inverted scroll container + its FeedStore + the
-/// scope's own three-state jump-to-newest FAB. MainAppView keeps one of these
-/// alive per visited scope, so switching scopes swaps already-open surfaces.
+/// One feed scope's surface: the feed scroll container + its FeedStore + the
+/// scope's own three-state jump-to-newest FAB, pinned below the collection
+/// navigation. MainAppView keeps one of these alive per visited scope, so
+/// switching scopes swaps already-open surfaces.
 struct ScopeFeedView: View {
 
     @ObservedObject var store: FeedStore
@@ -11,11 +12,6 @@ struct ScopeFeedView: View {
     @ObservedObject var feedViewModel: FeedViewModel
     let containerHeight: CGFloat
     let settlingEntryId: UUID?
-    /// True while the post-capture quick actions occupy the area above the
-    /// composer: they take temporary priority over the FAB, which returns via
-    /// its normal transition once they dismiss. The underlying unseen/distance
-    /// state keeps updating untouched.
-    var suppressesFAB: Bool = false
     var onUserScroll: (() -> Void)?
     var onEntryOpened: (() -> Void)?
     let onMoreTapped: (Entry) -> Void
@@ -62,8 +58,9 @@ struct ScopeFeedView: View {
                     EntryRowView(
                         entry: entry,
                         feedViewModel: feedViewModel,
-                        // Newest (first) row sits flush above the composer.
-                        showBottomSeparator: entry.id != entries.first?.id || entries.count == 1,
+                        // The oldest (last) row ends the feed: no trailing
+                        // hairline into empty space below it.
+                        showBottomSeparator: entry.id != entries.last?.id,
                         onResultActivated: { onEntryOpened?() },
                         onMoreTapped: { onMoreTapped(entry) },
                         onResurfaceTapped: { onResurfaceTapped(entry) },
@@ -77,7 +74,7 @@ struct ScopeFeedView: View {
                 }
             }
         }
-        .overlay(alignment: .bottom) { fab }
+        .overlay(alignment: .top) { fab }
     }
 
     /// Quiet empty state for a collection or sub-collection scope, in the
@@ -124,7 +121,6 @@ struct ScopeFeedView: View {
     /// underneath exactly as before, revealed on returning to the live edge.
     private var showFAB: Bool {
         store.scope == .all
-            && !suppressesFAB
             && (store.unseenCount > 0 || distanceFromLiveEdge > containerHeight)
     }
 
@@ -136,7 +132,6 @@ struct ScopeFeedView: View {
                 } label: {
                     HStack(spacing: 6) {
                         Icon("arrow-up", glyphSize: Style.Icon.glyphSmall)
-                            .rotationEffect(.degrees(180))
                             .foregroundColor(Style.Color.primaryText)
                         if store.unseenCount > 0 {
                             Text(store.unseenCount == 1 ? "1 new entry" : "\(store.unseenCount) new entries")
@@ -156,7 +151,7 @@ struct ScopeFeedView: View {
                     .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
-                .padding(.bottom, 12)
+                .padding(.top, 12)
                 .transition(.opacity.combined(with: .scale(scale: 0.85)))
             }
         }
@@ -185,6 +180,6 @@ struct ScopeFeedView: View {
             Spacer()
         }
         .padding(.top, Style.Spacing.x4)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 }

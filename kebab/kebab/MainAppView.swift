@@ -536,10 +536,6 @@ struct MainAppView: View {
                                 feedViewModel: feedViewModel,
                                 containerHeight: geometry.size.height,
                                 settlingEntryId: settlingEntryId,
-                                // Quick actions take temporary priority over
-                                // the FAB; it returns via its own transition
-                                // once they dismiss.
-                                suppressesFAB: postCaptureEntryId != nil,
                                 onUserScroll: { dismissPostCapture() },
                                 onEntryOpened: { dismissPostCapture() },
                                 onMoreTapped: { entry in
