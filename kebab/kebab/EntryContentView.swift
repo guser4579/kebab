@@ -25,6 +25,11 @@ struct EntryContentView: View {
     var showsEllipsis: Bool = true
     var showsActionRow: Bool = true
     var showResurface: Bool = true
+    /// The entry's reminder, when it has a scheduled one. Rendered as quiet
+    /// meta beside the timestamp; nil renders exactly as before.
+    var reminder: EntryReminder? = nil
+    var remindersCanDeliver: Bool = true
+    var onReminderTapped: (() -> Void)? = nil
     var onMoreTapped: (() -> Void)? = nil
     var onResurfaceTapped: (() -> Void)? = nil
     var onFireTapped: (() -> Void)? = nil
@@ -140,6 +145,16 @@ struct EntryContentView: View {
                         .foregroundColor(Style.Color.fire)
                 }
                 .padding(.leading, 2)
+            }
+
+            if let reminder, reminder.lifecycle() == .scheduled {
+                ReminderAffordanceView(
+                    reminder: reminder,
+                    canDeliver: remindersCanDeliver,
+                    onTap: onReminderTapped
+                )
+                .padding(.leading, 2)
+                .layoutPriority(1)
             }
 
             Spacer(minLength: 0)

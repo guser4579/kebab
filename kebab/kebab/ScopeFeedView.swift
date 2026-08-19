@@ -18,6 +18,11 @@ struct ScopeFeedView: View {
     let onResurfaceTapped: (Entry) -> Void
     let onFireTapped: (Entry) -> Void
     let onPendingWarningTapped: (Entry) -> Void
+    let onReminderTapped: (Entry) -> Void
+
+    /// Reminder metadata for the rows. Observed so a reminder set, removed,
+    /// or fired anywhere re-renders the affected row — and nothing else.
+    @ObservedObject var reminderStore: ReminderStore
 
     @State private var scrollToLiveEdgeSignal = 0
     @State private var distanceFromLiveEdge: CGFloat = 0
@@ -67,6 +72,9 @@ struct ScopeFeedView: View {
                         onFireTapped: { onFireTapped(entry) },
                         onPendingWarningTapped: { onPendingWarningTapped(entry) },
                         isSettling: entry.id == settlingEntryId,
+                        reminder: reminderStore.reminder(for: entry.id),
+                        remindersCanDeliver: reminderStore.authorization.canDeliver,
+                        onReminderTapped: { onReminderTapped(entry) },
                         // Only All shows an entry's collection home —
                         // collection scopes already are that context.
                         showsCollectionProvenance: store.scope == .all

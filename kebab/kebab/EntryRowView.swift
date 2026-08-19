@@ -22,6 +22,14 @@ struct EntryRowView: View {
     /// Post-capture settling: a brief surface emphasis so the eye lands on
     /// the thing just saved. A receipt, not a celebration.
     var isSettling: Bool = false
+    /// This entry's reminder, if it has one. Scheduled reminders render the
+    /// quiet clock affordance; a fired one the user hasn't returned to
+    /// renders the unread treatment instead. nil renders exactly as before.
+    var reminder: EntryReminder? = nil
+    /// False when the OS won't deliver — the affordance says so rather than
+    /// implying a reminder that can't arrive.
+    var remindersCanDeliver: Bool = true
+    var onReminderTapped: (() -> Void)? = nil
     /// True only in the All scope: the entry's most specific collection home
     /// renders quietly in the bottom-right metadata area. Collection scopes
     /// already carry that context and pass false.
@@ -37,6 +45,16 @@ struct EntryRowView: View {
     /// collapse cap — a rendered-size decision, not a character count.
     @State private var fullBodyHeight: CGFloat = 0
     @State private var cappedBodyHeight: CGFloat = 0
+
+    private var reminderLifecycle: EntryReminder.Lifecycle? {
+        reminder?.lifecycle()
+    }
+
+    /// Fired but not yet revisited: the row carries the unread mark instead
+    /// of any language implying the reminder is still pending.
+    private var isReminderUnread: Bool {
+        reminderLifecycle == .firedUnread
+    }
 
     private var displayContent: String {
         if entry.isContentHidden {
@@ -62,8 +80,18 @@ struct EntryRowView: View {
                 bottomSeparator
             }
         }
-        .background(isSettling ? Style.Color.composerBackground : SwiftUI.Color.clear)
+        .background(rowBackground)
         .animation(.easeOut(duration: 0.45), value: isSettling)
+        .animation(.easeOut(duration: 0.45), value: isReminderUnread)
+    }
+
+    /// The post-capture receipt wins while it runs; the unread reminder
+    /// highlight is a lighter, longer-lived version of the same surface —
+    /// "this came back for you", never selection or alarm.
+    private var rowBackground: SwiftUI.Color {
+        if isSettling { return Style.Color.composerBackground }
+        if isReminderUnread { return Style.Color.composerBackground.opacity(0.5) }
+        return SwiftUI.Color.clear
     }
 
     private var hasLinkCard: Bool {
@@ -148,6 +176,11 @@ struct EntryRowView: View {
 
     private var headerRow: some View {
         HStack {
+            if isReminderUnread {
+                ReminderUnreadDot()
+                    .padding(.trailing, 2)
+            }
+
             TimelineView(.periodic(from: .now, by: 60)) { context in
                 Text(Style.Timestamp.relative(for: entry.created_at, relativeTo: context.date))
                     .font(Style.Typography.meta())
@@ -200,6 +233,16 @@ struct EntryRowView: View {
                         .foregroundColor(Style.Color.fire)
                 }
                 .padding(.leading, 2)
+            }
+
+            if let reminder, reminderLifecycle == .scheduled {
+                ReminderAffordanceView(
+                    reminder: reminder,
+                    canDeliver: remindersCanDeliver,
+                    onTap: onReminderTapped
+                )
+                .padding(.leading, 2)
+                .layoutPriority(1)
             }
 
             Spacer(minLength: 0)

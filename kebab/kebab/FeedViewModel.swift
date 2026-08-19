@@ -702,6 +702,12 @@ final class FeedViewModel: ObservableObject {
         }
     }
 
+    /// Fetches one entry from the server. Used only by the reminder deep
+    /// link, when the target isn't in any warm scope or the corpus mirror.
+    func fetchEntry(id: UUID) async -> Entry? {
+        try? await repository.fetchEntry(id: id)
+    }
+
     /// nil means the fetch itself failed (offline or server error) — callers
     /// keep or substitute local truth. An empty array is a real answer: the
     /// server says the thread has no comments.

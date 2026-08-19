@@ -12,6 +12,9 @@ struct EntryActionSheetView: View {
     let onToggleContentHidden: () -> Void
     /// Presents full-screen text editor after the host dismisses this sheet.
     let onBeginTextEdit: () -> Void
+    /// Opens the reminder sheet (entry's existing reminder, or a new one).
+    /// Root entries only — reminders belong to entries, not comments.
+    var onRemindMe: (() -> Void)? = nil
     /// Presents the add-to-collection flow. Only shown for root entries not currently in a collection.
     var onAddToCollection: (() -> Void)? = nil
     /// Opens the move-entry destination picker. Shown for root entries already in a collection/sub-collection.
@@ -41,6 +44,15 @@ struct EntryActionSheetView: View {
                 )
 
                 if !isComment {
+                    if let onRemindMe {
+                        hairline
+                        actionRow(
+                            title: "Remind me",
+                            iconName: "clock-01",
+                            action: { onRemindMe() }
+                        )
+                    }
+
                     if let onMoveEntry {
                         hairline
                         actionRow(

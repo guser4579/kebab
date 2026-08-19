@@ -32,6 +32,9 @@ struct EntryDetailView: View {
     @EnvironmentObject private var scopeCoordinator: FeedScopeCoordinator
     @EnvironmentObject private var noticeCenter: TransientNoticeCenter
     @EnvironmentObject private var collectionsViewModel: CollectionsViewModel
+    /// Reminder truth for this entry: the affordance, the delivered-note
+    /// banner, and the editor all read from here.
+    @EnvironmentObject private var reminderStore: ReminderStore
 
     @State private var didRecordOpen = false
     @State private var displayedRootEntry: Entry
@@ -58,6 +61,8 @@ struct EntryDetailView: View {
     /// Drives the arrival tint; nonzero only during the one-time animation.
     @State private var arrivalHighlightOpacity: Double = 0
     @State private var hasRunArrivalHighlight = false
+    @State private var isReminderSheetVisible = false
+    @State private var isReminderSheetPresented = false
 
     init(
         entry: Entry,
@@ -98,6 +103,17 @@ struct EntryDetailView: View {
                             } action: {
                                 entryContentHeight = $0
                             }
+
+                        // The reminder's own words, kept where they are
+                        // useful: below the entry, above the conversation.
+                        // Never a comment, never auto-dismissed.
+                        if let note = reminderStore.pendingNote(for: displayedRootEntry.id) {
+                            ReminderNoteBannerView(note: note) {
+                                withAnimation(.easeOut(duration: 0.2)) {
+                                    reminderStore.dismissNote(entryId: displayedRootEntry.id)
+                                }
+                            }
+                        }
 
                         if !directChildren.isEmpty {
                             // Comments hang from the entry's origin node:
@@ -273,6 +289,15 @@ struct EntryDetailView: View {
                                         }
                                     }
                                 },
+                                onRemindMe: sheetEntry.parent_id == nil ? {
+                                    withAnimation(.easeOut(duration: 0.25)) {
+                                        isEntryActionSheetVisible = false
+                                    }
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                                        activeEntryMenuEntry = nil
+                                        openReminderSheet()
+                                    }
+                                } : nil,
                                 onAddToCollection: onRemoveFromCollection != nil ? nil : {
                                     withAnimation(.easeOut(duration: 0.25)) {
                                         isEntryActionSheetVisible = false
@@ -389,6 +414,40 @@ struct EntryDetailView: View {
                     .transition(.move(edge: .bottom))
                 }
             }
+            .overlay(alignment: .bottom) {
+                if isReminderSheetPresented {
+                    ZStack(alignment: .bottom) {
+                        Color.black.opacity(0.4)
+                            .ignoresSafeArea()
+                            .transaction { $0.animation = nil }
+                            .onTapGesture { dismissReminderSheet() }
+
+                        if isReminderSheetVisible {
+                            ReminderSheetView(
+                                entry: displayedRootEntry,
+                                existing: reminderStore.activeReminder(for: displayedRootEntry.id),
+                                authorization: reminderStore.authorization,
+                                onSet: { mode, fireAt, note in
+                                    await reminderStore.save(
+                                        entry: displayedRootEntry,
+                                        mode: mode,
+                                        fireAt: fireAt,
+                                        note: note
+                                    )
+                                },
+                                onRemove: {
+                                    Task {
+                                        await reminderStore.removeReminder(entryId: displayedRootEntry.id)
+                                    }
+                                },
+                                onDismiss: { dismissReminderSheet() }
+                            )
+                            .transition(.move(edge: .bottom))
+                        }
+                    }
+                    .ignoresSafeArea(.container, edges: .bottom)
+                }
+            }
             .background(Style.Color.background)
             .ignoresSafeArea(edges: .top)
         }
@@ -413,6 +472,36 @@ struct EntryDetailView: View {
                     kind: .viewed
                 )
             }
+            // Revisiting is what ends a delivered reminder's unread state —
+            // and while we're here, a reminder that fires for THIS entry
+            // shouldn't interrupt with a banner.
+            reminderStore.currentlyViewedEntryId = displayedRootEntry.id
+            reminderStore.markOpened(entryId: displayedRootEntry.id)
+        }
+        .onDisappear {
+            if reminderStore.currentlyViewedEntryId == displayedRootEntry.id {
+                reminderStore.currentlyViewedEntryId = nil
+            }
+        }
+    }
+
+    private func openReminderSheet() {
+        UIApplication.shared.sendAction(
+            #selector(UIResponder.resignFirstResponder),
+            to: nil, from: nil, for: nil
+        )
+        isReminderSheetPresented = true
+        withAnimation(.easeOut(duration: 0.25)) {
+            isReminderSheetVisible = true
+        }
+    }
+
+    private func dismissReminderSheet() {
+        withAnimation(.easeOut(duration: 0.25)) {
+            isReminderSheetVisible = false
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+            isReminderSheetPresented = false
         }
     }
 
@@ -655,6 +744,9 @@ struct EntryDetailView: View {
             commentCount: threadData.map(\.totalCount) ?? displayedRootEntry.comment_count ?? 0,
             isThreaded: !directChildren.isEmpty,
             showResurface: onRemoveFromCollection == nil,
+            reminder: reminderStore.reminder(for: displayedRootEntry.id),
+            remindersCanDeliver: reminderStore.authorization.canDeliver,
+            onReminderTapped: { openReminderSheet() },
             onMoreTapped: {
                 activeEntryMenuEntry = displayedRootEntry
                 withAnimation(.easeOut(duration: 0.25)) {

@@ -81,6 +81,11 @@ final class AuthViewModel: ObservableObject {
     private func handleSessionEnded() {
         LocalStore.removeAll()
         OutboxStore().purgeAll()
+        // Scheduled reminder deliveries belong to the account that set them:
+        // cancel every pending/delivered request so nothing from one session
+        // can fire (or deep-link) into the next. The durable records survive
+        // server-side and re-schedule when that account signs back in.
+        ReminderStore.cancelAllDeliveryForSessionEnd()
         UserDefaults.standard.removeObject(forKey: "composer.draft.feed")
         UserDefaults.standard.removeObject(forKey: "composer.draft.feed.link")
         ImageDiskCache.removeAll()

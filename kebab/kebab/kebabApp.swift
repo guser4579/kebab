@@ -19,6 +19,10 @@ struct kebabApp: App {
     @AppStorage("kebab.appearance") private var appearance = "dark"
 
     init() {
+        // Installed before the first frame so a reminder tap that cold-
+        // launched the app is captured and replayed once the reminder store
+        // attaches — the deep link is never dropped.
+        ReminderNotificationDelegate.install()
         // Generous shared URL cache so link-preview and entry images persist
         // across scrolling sessions and app launches instead of refetching.
         URLCache.shared = URLCache(

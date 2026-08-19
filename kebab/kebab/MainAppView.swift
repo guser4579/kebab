@@ -87,6 +87,17 @@ struct MainAppView: View {
     /// capsule above the composer, never a modal. Shared through the
     /// environment so pushed screens can surface failures after dismissing.
     @StateObject private var noticeCenter = TransientNoticeCenter()
+    /// Durable reminder records + their local delivery. Owned here and
+    /// shared through the environment so detail screens read the same truth.
+    @StateObject private var reminderStore: ReminderStore
+    /// Entry whose reminder sheet is open (two-phase, same as the entry
+    /// action sheet: `entry` mounts the overlay, `visible` animates it).
+    @State private var reminderSheetEntry: Entry?
+    @State private var isReminderSheetVisible = false
+    /// Reminder notification tap: the entry to push, resolved locally when
+    /// possible and fetched only as a last resort.
+    @State private var reminderDeepLinkEntry: Entry?
+    @State private var isReminderDeepLinkActive = false
     @Environment(\.scenePhase) private var scenePhase
 
     let authViewModel: AuthViewModel
@@ -98,6 +109,9 @@ struct MainAppView: View {
         _scopeCoordinator = StateObject(wrappedValue: FeedScopeCoordinator(supabase: supabase))
         _searchCorpusStore = StateObject(wrappedValue: SearchCorpusStore(supabase: supabase))
         _profileStore = StateObject(wrappedValue: ProfileStore(supabase: supabase))
+        _reminderStore = StateObject(wrappedValue: ReminderStore(
+            repository: ReminderRepository(supabase: supabase)
+        ))
         self.authViewModel = authViewModel
     }
 
@@ -323,6 +337,64 @@ struct MainAppView: View {
         }
     }
 
+    private func openRemindQuickAction() {
+        guard let entry = promotedPostCaptureEntry() else { return }
+        dismissPostCapture()
+        openReminderSheet(for: entry)
+    }
+
+    // MARK: - Reminders
+
+    /// One entry point for every reminder surface (quick action, three-dot
+    /// menu, the affordance on a row): an existing reminder opens as itself,
+    /// anything else starts the shortcut list.
+    private func openReminderSheet(for entry: Entry) {
+        UIApplication.shared.sendAction(
+            #selector(UIResponder.resignFirstResponder),
+            to: nil, from: nil, for: nil
+        )
+        reminderSheetEntry = entry
+        withAnimation(.easeOut(duration: 0.25)) {
+            isReminderSheetVisible = true
+        }
+    }
+
+    private func dismissReminderSheet() {
+        withAnimation(.easeOut(duration: 0.25)) {
+            isReminderSheetVisible = false
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+            reminderSheetEntry = nil
+        }
+    }
+
+    /// Notification tap → the entry's normal detail screen. Resolved from
+    /// warm scopes or the on-device corpus first (instant, offline-safe);
+    /// only a genuine miss goes to the server.
+    private func handleReminderDeepLink(_ entryId: UUID) {
+        reminderStore.deepLinkEntryId = nil
+        dismissPostCapture()
+        if let local = scopeCoordinator.entry(id: entryId) ?? searchCorpusStore.entry(id: entryId),
+           !local.isPending {
+            presentReminderDeepLink(local)
+            return
+        }
+        Task {
+            if let fetched = await feedViewModel.fetchEntry(id: entryId) {
+                presentReminderDeepLink(fetched)
+            } else {
+                // Deleted, or unreachable while offline: never leave a
+                // notification tap pointing at a broken screen.
+                showTransientNotice("That entry isn\u{2019}t here anymore")
+            }
+        }
+    }
+
+    private func presentReminderDeepLink(_ entry: Entry) {
+        reminderDeepLinkEntry = entry
+        isReminderDeepLinkActive = true
+    }
+
     /// Transient strip in the reclaimed area above the composer, targeting
     /// the entry that was just created. Flat capsules, feed language.
     private var postCaptureStrip: some View {
@@ -344,6 +416,13 @@ struct MainAppView: View {
                     "Edit",
                     iconName: "pencil-edit-02",
                     action: openEditQuickAction
+                )
+                // Last in the row on purpose: the primary three keep their
+                // positions, and this one is reachable by scrolling.
+                postCaptureAction(
+                    "Remind me",
+                    iconName: "clock-01",
+                    action: openRemindQuickAction
                 )
             }
             .padding(.horizontal, Style.Spacing.x4)
@@ -569,7 +648,12 @@ struct MainAppView: View {
                                 },
                                 onPendingWarningTapped: { entry in
                                     pendingWarningId = entry.id
-                                }
+                                },
+                                onReminderTapped: { entry in
+                                    dismissPostCapture()
+                                    openReminderSheet(for: entry)
+                                },
+                                reminderStore: reminderStore
                             )
                             .opacity(scope == activeScope ? 1 : 0)
                             .allowsHitTesting(scope == activeScope)
@@ -587,6 +671,7 @@ struct MainAppView: View {
                         // Search infrastructure: per-user stores plus the
                         // corpus mirror's data sources.
                         if let userId = authViewModel.currentUserId {
+                            reminderStore.configure(userId: userId)
                             searchCorpusStore.configure(userId: userId)
                             recentActivityStore.configure(userId: userId)
                             recentSearchesStore.configure(userId: userId)
@@ -595,6 +680,11 @@ struct MainAppView: View {
                                 email: authViewModel.currentUserEmail
                             )
                             feedViewModel.configure(userId: userId)
+                        }
+                        // Notification copy for records that arrive without a
+                        // local body cache (synced from another device).
+                        reminderStore.entryProvider = { [weak scopeCoordinator, weak searchCorpusStore] id in
+                            scopeCoordinator?.entry(id: id) ?? searchCorpusStore?.entry(id: id)
                         }
                         searchCorpusStore.pendingProvider = { [weak feedViewModel] in
                             feedViewModel?.pendingDisplayEntries ?? []
@@ -659,9 +749,12 @@ struct MainAppView: View {
                         // drop and tombstone the row in every warm scope.
                         // For the feed's own optimistic path this is a no-op
                         // second removal.
-                        feedViewModel.onEntryDeleted = { [weak scopeCoordinator, weak searchCorpusStore] id in
+                        feedViewModel.onEntryDeleted = { [weak scopeCoordinator, weak searchCorpusStore, weak reminderStore] id in
                             scopeCoordinator?.noteDeletedEverywhere(id: id)
                             searchCorpusStore?.removeEntry(id: id)
+                            // No orphan delivery, no dead deep link: the
+                            // reminder dies with the entry.
+                            reminderStore?.handleEntryDeleted(id: id)
                         }
                         // SWR: cached page already rendered; revalidate quietly.
                         scopeCoordinator.activate(.all)
@@ -858,6 +951,16 @@ struct MainAppView: View {
                                         withAnimation(.easeOut(duration: 0.25)) {
                                             isFullScreenEditVisible = true
                                         }
+                                    }
+                                },
+                                onRemindMe: {
+                                    let target = entry
+                                    withAnimation(.easeOut(duration: 0.25)) {
+                                        isEntryActionSheetVisible = false
+                                    }
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                                        activeEntryMenuEntry = nil
+                                        openReminderSheet(for: target)
                                     }
                                 },
                                 onAddToCollection: {
@@ -1140,6 +1243,72 @@ struct MainAppView: View {
                     .transition(.move(edge: .bottom))
                 }
             }
+            // Reminder sheet: same contextual-sheet chrome as the entry
+            // actions. Deliberately NOT ignoring the keyboard region — the
+            // optional note field needs the sheet to lift.
+            .overlay(alignment: .bottom) {
+                if reminderSheetEntry != nil {
+                    ZStack(alignment: .bottom) {
+                        Color.black.opacity(0.4)
+                            .ignoresSafeArea()
+                            .transaction { $0.animation = nil }
+                            .onTapGesture { dismissReminderSheet() }
+
+                        if isReminderSheetVisible, let entry = reminderSheetEntry {
+                            ReminderSheetView(
+                                entry: entry,
+                                existing: reminderStore.activeReminder(for: entry.id),
+                                authorization: reminderStore.authorization,
+                                onSet: { mode, fireAt, note in
+                                    await reminderStore.save(
+                                        entry: entry,
+                                        mode: mode,
+                                        fireAt: fireAt,
+                                        note: note
+                                    )
+                                },
+                                onRemove: {
+                                    Task { await reminderStore.removeReminder(entryId: entry.id) }
+                                },
+                                onDismiss: { dismissReminderSheet() }
+                            )
+                            .transition(.move(edge: .bottom))
+                        }
+                    }
+                    .ignoresSafeArea(.container, edges: .bottom)
+                }
+            }
+            // A reminder that came due while the user was elsewhere in Kebab:
+            // its own quiet banner, never the system one over the app.
+            .overlay(alignment: .top) {
+                if let delivery = reminderStore.foregroundDelivery {
+                    ReminderInAppBannerView(
+                        body_: delivery.body,
+                        onTap: {
+                            reminderStore.foregroundDelivery = nil
+                            handleReminderDeepLink(delivery.entryId)
+                        },
+                        onDismiss: {
+                            withAnimation(.easeOut(duration: 0.2)) {
+                                reminderStore.foregroundDelivery = nil
+                            }
+                        }
+                    )
+                    .padding(.top, 8)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                }
+            }
+            .animation(.easeOut(duration: 0.25), value: reminderStore.foregroundDelivery)
+            // Notification tap lands in the entry's normal detail screen —
+            // no special reminder screen exists.
+            .onChange(of: reminderStore.deepLinkEntryId) { _, id in
+                if let id { handleReminderDeepLink(id) }
+            }
+            .navigationDestination(isPresented: $isReminderDeepLinkActive) {
+                if let entry = reminderDeepLinkEntry {
+                    EntryDetailView(entry: entry, feedViewModel: feedViewModel)
+                }
+            }
             .navigationDestination(isPresented: $isSearchActive) {
                 if let workspace = searchWorkspace {
                     SearchView(workspace: workspace, feedViewModel: feedViewModel)
@@ -1180,6 +1349,9 @@ struct MainAppView: View {
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active {
                     feedViewModel.kickFlush()
+                    // Reminder truth is re-derived on every return: permission
+                    // state, server records, and scheduling all reconcile.
+                    Task { await reminderStore.refresh() }
                     // Foreground revalidation: silent; every warm scope keeps
                     // its position and applies its own arrival rule.
                     scopeCoordinator.revalidateAllWarm()
@@ -1246,6 +1418,7 @@ struct MainAppView: View {
         // path (and can surface failures) after the screen has dismissed.
         .environmentObject(scopeCoordinator)
         .environmentObject(noticeCenter)
+        .environmentObject(reminderStore)
     }
 }
 

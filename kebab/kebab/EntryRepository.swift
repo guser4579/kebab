@@ -19,6 +19,20 @@ final class EntryRepository {
         return entries
     }
 
+    /// One entry by id — the reminder deep link's last resort when the
+    /// target isn't in any warm scope or the on-device corpus (e.g. an old
+    /// entry on a fresh install). RLS scopes this to the signed-in user.
+    func fetchEntry(id: UUID) async throws -> Entry? {
+        let entries: [Entry] = try await supabase
+            .from("entries")
+            .select("id,user_id,parent_id,root_id,depth,content,created_at,pinned_at,is_content_hidden,resurface_count,fire_count,attachments")
+            .eq("id", value: id)
+            .limit(1)
+            .execute()
+            .value
+        return entries.first
+    }
+
     func fetchComments(rootId: UUID) async throws -> [Entry] {
         let entries: [Entry] = try await supabase
             .from("entries")
