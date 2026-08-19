@@ -674,11 +674,14 @@ final class FeedViewModel: ObservableObject {
         }
     }
 
-    func loadComments(rootId: UUID) async -> [Entry] {
+    /// nil means the fetch itself failed (offline or server error) — callers
+    /// keep or substitute local truth. An empty array is a real answer: the
+    /// server says the thread has no comments.
+    func loadComments(rootId: UUID) async -> [Entry]? {
         do {
             return try await repository.fetchComments(rootId: rootId)
         } catch {
-            return []
+            return nil
         }
     }
 
@@ -782,6 +785,28 @@ final class FeedViewModel: ObservableObject {
         (error as? PostgrestError)?.code == "PGRST202"
     }
 
+    // MARK: - Deleted-entry tombstones
+
+    /// Ids confirmed (or optimistically assumed) deleted this session,
+    /// including cascade descendants. A comment screen re-appearing from the
+    /// nav stack checks its anchor against this set: deleting an ancestor
+    /// cascades away every screen anchored below it, and those screens must
+    /// pop instead of rendering ghosts. Retracted if the server rejects the
+    /// delete.
+    private var tombstonedEntryIds: Set<UUID> = []
+
+    func noteEntriesDeleted(_ ids: Set<UUID>) {
+        tombstonedEntryIds.formUnion(ids)
+    }
+
+    func retractEntriesDeleted(_ ids: Set<UUID>) {
+        tombstonedEntryIds.subtract(ids)
+    }
+
+    func isEntryDeleted(_ id: UUID) -> Bool {
+        tombstonedEntryIds.contains(id)
+    }
+
     // MARK: - Thread staleness
 
     /// Per-root thread revision, bumped by any mutation that changes thread
@@ -805,6 +830,7 @@ final class FeedViewModel: ObservableObject {
 
 struct ThreadData {
     private let childrenMap: [UUID: [Entry]]
+    private let entryById: [UUID: Entry]
     let totalCount: Int
 
     init(entries: [Entry]) {
@@ -818,6 +844,11 @@ struct ThreadData {
             map[key]?.sort { $0.created_at < $1.created_at }
         }
         childrenMap = map
+        entryById = Dictionary(entries.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+    }
+
+    func entry(id: UUID) -> Entry? {
+        entryById[id]
     }
 
     func directChildren(of id: UUID) -> [Entry] {
@@ -827,5 +858,28 @@ struct ThreadData {
     func subtreeCount(for id: UUID) -> Int {
         let children = childrenMap[id] ?? []
         return children.reduce(children.count) { $0 + subtreeCount(for: $1.id) }
+    }
+
+    /// The comment chain above the given comment, ordered root-ward first
+    /// (nearest the root Entry → immediate parent). The root Entry itself is
+    /// not part of thread data and is resolved separately by callers.
+    ///
+    /// `parent_id` is the structural truth — persisted `depth` is never
+    /// consulted. The walk is O(depth) over the prebuilt id map, and defends
+    /// against malformed local state: a missing parent truncates the chain
+    /// (the valid portion still renders), and a visited set makes a corrupt
+    /// cycle terminate instead of looping.
+    func ancestors(of id: UUID) -> [Entry] {
+        var chain: [Entry] = []
+        var visited: Set<UUID> = [id]
+        var parentId = entryById[id]?.parent_id
+        while let currentId = parentId,
+              !visited.contains(currentId),
+              let parent = entryById[currentId] {
+            chain.append(parent)
+            visited.insert(currentId)
+            parentId = parent.parent_id
+        }
+        return chain.reversed()
     }
 }

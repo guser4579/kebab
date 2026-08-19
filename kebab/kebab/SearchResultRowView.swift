@@ -348,7 +348,14 @@ struct SearchResultRowView: View {
         if item.entry.parent_id == nil {
             EntryDetailView(entry: item.entry, feedViewModel: feedViewModel)
         } else {
-            CommentDetailView(comment: item.entry, rootId: item.rootId, feedViewModel: feedViewModel)
+            CommentDetailView(
+                comment: item.entry,
+                rootId: item.rootId,
+                feedViewModel: feedViewModel,
+                // Arriving from Search lands mid-thread: the one-time
+                // orientation tint marks the tapped result.
+                highlightAnchorOnArrival: true
+            )
         }
     }
 

@@ -195,6 +195,12 @@ final class SearchCorpusStore: ObservableObject {
         return false
     }
 
+    /// Every comment in a thread, from the mirror — the offline substitute
+    /// for a failed `fetchComments` (same shape: comments only, no root).
+    func threadComments(rootId: UUID) -> [Entry] {
+        entries.filter { $0.root_id == rootId && $0.parent_id != nil }
+    }
+
     // MARK: - Internals
 
     private func adopt(entries newEntries: [Entry], membership newMembership: [UUID: UUID], persist: Bool) {

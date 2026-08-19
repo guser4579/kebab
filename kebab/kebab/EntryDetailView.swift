@@ -69,16 +69,6 @@ struct EntryDetailView: View {
         threadData?.directChildren(of: displayedRootEntry.id) ?? []
     }
 
-    private var rootDisplayContent: String {
-        if displayedRootEntry.isContentHidden {
-            return displayedRootEntry.content.map { char in
-                char.isWhitespace ? char : "*"
-            }.map(String.init).joined()
-        } else {
-            return displayedRootEntry.content
-        }
-    }
-
     var body: some View {
         GeometryReader { geometry in
             VStack(spacing: 0) {
@@ -94,36 +84,36 @@ struct EntryDetailView: View {
                             }
 
                         if !directChildren.isEmpty {
+                            // Comments hang from the entry's origin node:
+                            // the rail passes alongside each sibling and
+                            // closes on the last one's node. Sibling
+                            // separators begin at the rail's right edge so
+                            // they meet the spine with no gap — drawn as
+                            // overlays so the rail stays unbroken.
                             VStack(spacing: 0) {
                                 ForEach(Array(directChildren.enumerated()), id: \.element.id) { index, comment in
-                                    VStack(spacing: 0) {
+                                    CommentRowView(
+                                        comment: comment,
+                                        feedViewModel: feedViewModel,
+                                        rootId: displayedRootEntry.id,
+                                        subtreeCount: threadData?.subtreeCount(for: comment.id) ?? 0,
+                                        threadRail: index == directChildren.count - 1 ? .terminus : .link,
+                                        onMoreTapped: {
+                                            activeEntryMenuEntry = comment
+                                            withAnimation(.easeOut(duration: 0.25)) {
+                                                isEntryActionSheetVisible = true
+                                            }
+                                        }
+                                    )
+                                    .overlay(alignment: .top) {
                                         if index > 0 {
                                             Rectangle()
                                                 .fill(Style.Color.separator)
                                                 .frame(height: 1)
-                                                .padding(.leading, 17)
+                                                .padding(.leading, ThreadRailOverlay.dividerLeading)
                                         }
-                                        CommentRowView(
-                                            comment: comment,
-                                            feedViewModel: feedViewModel,
-                                            rootId: displayedRootEntry.id,
-                                            subtreeCount: threadData?.subtreeCount(for: comment.id) ?? 0,
-                                            onMoreTapped: {
-                                                activeEntryMenuEntry = comment
-                                                withAnimation(.easeOut(duration: 0.25)) {
-                                                    isEntryActionSheetVisible = true
-                                                }
-                                            }
-                                        )
                                     }
                                 }
-                            }
-                            .overlay(alignment: .leading) {
-                                Rectangle()
-                                    .fill(Style.Color.separator)
-                                    .frame(width: 1)
-                                    .frame(maxHeight: .infinity)
-                                    .padding(.leading, 16)
                             }
                         } else if threadData != nil {
                             // Gated on a resolved thread so the line never
@@ -403,7 +393,9 @@ struct EntryDetailView: View {
         // leaves us stale, so the next appearance refetches.
         let revision = feedViewModel.threadRevision(rootId: displayedRootEntry.id)
         let entries = await feedViewModel.loadComments(rootId: displayedRootEntry.id)
-        setThread(entries)
+        // A failed fetch (nil) keeps this screen's long-standing behavior:
+        // render the thread as empty rather than substituting local truth.
+        setThread(entries ?? [])
         loadedThreadRevision = revision
     }
 
@@ -598,7 +590,17 @@ struct EntryDetailView: View {
             Color.clear
                 .frame(height: 16)
 
-            bottomSeparator
+            // With comments present the entry is the thread's origin node and
+            // the spine carries the transition; the trailing hairline only
+            // belongs to the standalone entry.
+            if directChildren.isEmpty {
+                bottomSeparator
+            }
+        }
+        .overlay(alignment: .topLeading) {
+            if !directChildren.isEmpty {
+                ThreadRailOverlay(rail: .origin)
+            }
         }
     }
 
@@ -609,85 +611,57 @@ struct EntryDetailView: View {
             .frame(maxWidth: .infinity)
     }
 
-    private var hasLinkCard: Bool {
-        displayedRootEntry.linkAttachment != nil && !displayedRootEntry.isContentHidden
-    }
-
+    // Shared presentation with the thread spine in CommentDetailView; this
+    // host wires the fully interactive variant.
     private var entryContent: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            headerRow
-
-            Color.clear
-                .frame(height: 4)
-
-            let hasImages = !displayedRootEntry.imageAttachments.isEmpty
-                && !displayedRootEntry.isContentHidden
-
-            if !displayedRootEntry.content.isEmpty {
-                contentText
-
-                Color.clear
-                    .frame(height: (hasLinkCard || hasImages) ? 8 : 12)
-            }
-
-            if hasImages {
-                EntryImageStripView(attachments: displayedRootEntry.imageAttachments)
-
-                Color.clear
-                    .frame(height: 12)
-            }
-
-            if let link = displayedRootEntry.linkAttachment, !displayedRootEntry.isContentHidden {
-                RichLinkCardView(urlString: link.url, title: link.title, imageURL: link.image_url)
-
-                Color.clear
-                    .frame(height: 12)
-            }
-
-            if displayedRootEntry.content.isEmpty && !hasLinkCard && !hasImages {
-                Color.clear
-                    .frame(height: 12)
-            }
-
-            EntryRootActionRow(
-                entry: displayedRootEntry,
-                feedViewModel: feedViewModel,
-                includeChat: false,
-                showResurface: onRemoveFromCollection == nil,
-                onResurfaceTapped: {
-                    // Optimistic on this screen's copy in the same beat; the
-                    // shared fan-out handles every warm scope. Rollback
-                    // restores the pre-tap count on genuine failure.
-                    let current = displayedRootEntry
-                    displayedRootEntry = current.withResurfaceCount(current.resurface_count + 1)
-                    recentActivityStore.record(
-                        rootId: current.id,
-                        contextEntryId: current.id,
-                        kind: .resurfaced
-                    )
-                    Task {
-                        if await feedViewModel.resurfaceEntry(entry: current) == false {
-                            displayedRootEntry = displayedRootEntry.withResurfaceCount(current.resurface_count)
-                        }
-                    }
-                },
-                onFireTapped: {
-                    let current = displayedRootEntry
-                    displayedRootEntry = current.withFireCount(current.fire_count + 1)
-                    Task {
-                        if await feedViewModel.fireEntry(entry: current) == false {
-                            displayedRootEntry = displayedRootEntry.withFireCount(current.fire_count)
-                        }
+        EntryContentView(
+            entry: displayedRootEntry,
+            commentCount: threadData.map(\.totalCount) ?? displayedRootEntry.comment_count ?? 0,
+            isThreaded: !directChildren.isEmpty,
+            showResurface: onRemoveFromCollection == nil,
+            onMoreTapped: {
+                activeEntryMenuEntry = displayedRootEntry
+                withAnimation(.easeOut(duration: 0.25)) {
+                    isEntryActionSheetVisible = true
+                }
+            },
+            onResurfaceTapped: {
+                // Optimistic on this screen's copy in the same beat; the
+                // shared fan-out handles every warm scope. Rollback
+                // restores the pre-tap count on genuine failure.
+                let current = displayedRootEntry
+                displayedRootEntry = current.withResurfaceCount(current.resurface_count + 1)
+                recentActivityStore.record(
+                    rootId: current.id,
+                    contextEntryId: current.id,
+                    kind: .resurfaced
+                )
+                Task {
+                    if await feedViewModel.resurfaceEntry(entry: current) == false {
+                        displayedRootEntry = displayedRootEntry.withResurfaceCount(current.resurface_count)
                     }
                 }
-            )
-
-            Color.clear
-                .frame(height: 8)
-
-            entryCommentCounter
-        }
-        .padding(.horizontal, Style.Layout.entryContentPadding)
+            },
+            onFireTapped: {
+                let current = displayedRootEntry
+                displayedRootEntry = current.withFireCount(current.fire_count + 1)
+                Task {
+                    if await feedViewModel.fireEntry(entry: current) == false {
+                        displayedRootEntry = displayedRootEntry.withFireCount(current.fire_count)
+                    }
+                }
+            },
+            onToggleChecklistItem: { entry, lineIndex in
+                displayedRootEntry = entry.withContent(
+                    Checklist.toggling(entry.content, lineIndex: lineIndex)
+                )
+                Task {
+                    if await feedViewModel.toggleChecklistItem(entry: entry, lineIndex: lineIndex) == false {
+                        displayedRootEntry = entry
+                    }
+                }
+            }
+        )
     }
 
     /// Quiet functional empty state for the thread: one line in the same
@@ -712,122 +686,5 @@ struct EntryDetailView: View {
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Add comments here.")
-    }
-
-    @ViewBuilder
-    private var entryCommentCounter: some View {
-        let count = threadData.map(\.totalCount) ?? displayedRootEntry.comment_count ?? 0
-        if count > 0 {
-            Text(count == 1 ? "1 comment" : "\(count) comments")
-                .font(.custom("DMSans-Regular", size: 16))
-                .foregroundColor(Style.Color.secondary)
-                .frame(height: 24, alignment: .leading)
-        }
-    }
-
-    private var headerRow: some View {
-        HStack {
-            Text(Style.Timestamp.absolute(for: displayedRootEntry.created_at))
-                .font(Style.Typography.meta())
-                .foregroundColor(Style.Color.secondary)
-
-            if displayedRootEntry.resurface_count > 0 {
-                HStack(spacing: 0) {
-                    Icon("refresh-04", glyphSize: Style.Icon.glyphSmall)
-                        .foregroundColor(Style.Color.resurface)
-
-                    Text("\(displayedRootEntry.resurface_count)")
-                        .font(Style.Typography.meta())
-                        .foregroundColor(Style.Color.resurface)
-                }
-                .padding(.leading, 2)
-            }
-
-            if displayedRootEntry.fire_count > 0 {
-                HStack(spacing: 0) {
-                    Icon("fire-03", glyphSize: Style.Icon.glyphSmall)
-                        .foregroundColor(Style.Color.fire)
-
-                    Text("\(displayedRootEntry.fire_count)")
-                        .font(Style.Typography.meta())
-                        .foregroundColor(Style.Color.fire)
-                }
-                .padding(.leading, 2)
-            }
-
-            Spacer(minLength: 0)
-
-            Button {
-                UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-                activeEntryMenuEntry = displayedRootEntry
-                withAnimation(.easeOut(duration: 0.25)) {
-                    isEntryActionSheetVisible = true
-                }
-            } label: {
-                Icon("ellipsis", glyphSize: Style.Icon.glyphSmall)
-                    .foregroundColor(Style.Color.secondary)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var contentText: some View {
-        if !displayedRootEntry.isContentHidden, Checklist.hasChecklist(displayedRootEntry.content) {
-            checklistContent
-        } else {
-            Text(rootDisplayContent)
-                .font(Style.Typography.body())
-                .foregroundColor(Style.Color.primaryText)
-                .lineSpacing(4)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
-
-    // Checklist rendering mirrors the feed row: tappable items, strikethrough
-    // completion. Toggles patch the shared feed model and this screen's local
-    // copy in the same beat.
-    private var checklistContent: some View {
-        VStack(alignment: .leading, spacing: Style.Spacing.x2) {
-            ForEach(Checklist.segments(of: displayedRootEntry.content)) { segment in
-                switch segment {
-                case .text(_, let block):
-                    Text(block)
-                        .font(Style.Typography.body())
-                        .foregroundColor(Style.Color.primaryText)
-                        .lineSpacing(4)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                case .item(_, let lineIndex, let text, let checked):
-                    Button {
-                        let entry = displayedRootEntry
-                        displayedRootEntry = entry.withContent(
-                            Checklist.toggling(entry.content, lineIndex: lineIndex)
-                        )
-                        Task {
-                            if await feedViewModel.toggleChecklistItem(entry: entry, lineIndex: lineIndex) == false {
-                                displayedRootEntry = entry
-                            }
-                        }
-                    } label: {
-                        HStack(alignment: .firstTextBaseline, spacing: Style.Spacing.x3) {
-                            Image(systemName: checked ? "checkmark.square" : "square")
-                                .font(.system(size: 17, weight: .regular))
-                                .foregroundColor(checked ? Style.Color.secondary : Style.Color.primaryText)
-
-                            Text(text)
-                                .font(Style.Typography.body())
-                                .foregroundColor(checked ? Style.Color.secondary : Style.Color.primaryText)
-                                .strikethrough(checked, color: Style.Color.secondary)
-                                .lineSpacing(4)
-                                .multilineTextAlignment(.leading)
-
-                            Spacer(minLength: 0)
-                        }
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

@@ -11,6 +11,14 @@ struct CommentRowView: View {
     var feedViewModel: FeedViewModel?
     var rootId: UUID?
     var subtreeCount: Int = 0
+    /// False for ancestor rows in the thread spine: their conversation is
+    /// already on screen, so the row carries no reply affordance, no
+    /// counter, and no navigation — content and the ellipsis menu only.
+    var showsReplyAffordance: Bool = true
+    /// Present when the row sits in the thread gutter system: draws the
+    /// node/rail overlay and shifts content to the shared thread column.
+    /// nil renders the row's legacy standalone geometry.
+    var threadRail: ThreadRail? = nil
     var onMoreTapped: (() -> Void)?
 
     private var displayContent: String {
@@ -48,26 +56,33 @@ struct CommentRowView: View {
 
                     contentText
 
-                    Color.clear
-                        .frame(height: 12)
-
-                    actionRow
-
-                    if subtreeCount > 0 {
+                    if showsReplyAffordance {
                         Color.clear
-                            .frame(height: 8)
+                            .frame(height: 12)
 
-                        replyCounter
+                        actionRow
+
+                        if subtreeCount > 0 {
+                            Color.clear
+                                .frame(height: 8)
+
+                            replyCounter
+                        }
                     }
                 }
             }
-            .padding(.leading, 33)
+            .padding(.leading, threadRail == nil ? 33 : ThreadRailOverlay.contentLeading)
             .padding(.trailing, 16)
 
             Color.clear
                 .frame(height: 16)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay(alignment: .topLeading) {
+            if let threadRail {
+                ThreadRailOverlay(rail: threadRail)
+            }
+        }
     }
 
     private var headerRow: some View {

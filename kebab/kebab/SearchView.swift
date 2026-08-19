@@ -201,7 +201,11 @@ private struct SearchContentView: View {
                             .foregroundColor(Style.Color.secondary)
                             .padding(.horizontal, Style.Layout.entryContentPadding)
                             .padding(.top, 24)
-                            .padding(.bottom, 4)
+                            // A section heading attaches to its content: the
+                            // first row's own 16pt inset minus this pull-up
+                            // leaves ~8pt under the overline, while the
+                            // larger gap stays above it.
+                            .padding(.bottom, -8)
 
                         ForEach(results.resultSet.possible) { item in
                             row(for: item)
@@ -443,7 +447,14 @@ private struct SearchContentView: View {
     @ViewBuilder
     private func activityDestination(root: Entry, context: Entry?) -> some View {
         if let context, context.parent_id != nil {
-            CommentDetailView(comment: context, rootId: root.id, feedViewModel: feedViewModel)
+            CommentDetailView(
+                comment: context,
+                rootId: root.id,
+                feedViewModel: feedViewModel,
+                // Recent Activity is a Search-surface arrival too — same
+                // mid-thread landing, same one-time orientation tint.
+                highlightAnchorOnArrival: true
+            )
         } else {
             EntryDetailView(entry: root, feedViewModel: feedViewModel)
         }

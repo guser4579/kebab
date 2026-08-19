@@ -9,6 +9,11 @@ struct CommentDetailView: View {
 
     let comment: Entry
     let rootId: UUID
+    /// True when the screen was opened from the Search surface: the anchor
+    /// gets a one-time orientation tint after the landing scroll, so the
+    /// tapped result is immediately findable. Never set on in-thread
+    /// navigation.
+    let highlightAnchorOnArrival: Bool
     @ObservedObject var feedViewModel: FeedViewModel
 
     @Environment(\.dismiss) private var dismiss
@@ -25,18 +30,40 @@ struct CommentDetailView: View {
     @State private var fullScreenEditEntry: Entry?
     @State private var isFullScreenEditVisible = false
     /// Source of truth for the thread: optimistic mutations edit this array
-    /// directly; `threadData` is always derived from it in the same beat.
+    /// directly; `threadData` (and the spine derived with it) is always
+    /// rebuilt from it in the same beat.
     @State private var threadEntries: [Entry] = []
     @State private var threadData: ThreadData?
+    /// The comment chain above the anchor, root-ward first — derived in
+    /// `setThread` (never during body evaluation) from `parent_id` truth.
+    @State private var spineAncestors: [Entry] = []
+    /// The root Entry rendered at the top of the spine. Resolved from warm
+    /// feed truth (falling back to the corpus mirror) each time the thread
+    /// is set; nil (unresolvable) simply omits the root section.
+    @State private var spineRoot: Entry?
+    /// The screen positions itself at the anchor exactly once, when the
+    /// thread first materializes. After that the user owns scroll position —
+    /// reappearances, refetches, and mutations never re-anchor.
+    @State private var hasPerformedInitialScroll = false
     /// The thread revision this screen's local state reflects — reappearing
     /// with an unchanged revision skips the refetch (see EntryDetailView).
     @State private var loadedThreadRevision: Int?
     @State private var commentSendFailed = false
+    /// Drives the arrival tint; nonzero only during the one-time animation
+    /// (set → brief hold → single fade), keyed off the same initial-arrival
+    /// guard as the landing scroll so it can never replay.
+    @State private var anchorHighlightOpacity: Double = 0
 
-    init(comment: Entry, rootId: UUID, feedViewModel: FeedViewModel) {
+    init(
+        comment: Entry,
+        rootId: UUID,
+        feedViewModel: FeedViewModel,
+        highlightAnchorOnArrival: Bool = false
+    ) {
         self.comment = comment
         self.rootId = rootId
         self.feedViewModel = feedViewModel
+        self.highlightAnchorOnArrival = highlightAnchorOnArrival
         _displayedComment = State(initialValue: comment)
     }
 
@@ -59,25 +86,33 @@ struct CommentDetailView: View {
             VStack(spacing: 0) {
                 commentDetailHeader
 
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 0) {
-                        commentContentSection
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 0) {
+                            if let root = spineRoot {
+                                spineRootSection(root)
+                            }
 
-                        if !directChildren.isEmpty {
-                            VStack(spacing: 0) {
-                                ForEach(Array(directChildren.enumerated()), id: \.element.id) { index, child in
-                                    VStack(spacing: 0) {
-                                        if index > 0 {
-                                            Rectangle()
-                                                .fill(Style.Color.separator)
-                                                .frame(height: 1)
-                                                .padding(.leading, 17)
-                                        }
+                            conversationLeadIn
+
+                            commentContentSection
+                                .id(displayedComment.id)
+
+                            if !directChildren.isEmpty {
+                                // Replies hang from the anchor's node: the
+                                // rail passes alongside each sibling and closes
+                                // on the last one's node. Sibling
+                                // separators begin at the rail's right edge so
+                                // they meet the spine with no gap — drawn as
+                                // overlays so the rail stays unbroken.
+                                VStack(spacing: 0) {
+                                    ForEach(Array(directChildren.enumerated()), id: \.element.id) { index, child in
                                         CommentRowView(
                                             comment: child,
                                             feedViewModel: feedViewModel,
                                             rootId: rootId,
                                             subtreeCount: threadData?.subtreeCount(for: child.id) ?? 0,
+                                            threadRail: index == directChildren.count - 1 ? .terminus : .link,
                                             onMoreTapped: {
                                                 activeEntryMenuEntry = child
                                                 withAnimation(.easeOut(duration: 0.25)) {
@@ -85,29 +120,53 @@ struct CommentDetailView: View {
                                                 }
                                             }
                                         )
+                                        .overlay(alignment: .top) {
+                                            if index > 0 {
+                                                Rectangle()
+                                                    .fill(Style.Color.separator)
+                                                    .frame(height: 1)
+                                                    .padding(.leading, ThreadRailOverlay.dividerLeading)
+                                            }
+                                        }
                                     }
                                 }
                             }
-                            .overlay(alignment: .leading) {
-                                Rectangle()
-                                    .fill(Style.Color.separator)
-                                    .frame(width: 1)
-                                    .frame(maxHeight: .infinity)
-                                    .padding(.leading, 16)
-                            }
                         }
                     }
-                }
-                .scrollDismissesKeyboard(.interactively)
-                .frame(maxWidth: .infinity)
-                .onAppear {
-                    let revision = feedViewModel.threadRevision(rootId: rootId)
-                    if threadData == nil || loadedThreadRevision != revision {
-                        Task { await reloadThread() }
+                    .scrollDismissesKeyboard(.interactively)
+                    .frame(maxWidth: .infinity)
+                    .onAppear {
+                        // Reappearing with a dead anchor (an ancestor's
+                        // cascade delete happened above this screen in the
+                        // stack): pop to the nearest surviving context —
+                        // never render a ghost.
+                        if feedViewModel.isEntryDeleted(displayedComment.id) {
+                            dismiss()
+                            return
+                        }
+                        // Seed the thread synchronously from the on-device
+                        // mirror so the spine exists in the first rendered
+                        // hierarchy — ancestors never hydrate in later, and
+                        // the screen works offline. The network reload below
+                        // reconciles behind it.
+                        if threadData == nil {
+                            let mirrored = searchCorpusStore.threadComments(rootId: rootId)
+                            if !mirrored.isEmpty {
+                                setThread(mirrored)
+                            }
+                        }
+                        performInitialScrollIfReady(proxy)
+                        let revision = feedViewModel.threadRevision(rootId: rootId)
+                        if loadedThreadRevision == nil || loadedThreadRevision != revision {
+                            Task { await reloadThread() }
+                        }
                     }
+                    .onChange(of: threadData == nil) {
+                        performInitialScrollIfReady(proxy)
+                    }
+                    .background(Style.Color.background)
+                    .foregroundColor(Style.Color.primaryText)
                 }
-                .background(Style.Color.background)
-                .foregroundColor(Style.Color.primaryText)
             }
             .safeAreaInset(edge: .bottom) {
                 ComposerView(
@@ -141,9 +200,16 @@ struct CommentDetailView: View {
                             EntryActionSheetView(
                                 entry: sheetEntry,
                                 onDelete: {
+                                    // Deleting an ancestor cascades away the
+                                    // anchor and everything below it — the
+                                    // screen must not stay open rendering a
+                                    // deleted object, so it pops exactly like
+                                    // deleting the anchor itself.
+                                    let removesAnchor = sheetEntry.id == displayedComment.id
+                                        || spineAncestors.contains { $0.id == sheetEntry.id }
                                     deleteCommentOptimistically(
                                         sheetEntry,
-                                        dismissAfter: sheetEntry.id == displayedComment.id
+                                        dismissAfter: removesAnchor
                                     )
                                 },
                                 onToggleContentHidden: {
@@ -276,8 +342,25 @@ struct CommentDetailView: View {
         // Capture the revision at fetch start: a mutation landing mid-fetch
         // leaves us stale, so the next appearance refetches.
         let revision = feedViewModel.threadRevision(rootId: rootId)
-        let entries = await feedViewModel.loadComments(rootId: rootId)
-        setThread(entries)
+        if let entries = await feedViewModel.loadComments(rootId: rootId) {
+            setThread(entries)
+            // Server truth says the anchor is gone (deleted from another
+            // device or a path the tombstones didn't see): pop rather than
+            // render a ghost. Only a successful fetch may conclude this.
+            if threadData?.entry(id: displayedComment.id) == nil {
+                dismiss()
+                return
+            }
+        } else {
+            // Fetch failed (offline or server error): the corpus mirror is
+            // the local truth for this thread. Whole-spine substitution, one
+            // beat — ancestors never hydrate level by level. An empty mirror
+            // keeps whatever is already on screen.
+            let mirrored = searchCorpusStore.threadComments(rootId: rootId)
+            if !mirrored.isEmpty || threadData == nil {
+                setThread(mirrored)
+            }
+        }
         loadedThreadRevision = revision
     }
 
@@ -289,7 +372,48 @@ struct CommentDetailView: View {
 
     private func setThread(_ entries: [Entry]) {
         threadEntries = entries
-        threadData = ThreadData(entries: entries)
+        let data = ThreadData(entries: entries)
+        threadData = data
+        // Spine derivation happens here, at the model boundary — one O(depth)
+        // walk per thread mutation, never during body evaluation.
+        spineAncestors = data.ancestors(of: displayedComment.id)
+        // Root resolution: warm feed truth first, corpus mirror second. A
+        // double miss keeps the last resolved copy rather than blanking the
+        // section mid-session.
+        spineRoot = feedViewModel.entryResolver?(rootId)
+            ?? searchCorpusStore.entry(id: rootId)
+            ?? spineRoot
+    }
+
+    /// One-time landing: position the anchor near the top with a sliver of
+    /// its parent visible above — the upward affordance. Runs when the thread
+    /// first materializes; guarded so later state changes, reappearances, and
+    /// keyboard/composer churn can never re-anchor the user.
+    private func performInitialScrollIfReady(_ proxy: ScrollViewProxy) {
+        guard !hasPerformedInitialScroll, threadData != nil else { return }
+        hasPerformedInitialScroll = true
+        // Nothing rendered above the anchor → the natural top is the anchor.
+        let needsScroll = spineRoot != nil || !spineAncestors.isEmpty
+        // One deterministic hop: the scroll target exists in the hierarchy
+        // committed by this beat's state; the async lets that layout land.
+        let anchorId = displayedComment.id
+        DispatchQueue.main.async {
+            if needsScroll {
+                proxy.scrollTo(anchorId, anchor: UnitPoint(x: 0, y: 0.09))
+            }
+            // Orientation tint for Search arrivals: appears with the landed
+            // frame, holds briefly, fades once. Bound to this one-shot, so
+            // body recomputation, refreshes, keyboard/composer changes, and
+            // reappearances can never replay it.
+            if highlightAnchorOnArrival {
+                anchorHighlightOpacity = 0.55
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                    withAnimation(.easeOut(duration: 0.7)) {
+                        anchorHighlightOpacity = 0
+                    }
+                }
+            }
+        }
     }
 
     /// Local-first reply creation: the reply and every counter it affects
@@ -357,8 +481,13 @@ struct CommentDetailView: View {
     /// server answers. Failure restores from truth; the revision bump makes
     /// the parent screen refetch on reappearance either way.
     private func deleteCommentOptimistically(_ comment: Entry, dismissAfter: Bool) {
+        let doomed = subtreeIds(of: comment.id)
         let removedCount = (threadData?.subtreeCount(for: comment.id) ?? 0) + 1
-        setThread(threadEntries.filter { !subtreeIds(of: comment.id).contains($0.id) })
+        setThread(threadEntries.filter { !doomed.contains($0.id) })
+        // Tombstone the whole cascade in the same beat: any screen deeper in
+        // the nav stack anchored inside it pops on reappearance instead of
+        // rendering a ghost. Retracted below if the server says no.
+        feedViewModel.noteEntriesDeleted(doomed)
         feedViewModel.applyCommentCountDelta(rootId: rootId, delta: -removedCount)
         markThreadCurrent()
         if dismissAfter {
@@ -368,6 +497,7 @@ struct CommentDetailView: View {
         Task {
             let ok = await feedViewModel.deleteEntry(id: comment.id)
             if !ok {
+                feedViewModel.retractEntriesDeleted(doomed)
                 feedViewModel.applyCommentCountDelta(rootId: rootId, delta: removedCount)
                 if !dismissAfter {
                     await reloadThread()
@@ -416,7 +546,10 @@ struct CommentDetailView: View {
 
     private var headerTopBar: some View {
         ZStack {
-            Text("Comment [\(displayedComment.depth)]")
+            // No depth number: the thread above the anchor communicates depth
+            // structurally. Search keeps the numeric mark, where a result is
+            // shown outside its conversational context.
+            Text("Comment")
                 .font(.custom("DMSans-Medium", size: 16))
                 .foregroundColor(Style.Color.primaryText)
 
@@ -440,19 +573,116 @@ struct CommentDetailView: View {
         .frame(height: 24)
     }
 
-    // MARK: - Content
+    // MARK: - Thread spine (root Entry + ancestors above the anchor)
 
-    private var commentContentSection: some View {
+    /// The root Entry heading the thread. It always continues (the anchor
+    /// is beneath it), so it carries the origin node and the spine flows
+    /// from there — no divider, no closing spacer; the first child's own
+    /// top inset is the whole transition. Display variant: no ellipsis, no
+    /// action row; checklist toggles stay live.
+    private func spineRootSection(_ root: Entry) -> some View {
         VStack(spacing: 0) {
             Color.clear
                 .frame(height: 16)
 
-            commentContent
+            EntryContentView(
+                entry: root,
+                commentCount: threadData?.totalCount ?? root.comment_count ?? 0,
+                isThreaded: true,
+                showsEllipsis: false,
+                showsActionRow: false,
+                onToggleChecklistItem: { snapshot, lineIndex in
+                    spineRoot = snapshot.withContent(
+                        Checklist.toggling(snapshot.content, lineIndex: lineIndex)
+                    )
+                    Task {
+                        if await feedViewModel.toggleChecklistItem(entry: snapshot, lineIndex: lineIndex) == false {
+                            spineRoot = snapshot
+                        }
+                    }
+                }
+            )
 
             Color.clear
                 .frame(height: 16)
+        }
+        .overlay(alignment: .topLeading) {
+            ThreadRailOverlay(rail: .origin)
+        }
+    }
 
-            bottomSeparator
+    /// Ancestors between the root and the anchor. Every one continues into
+    /// the row beneath it, so each is a node on the spine — no separators
+    /// between directly connected ancestry; the rail is the relationship.
+    /// Context rows: no reply affordance or navigation, full ellipsis menu.
+    @ViewBuilder
+    private var conversationLeadIn: some View {
+        ForEach(Array(spineAncestors.enumerated()), id: \.element.id) { index, ancestor in
+            CommentRowView(
+                comment: ancestor,
+                showsReplyAffordance: false,
+                threadRail: (index == 0 && spineRoot == nil) ? .origin : .link,
+                onMoreTapped: {
+                    activeEntryMenuEntry = ancestor
+                    withAnimation(.easeOut(duration: 0.25)) {
+                        isEntryActionSheetVisible = true
+                    }
+                }
+            )
+        }
+    }
+
+    // MARK: - Content
+
+    private var anchorHasSpineAbove: Bool {
+        spineRoot != nil || !spineAncestors.isEmpty
+    }
+
+    /// The anchored comment. When it continues into replies it is a node on
+    /// the spine (thread column, no dividers through the relationship, ends
+    /// at its reply counter so the first reply follows compactly). As a
+    /// leaf it returns to the normal full-width presentation — the incoming
+    /// spine terminates as a short lead-in that stops before the content.
+    /// The Search-arrival tint wraps either form: same token and weight as
+    /// the result-row reacquisition tint, zero except during the one-time
+    /// arrival animation.
+    @ViewBuilder
+    private var commentContentSection: some View {
+        if directChildren.isEmpty {
+            VStack(spacing: 0) {
+                VStack(spacing: 0) {
+                    Color.clear
+                        .frame(height: 16)
+
+                    commentContent
+
+                    Color.clear
+                        .frame(height: 16)
+                }
+                .background(Style.Color.composerBackground.opacity(anchorHighlightOpacity))
+
+                bottomSeparator
+            }
+            .overlay(alignment: .topLeading) {
+                if anchorHasSpineAbove {
+                    ThreadRailOverlay(rail: .stub)
+                }
+            }
+        } else {
+            VStack(alignment: .leading, spacing: 0) {
+                Color.clear
+                    .frame(height: 16)
+
+                commentContent
+
+                Color.clear
+                    .frame(height: 16)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Style.Color.composerBackground.opacity(anchorHighlightOpacity))
+            .overlay(alignment: .topLeading) {
+                ThreadRailOverlay(rail: anchorHasSpineAbove ? .link : .origin)
+            }
         }
     }
 
@@ -484,7 +714,8 @@ struct CommentDetailView: View {
 
             commentReplyCounter
         }
-        .padding(.horizontal, Style.Layout.entryContentPadding)
+        .padding(.leading, directChildren.isEmpty ? Style.Layout.entryContentPadding : ThreadRailOverlay.contentLeading)
+        .padding(.trailing, Style.Layout.entryContentPadding)
     }
 
     @ViewBuilder
