@@ -346,7 +346,13 @@ struct SearchResultRowView: View {
     @ViewBuilder
     private var destination: some View {
         if item.entry.parent_id == nil {
-            EntryDetailView(entry: item.entry, feedViewModel: feedViewModel)
+            EntryDetailView(
+                entry: item.entry,
+                feedViewModel: feedViewModel,
+                // Same orientation cue the comment results get: mark what was
+                // tapped, then fade.
+                highlightOnArrival: true
+            )
         } else {
             CommentDetailView(
                 comment: item.entry,

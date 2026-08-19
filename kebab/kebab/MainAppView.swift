@@ -635,6 +635,17 @@ struct MainAppView: View {
                         feedViewModel.entryResolver = { [weak scopeCoordinator] id in
                             scopeCoordinator?.entry(id: id)
                         }
+                        // Purely local thread lookup, called from detail
+                        // screens' init so thread geometry is correct in the
+                        // first frame: warm scopes for the root, the on-device
+                        // corpus mirror for its comments. No I/O.
+                        feedViewModel.localThreadResolver = { [weak scopeCoordinator, weak searchCorpusStore] rootId in
+                            FeedViewModel.LocalThread(
+                                root: scopeCoordinator?.entry(id: rootId)
+                                    ?? searchCorpusStore?.entry(id: rootId),
+                                comments: searchCorpusStore?.threadComments(rootId: rootId) ?? []
+                            )
+                        }
                         feedViewModel.onEntryPromoted = { [weak scopeCoordinator, weak searchCorpusStore] promoted in
                             scopeCoordinator?.fanOutPromoted(promoted)
                             searchCorpusStore?.upsert(promoted)

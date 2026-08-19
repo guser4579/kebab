@@ -16,6 +16,10 @@ struct EntryDetailView: View {
     /// Focuses the comment composer on arrival (post-capture Comment quick
     /// action): keyboard up, zero extra taps between jot and think.
     var autoFocusComposer: Bool = false
+    /// True when opened from the Search surface: the entry gets the same
+    /// one-time orientation tint a comment result gets, so the tapped result
+    /// is immediately findable. Never set on in-app navigation.
+    var highlightOnArrival: Bool = false
 
     @Environment(\.dismiss) private var dismiss
     // Search infrastructure: deliberate opens and thread actions are resume
@@ -51,18 +55,30 @@ struct EntryDetailView: View {
     @State private var scrollViewportHeight: CGFloat = 0
     @State private var entryContentHeight: CGFloat = 0
     @State private var commentSendFailed = false
+    /// Drives the arrival tint; nonzero only during the one-time animation.
+    @State private var arrivalHighlightOpacity: Double = 0
+    @State private var hasRunArrivalHighlight = false
 
     init(
         entry: Entry,
         feedViewModel: FeedViewModel,
         onRemoveFromCollection: (() async -> Void)? = nil,
-        autoFocusComposer: Bool = false
+        autoFocusComposer: Bool = false,
+        highlightOnArrival: Bool = false
     ) {
         self.entry = entry
         self.feedViewModel = feedViewModel
         self.onRemoveFromCollection = onRemoveFromCollection
         self.autoFocusComposer = autoFocusComposer
+        self.highlightOnArrival = highlightOnArrival
         _displayedRootEntry = State(initialValue: entry)
+        // Thread geometry is decided before the first frame, not after the
+        // fetch: the comments are already on-device, so seed from them here.
+        // A cold miss yields the normal zero-comment layout and the fetch
+        // fills it in.
+        let seed = feedViewModel.localThread(rootId: entry.id).comments
+        _threadEntries = State(initialValue: seed)
+        _threadData = State(initialValue: seed.isEmpty ? nil : ThreadData(entries: seed))
     }
 
     private var directChildren: [Entry] {
@@ -139,6 +155,18 @@ struct EntryDetailView: View {
                     // Refetch only when the thread genuinely changed (or was
                     // never loaded) — popping back from a deeper screen with
                     // nothing new does zero work.
+                    // Orientation tint for Search arrivals: appears with the
+                    // first frame, holds, fades once. Guarded so reappearing
+                    // from a deeper screen never replays it.
+                    if highlightOnArrival, !hasRunArrivalHighlight {
+                        hasRunArrivalHighlight = true
+                        arrivalHighlightOpacity = 0.55
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                            withAnimation(.easeOut(duration: 0.7)) {
+                                arrivalHighlightOpacity = 0
+                            }
+                        }
+                    }
                     let revision = feedViewModel.threadRevision(rootId: displayedRootEntry.id)
                     if threadData == nil || loadedThreadRevision != revision {
                         Task { await reloadThread() }
@@ -392,10 +420,13 @@ struct EntryDetailView: View {
         // Capture the revision at fetch start: a mutation landing mid-fetch
         // leaves us stale, so the next appearance refetches.
         let revision = feedViewModel.threadRevision(rootId: displayedRootEntry.id)
-        let entries = await feedViewModel.loadComments(rootId: displayedRootEntry.id)
-        // A failed fetch (nil) keeps this screen's long-standing behavior:
-        // render the thread as empty rather than substituting local truth.
-        setThread(entries ?? [])
+        // A failed fetch (nil) leaves the locally seeded thread standing —
+        // offline keeps the geometry it opened with. An identical thread is
+        // not re-applied, so a normal open → refresh rebuilds nothing.
+        if let entries = await feedViewModel.loadComments(rootId: displayedRootEntry.id),
+           !(threadData != nil && FeedViewModel.isSameThread(entries, threadEntries)) {
+            setThread(entries)
+        }
         loadedThreadRevision = revision
     }
 
@@ -582,13 +613,18 @@ struct EntryDetailView: View {
 
     private var entryContentSection: some View {
         VStack(spacing: 0) {
-            Color.clear
-                .frame(height: 16)
+            VStack(spacing: 0) {
+                Color.clear
+                    .frame(height: 16)
 
-            entryContent
+                entryContent
 
-            Color.clear
-                .frame(height: 16)
+                Color.clear
+                    .frame(height: 16)
+            }
+            // Search-arrival orientation tint: same token, weight and timing
+            // as the comment anchor's. Zero except during the one-time run.
+            .background(Style.Color.composerBackground.opacity(arrivalHighlightOpacity))
 
             // With comments present the entry is the thread's origin node and
             // the spine carries the transition; the trailing hairline only

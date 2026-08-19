@@ -456,7 +456,11 @@ private struct SearchContentView: View {
                 highlightAnchorOnArrival: true
             )
         } else {
-            EntryDetailView(entry: root, feedViewModel: feedViewModel)
+            EntryDetailView(
+                entry: root,
+                feedViewModel: feedViewModel,
+                highlightOnArrival: true
+            )
         }
     }
 

@@ -47,6 +47,34 @@ final class FeedViewModel: ObservableObject {
     /// buffers). Optimistic patches are computed against this truth; a miss
     /// means nothing on any warm surface renders the entry.
     var entryResolver: ((UUID) -> Entry?)?
+    /// Resolves a thread from purely local state (warm scopes + the on-device
+    /// corpus mirror). Detail screens call this from `init`, so the correct
+    /// thread geometry exists in the FIRST rendered frame instead of arriving
+    /// with the network. Never performs I/O.
+    var localThreadResolver: ((UUID) -> LocalThread)?
+
+    /// Everything a detail screen needs to lay out a thread before it appears.
+    struct LocalThread {
+        let root: Entry?
+        let comments: [Entry]
+        static let empty = LocalThread(root: nil, comments: [])
+    }
+
+    /// True when two thread snapshots carry the same rows, ignoring fetch
+    /// order. Lets a refresh that changed nothing skip rebuilding presentation
+    /// state, so a normal open → refresh never reconstructs the screen.
+    static func isSameThread(_ a: [Entry], _ b: [Entry]) -> Bool {
+        guard a.count == b.count else { return false }
+        return a.sorted { $0.id.uuidString < $1.id.uuidString }
+            == b.sorted { $0.id.uuidString < $1.id.uuidString }
+    }
+
+    /// Synchronous, allocation-cheap local thread lookup. Returns `.empty`
+    /// when nothing is cached yet (cold install), in which case the screen
+    /// renders its normal zero-comment form and the fetch fills it in.
+    func localThread(rootId: UUID) -> LocalThread {
+        localThreadResolver?(rootId) ?? .empty
+    }
 
     /// The signed-in user, for display-entry construction. Set at launch.
     private(set) var currentUserId: UUID?

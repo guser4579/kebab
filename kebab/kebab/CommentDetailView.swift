@@ -65,6 +65,23 @@ struct CommentDetailView: View {
         self.feedViewModel = feedViewModel
         self.highlightAnchorOnArrival = highlightAnchorOnArrival
         _displayedComment = State(initialValue: comment)
+        // The whole spine is derived here, before the first frame: ancestry,
+        // root, children and every rail/node state settle together instead of
+        // arriving across separate render passes. Source is purely local (warm
+        // scopes + on-device corpus); the fetch below only reconciles.
+        let local = feedViewModel.localThread(rootId: rootId)
+        let seed = local.comments
+        _threadEntries = State(initialValue: seed)
+        if seed.isEmpty {
+            _threadData = State(initialValue: nil)
+            _spineAncestors = State(initialValue: [])
+            _spineRoot = State(initialValue: nil)
+        } else {
+            let data = ThreadData(entries: seed)
+            _threadData = State(initialValue: data)
+            _spineAncestors = State(initialValue: data.ancestors(of: comment.id))
+            _spineRoot = State(initialValue: local.root)
+        }
     }
 
     private var directChildren: [Entry] {
@@ -149,12 +166,8 @@ struct CommentDetailView: View {
                         // hierarchy — ancestors never hydrate in later, and
                         // the screen works offline. The network reload below
                         // reconciles behind it.
-                        if threadData == nil {
-                            let mirrored = searchCorpusStore.threadComments(rootId: rootId)
-                            if !mirrored.isEmpty {
-                                setThread(mirrored)
-                            }
-                        }
+                        // No seeding here: init already built the spine from
+                        // local state, so the first frame is the settled one.
                         performInitialScrollIfReady(proxy)
                         let revision = feedViewModel.threadRevision(rootId: rootId)
                         if loadedThreadRevision == nil || loadedThreadRevision != revision {
@@ -343,7 +356,11 @@ struct CommentDetailView: View {
         // leaves us stale, so the next appearance refetches.
         let revision = feedViewModel.threadRevision(rootId: rootId)
         if let entries = await feedViewModel.loadComments(rootId: rootId) {
-            setThread(entries)
+            // An identical thread is not re-applied: a normal open → refresh
+            // must not reconstruct presentation state that is already correct.
+            if !(threadData != nil && FeedViewModel.isSameThread(entries, threadEntries)) {
+                setThread(entries)
+            }
             // Server truth says the anchor is gone (deleted from another
             // device or a path the tombstones didn't see): pop rather than
             // render a ghost. Only a successful fetch may conclude this.
@@ -380,9 +397,7 @@ struct CommentDetailView: View {
         // Root resolution: warm feed truth first, corpus mirror second. A
         // double miss keeps the last resolved copy rather than blanking the
         // section mid-session.
-        spineRoot = feedViewModel.entryResolver?(rootId)
-            ?? searchCorpusStore.entry(id: rootId)
-            ?? spineRoot
+        spineRoot = feedViewModel.localThread(rootId: rootId).root ?? spineRoot
     }
 
     /// One-time landing: position the anchor near the top with a sliver of
