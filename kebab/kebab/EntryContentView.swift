@@ -18,9 +18,10 @@ struct EntryContentView: View {
     let entry: Entry
     /// Total thread comment count; hidden when zero.
     let commentCount: Int
-    /// True when the entry heads a thread: content sits in the shared
-    /// thread column beside the gutter. False renders the normal full-width
-    /// entry, byte-for-byte as before threads existed.
+    /// True when the entry is rendered as *context* beside the thread gutter
+    /// (the root shown above a focal comment): content sits in the shared
+    /// gutter column. False renders the full-width plane — the normal entry,
+    /// and the focal entry on its own detail screen.
     var isThreaded: Bool = false
     var showsEllipsis: Bool = true
     var showsActionRow: Bool = true

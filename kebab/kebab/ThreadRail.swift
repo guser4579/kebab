@@ -7,12 +7,18 @@ import SwiftUI
 
 /// How one row participates in the thread spine.
 ///
-/// Every row in a visible threaded chain carries a node — the chain reads as
-/// one continuous structure, never as decorations that appear on some rows
-/// and not others. Rails connect those nodes through a fixed-width gutter, so
-/// depth 1 and depth 20 have identical horizontal geometry. Content that is
-/// not part of a chain (a focused full-width leaf, an entry with no comments,
-/// the feed) renders with no gutter at all.
+/// The thread is drawn as a *focus* hierarchy, not an absolute-depth one.
+/// Exactly two horizontal planes exist on any thread screen: the focal object
+/// — whatever the user navigated to — owns the full-width content plane and
+/// carries no gutter at all, and everything around it (the context above, the
+/// subordinate replies below) sits in the single shared gutter column with the
+/// spine. Because there are only ever two planes, depth 1 and depth 20 have
+/// identical geometry and the usable content column never shrinks.
+///
+/// Every row that sits in the gutter carries a node — that group reads as one
+/// structure, never as decorations that appear on some rows and not others.
+/// Rails connect those nodes; they never run *through* the focal row, which is
+/// what keeps the focal object from flattening into its own context.
 enum ThreadRail {
     /// Node + rail flowing down; nothing rendered above — the root Entry, or
     /// an anchor with no parent context on screen.
@@ -23,10 +29,28 @@ enum ThreadRail {
     /// of the chain. Ends on the node, so the chain closes on a point rather
     /// than trailing off.
     case terminus
-    /// Short incoming lead-in with no node: context above a focused
-    /// full-width leaf. The spine ends cleanly before the leaf begins, which
-    /// is what makes "context above / the thing I landed on" legible.
+    /// Short incoming lead-in with no node: context above the focal object.
+    /// The spine ends cleanly before the focal row begins, which is what makes
+    /// "context above / the thing I landed on" legible.
     case stub
+}
+
+extension ThreadRail {
+    /// Rail state for row `index` of a `count`-row subordinate group hanging
+    /// beneath a focal object. The group owns its own spine run: it closes on
+    /// a node rather than trailing off, and it never runs a rail through the
+    /// focal row above it.
+    ///
+    /// A group of one is just a terminus with nothing before it: the rail
+    /// descends from the row's top edge — where the focal object's hairline
+    /// closes that plane — into the node and stops. That short run is what
+    /// ties the lone subordinate to the object it belongs to; a bare node
+    /// reads as a bullet, not as thread language.
+    static func forChild(index: Int, of count: Int) -> ThreadRail {
+        if index == count - 1 { return .terminus }
+        if index == 0 { return .origin }
+        return .link
+    }
 }
 
 /// Gutter graphics for one row, drawn in an `.overlay(alignment: .topLeading)`.
@@ -88,7 +112,7 @@ struct ThreadRailOverlay: View {
         }
     }
 
-    /// Every chain row shows a node; only the context stub does not.
+    /// Every gutter row shows a node; only the context stub does not.
     private var showsNode: Bool {
         switch rail {
         case .origin, .link, .terminus: return true

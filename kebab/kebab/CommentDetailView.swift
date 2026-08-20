@@ -116,12 +116,15 @@ struct CommentDetailView: View {
                                 .id(displayedComment.id)
 
                             if !directChildren.isEmpty {
-                                // Replies hang from the anchor's node: the
-                                // rail passes alongside each sibling and closes
-                                // on the last one's node. Sibling
-                                // separators begin at the rail's right edge so
-                                // they meet the spine with no gap — drawn as
-                                // overlays so the rail stays unbroken.
+                                // Replies are subordinate to the focal comment:
+                                // they sit inset in the same gutter column the
+                                // context above uses, and own their own spine —
+                                // opening on the first node, closing on the
+                                // last — rather than continuing through the
+                                // focal row. Sibling separators begin at the
+                                // rail's right edge so they meet the spine with
+                                // no gap; drawn as overlays so the rail stays
+                                // unbroken.
                                 VStack(spacing: 0) {
                                     ForEach(Array(directChildren.enumerated()), id: \.element.id) { index, child in
                                         CommentRowView(
@@ -129,7 +132,7 @@ struct CommentDetailView: View {
                                             feedViewModel: feedViewModel,
                                             rootId: rootId,
                                             subtreeCount: threadData?.subtreeCount(for: child.id) ?? 0,
-                                            threadRail: index == directChildren.count - 1 ? .terminus : .link,
+                                            threadRail: .forChild(index: index, of: directChildren.count),
                                             onMoreTapped: {
                                                 activeEntryMenuEntry = child
                                                 withAnimation(.easeOut(duration: 0.25)) {
@@ -653,37 +656,18 @@ struct CommentDetailView: View {
         spineRoot != nil || !spineAncestors.isEmpty
     }
 
-    /// The anchored comment. When it continues into replies it is a node on
-    /// the spine (thread column, no dividers through the relationship, ends
-    /// at its reply counter so the first reply follows compactly). As a
-    /// leaf it returns to the normal full-width presentation — the incoming
-    /// spine terminates as a short lead-in that stops before the content.
-    /// The Search-arrival tint wraps either form: same token and weight as
-    /// the result-row reacquisition tint, zero except during the one-time
-    /// arrival animation.
-    @ViewBuilder
+    /// The anchored comment — the focal object of this screen, and therefore
+    /// always the full-width plane. It carries no node and no rail through it:
+    /// the incoming spine from the context above terminates as a short lead-in
+    /// that stops before the content, and any replies below open their own
+    /// spine in the gutter column. Replies never demote it, so its geometry is
+    /// identical whether it has none, one, or twenty — nothing here moves when
+    /// the thread resolves.
+    /// The Search-arrival tint wraps it: same token and weight as the
+    /// result-row reacquisition tint, zero except during the one-time arrival
+    /// animation.
     private var commentContentSection: some View {
-        if directChildren.isEmpty {
-            VStack(spacing: 0) {
-                VStack(spacing: 0) {
-                    Color.clear
-                        .frame(height: 16)
-
-                    commentContent
-
-                    Color.clear
-                        .frame(height: 16)
-                }
-                .background(Style.Color.composerBackground.opacity(anchorHighlightOpacity))
-
-                bottomSeparator
-            }
-            .overlay(alignment: .topLeading) {
-                if anchorHasSpineAbove {
-                    ThreadRailOverlay(rail: .stub)
-                }
-            }
-        } else {
+        VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 0) {
                 Color.clear
                     .frame(height: 16)
@@ -695,8 +679,12 @@ struct CommentDetailView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Style.Color.composerBackground.opacity(anchorHighlightOpacity))
-            .overlay(alignment: .topLeading) {
-                ThreadRailOverlay(rail: anchorHasSpineAbove ? .link : .origin)
+
+            bottomSeparator
+        }
+        .overlay(alignment: .topLeading) {
+            if anchorHasSpineAbove {
+                ThreadRailOverlay(rail: .stub)
             }
         }
     }
@@ -729,7 +717,7 @@ struct CommentDetailView: View {
 
             commentReplyCounter
         }
-        .padding(.leading, directChildren.isEmpty ? Style.Layout.entryContentPadding : ThreadRailOverlay.contentLeading)
+        .padding(.leading, Style.Layout.entryContentPadding)
         .padding(.trailing, Style.Layout.entryContentPadding)
     }
 
