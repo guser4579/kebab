@@ -78,6 +78,18 @@ actor SearchEngine {
                 attachmentTitle = link.title ?? ""
                 let domain = URL(string: link.url)?.host ?? ""
                 attachmentText = attachmentTitle + "\n" + domain + "\n" + link.url
+                // Imported source text is searchable AS source text: it joins
+                // the attachment index, never `contentTokens`. A hit on a
+                // saved X post and a hit on something the user wrote stay
+                // distinguishable in both the model and the ranking (the
+                // attachment pass is already weighted at 0.9).
+                //
+                // Appended after the title on purpose — highlight offsets are
+                // only usable inside the leading title span, so this extends
+                // what matches without disturbing what highlights.
+                if let post = link.xPostSource {
+                    attachmentText += "\n" + post.searchableText
+                }
             }
 
             return Doc(

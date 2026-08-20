@@ -77,7 +77,7 @@ struct EntryContentView: View {
             }
 
             if let link = entry.linkAttachment, !entry.isContentHidden {
-                RichLinkCardView(urlString: link.url, title: link.title, imageURL: link.image_url)
+                SourceCardView(attachment: link)
 
                 Color.clear
                     .frame(height: 12)

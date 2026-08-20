@@ -1,0 +1,13 @@
+project_id = "bjhyaqjimicxtgulvnrl"
+
+# Edge Functions
+#
+# Secrets are NEVER declared here. X_BEARER_TOKEN lives only in the project's
+# Edge Function secrets (Dashboard → Edge Functions → Secrets) and is read at
+# runtime via Deno.env.get. Nothing in this repo holds its value.
+
+[functions.x-post]
+# Supabase's gateway rejects unsigned/expired tokens before the function runs.
+# The function still resolves the token to a real user, because the anon
+# publishable key also satisfies verify_jwt.
+verify_jwt = true

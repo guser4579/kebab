@@ -155,15 +155,18 @@ final class FeedViewModel: ObservableObject {
     private let repository: EntryRepository
     private let collectionRepository: CollectionRepository
     private let imageStorage: ImageStorageRepository
+    private let xPosts: XPostRepository
     private let supabase: SupabaseClient
     private let outbox = OutboxStore()
     private let pathMonitor = NWPathMonitor()
     private var isFlushing = false
+    private var isDrainingEnrichments = false
 
     init(supabase: SupabaseClient) {
         self.repository = EntryRepository(supabase: supabase)
         self.collectionRepository = CollectionRepository(supabase: supabase)
         self.imageStorage = ImageStorageRepository(supabase: supabase)
+        self.xPosts = XPostRepository(supabase: supabase)
         self.supabase = supabase
 
         // Offline reads live in the per-scope page caches (FeedStore); this
@@ -177,6 +180,9 @@ final class FeedViewModel: ObservableObject {
             guard path.status == .satisfied else { return }
             Task { @MainActor [weak self] in
                 await self?.flushOutbox()
+                // Same signal, same reason: work that was owed to a saved
+                // entry and couldn't complete while the network was gone.
+                await self?.drainXEnrichments()
             }
         }
         pathMonitor.start(queue: DispatchQueue(label: "kebab.connectivity"))
@@ -314,15 +320,33 @@ final class FeedViewModel: ObservableObject {
                     }
                 }
 
-                if let link, link.title == nil {
+                // Source enrichment is background work owned by creation, never
+                // by rendering. It starts after the row is already persisted
+                // and never blocks promotion below.
+                if let link {
                     let allAttachments = attachments
                     let entryId = pending.id
-                    Task {
-                        await self.enrichLinkMetadata(
-                            entryId: entryId,
-                            attachment: link,
-                            existingAttachments: allAttachments
-                        )
+                    let authorId = session.user.id
+                    if let xRef = SourceClassifier.xPostRef(from: link.url) {
+                        // A recognized rich source resolves natively instead of
+                        // being scraped as a generic page.
+                        Task {
+                            await self.enrichXPost(
+                                entryId: entryId,
+                                ref: xRef,
+                                attachment: link,
+                                existingAttachments: allAttachments,
+                                userId: authorId
+                            )
+                        }
+                    } else if link.title == nil {
+                        Task {
+                            await self.enrichLinkMetadata(
+                                entryId: entryId,
+                                attachment: link,
+                                existingAttachments: allAttachments
+                            )
+                        }
                     }
                 }
 
@@ -456,10 +480,27 @@ final class FeedViewModel: ObservableObject {
             image_url: imageURL
         )
 
-        // Replace only the link element — image attachments on the same entry
-        // must survive enrichment.
+        await persistEnrichedAttachment(
+            entryId: entryId,
+            enriched: enriched,
+            existingAttachments: existingAttachments
+        )
+    }
+
+    /// Writes an enriched link attachment back and patches the rendered row in
+    /// place. Never reloads: the entry keeps its id, its position and its
+    /// scroll offset — the card simply becomes richer where it already sits.
+    ///
+    /// Replaces only the link element, matched by url, so image attachments on
+    /// the same entry survive enrichment.
+    @discardableResult
+    private func persistEnrichedAttachment(
+        entryId: UUID,
+        enriched: EntryAttachment,
+        existingAttachments: [EntryAttachment]
+    ) async -> Bool {
         let updated = existingAttachments.map { existing in
-            (existing.attachmentType == .link && existing.url == attachment.url) ? enriched : existing
+            (existing.attachmentType == .link && existing.url == enriched.url) ? enriched : existing
         }
 
         do {
@@ -467,9 +508,125 @@ final class FeedViewModel: ObservableObject {
             // Patch only this entry across warm scopes — never a reload.
             if let current = entryResolver?(entryId) {
                 onEntryChanged?(current.withAttachments(updated))
+            } else {
+                // Nothing warm renders it (an older entry the retry drain
+                // caught up with). Cached read surfaces just need to know
+                // their copy is behind.
+                onCommentContentChanged?()
             }
+            return true
         } catch {
             // Silently ignore — entry keeps its current compact presentation.
+            return false
+        }
+    }
+
+    // MARK: - X post enrichment
+
+    /// Resolves a saved X post through the Edge Function and folds the result
+    /// into the entry's existing link attachment.
+    ///
+    /// Three outcomes, three durable behaviors:
+    ///   - resolved     → persisted once and rendered as a native card. Nothing
+    ///                    ever looks the post up again.
+    ///   - unavailable  → the verdict itself is persisted, which is what stops
+    ///                    Kebab from re-asking X about a deleted or protected
+    ///                    post on every launch. The entry keeps its generic
+    ///                    link card.
+    ///   - retryable    → nothing is written; the source stays unresolved and
+    ///                    `XEnrichmentQueue` allows a small, bounded number of
+    ///                    later attempts.
+    private func enrichXPost(
+        entryId: UUID,
+        ref: SourceClassifier.XPostRef,
+        attachment: EntryAttachment,
+        existingAttachments: [EntryAttachment],
+        userId: UUID
+    ) async {
+        switch await xPosts.resolve(postID: ref.postID) {
+        case let .resolved(post):
+            let enriched = attachment.enrichedWithXPost(post)
+            if await persistEnrichedAttachment(
+                entryId: entryId,
+                enriched: enriched,
+                existingAttachments: existingAttachments
+            ) {
+                XEnrichmentQueue.remove(entryId: entryId, userId: userId)
+            } else {
+                // The lookup succeeded but the write didn't — worth one more
+                // pass rather than throwing away a paid X read.
+                XEnrichmentQueue.recordAttempt(
+                    entryId: entryId,
+                    postID: ref.postID,
+                    sourceURL: attachment.url,
+                    userId: userId
+                )
+            }
+
+        case let .unavailable(reason):
+            await persistEnrichedAttachment(
+                entryId: entryId,
+                enriched: attachment.markedSourceUnavailable(reason: reason),
+                existingAttachments: existingAttachments
+            )
+            XEnrichmentQueue.remove(entryId: entryId, userId: userId)
+
+        case .retryable:
+            XEnrichmentQueue.recordAttempt(
+                entryId: entryId,
+                postID: ref.postID,
+                sourceURL: attachment.url,
+                userId: userId
+            )
+        }
+    }
+
+    /// Retries the small set of X lookups that failed transiently, on the same
+    /// connectivity signal that drains the outbox.
+    ///
+    /// Almost always a no-op: the queue is empty unless a save happened while
+    /// the lookup couldn't succeed, and every item is dropped after
+    /// `XEnrichmentQueue.maxAttempts`. Resolved sources are never in here, so
+    /// this can't become a refresh loop.
+    func drainXEnrichments() async {
+        guard !isDrainingEnrichments, let userId = supabase.auth.currentSession?.user.id else { return }
+        let queued = XEnrichmentQueue.load(userId: userId)
+        guard !queued.isEmpty else { return }
+
+        isDrainingEnrichments = true
+        defer { isDrainingEnrichments = false }
+
+        for item in queued {
+            // The entry must exist locally or server-side before its
+            // attachments can be patched. A miss (deleted meanwhile) drops the
+            // item without spending an X read.
+            var entry = entryResolver?(item.id)
+            if entry == nil {
+                entry = try? await repository.fetchEntry(id: item.id)
+            }
+            guard let entry,
+                  let attachments = entry.attachments,
+                  let link = attachments.first(where: {
+                      $0.attachmentType == .link && $0.url == item.sourceURL
+                  })
+            else {
+                XEnrichmentQueue.remove(entryId: item.id, userId: userId)
+                continue
+            }
+
+            // Another pass (or another device) already settled this source.
+            guard !link.isSourceSettled else {
+                XEnrichmentQueue.remove(entryId: item.id, userId: userId)
+                continue
+            }
+
+            await enrichXPost(
+                entryId: item.id,
+                ref: SourceClassifier.XPostRef(postID: item.postID, username: nil),
+                attachment: link,
+                existingAttachments: attachments,
+                userId: userId
+            )
         }
     }
 

@@ -279,6 +279,23 @@ enum Style {
             absoluteFormatter.string(from: date)
         }
 
+        private static let sourceDateFormatter: DateFormatter = {
+            let f = DateFormatter()
+            f.dateStyle = .medium
+            f.timeStyle = .none
+            return f
+        }()
+
+        /// Date an imported source was published ("Aug 20, 2026").
+        ///
+        /// Deliberately a different shape from `absolute(for:)`: an entry
+        /// carrying a rich source shows two timestamps — when the user saved
+        /// it, and when the source was made — and they must not read as the
+        /// same kind of fact.
+        static func sourceDate(for date: Date) -> String {
+            sourceDateFormatter.string(from: date)
+        }
+
         /// Compact relative string for `date`.
         /// Pass `relativeTo` from a `TimelineView` context for live updates;
         /// defaults to `Date()` for one-shot use.

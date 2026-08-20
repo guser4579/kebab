@@ -6,6 +6,29 @@ nonisolated struct EntryAttachment: Codable, Sendable, Equatable {
     let title: String?
     let favicon_url: String?
     let image_url: String?
+    /// Rich-source enrichment for this attachment, when Kebab knows what the
+    /// URL points at. Absent on every attachment written before this feature
+    /// and on every generic link — those keep the existing preview treatment
+    /// untouched. See `SourceMetadata`.
+    let source: SourceMetadata?
+
+    /// Explicit rather than synthesized so `source` can default to nil and
+    /// every existing construction site keeps compiling unchanged.
+    init(
+        type: String,
+        url: String,
+        title: String?,
+        favicon_url: String?,
+        image_url: String?,
+        source: SourceMetadata? = nil
+    ) {
+        self.type = type
+        self.url = url
+        self.title = title
+        self.favicon_url = favicon_url
+        self.image_url = image_url
+        self.source = source
+    }
 
     enum AttachmentType: String {
         case link
@@ -14,6 +37,34 @@ nonisolated struct EntryAttachment: Codable, Sendable, Equatable {
 
     var attachmentType: AttachmentType? {
         AttachmentType(rawValue: type)
+    }
+
+    /// The resolved X post behind this attachment, or nil when it isn't one,
+    /// isn't enriched yet, or was resolved as permanently unavailable. The
+    /// single gate every render site uses to choose the native card.
+    var xPostSource: XPostSource? {
+        guard let source,
+              source.kind == SourceKind.xPost.rawValue,
+              source.status == SourceStatus.resolved.rawValue
+        else { return nil }
+        return source.x_post
+    }
+
+    /// True once enrichment reached a durable verdict — resolved or
+    /// permanently unavailable. Nothing re-asks X about these.
+    var isSourceSettled: Bool {
+        source != nil
+    }
+
+    func withSource(_ newSource: SourceMetadata?) -> EntryAttachment {
+        EntryAttachment(
+            type: type,
+            url: url,
+            title: title,
+            favicon_url: favicon_url,
+            image_url: image_url,
+            source: newSource
+        )
     }
 }
 
@@ -48,6 +99,13 @@ nonisolated struct Entry: Identifiable, Sendable, Equatable {
 
     var imageAttachments: [EntryAttachment] {
         attachments?.filter { $0.attachmentType == .image } ?? []
+    }
+
+    /// The resolved X post this entry's link attachment carries, if any.
+    /// Everything else about the entry — comments, collections, reminders,
+    /// edit, delete, hide, search — is untouched by its presence.
+    var xPostSource: XPostSource? {
+        linkAttachment?.xPostSource
     }
 
     enum CodingKeys: String, CodingKey {
