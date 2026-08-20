@@ -116,12 +116,12 @@ struct EntryDetailView: View {
                         }
 
                         if !directChildren.isEmpty {
-                            // Comments hang from the entry's origin node:
-                            // the rail passes alongside each sibling and
-                            // closes on the last one's node. Sibling
-                            // separators begin at the rail's right edge so
-                            // they meet the spine with no gap — drawn as
-                            // overlays so the rail stays unbroken.
+                            // Comments are subordinate to the focal entry: they
+                            // sit inset in the gutter column and own their own
+                            // spine, opening on the first node and closing on
+                            // the last. Sibling separators begin at the rail's
+                            // right edge so they meet the spine with no gap —
+                            // drawn as overlays so the rail stays unbroken.
                             VStack(spacing: 0) {
                                 ForEach(Array(directChildren.enumerated()), id: \.element.id) { index, comment in
                                     CommentRowView(
@@ -129,7 +129,7 @@ struct EntryDetailView: View {
                                         feedViewModel: feedViewModel,
                                         rootId: displayedRootEntry.id,
                                         subtreeCount: threadData?.subtreeCount(for: comment.id) ?? 0,
-                                        threadRail: index == directChildren.count - 1 ? .terminus : .link,
+                                        threadRail: .forChild(index: index, of: directChildren.count),
                                         onMoreTapped: {
                                             activeEntryMenuEntry = comment
                                             withAnimation(.easeOut(duration: 0.25)) {
@@ -598,10 +598,16 @@ struct EntryDetailView: View {
     /// transient notice from the feed, which is what's on screen by then.
     private func performRootDelete(_ entry: Entry) {
         let removals = scopeCoordinator.removeForDelete(id: entry.id)
+        // The entry's whole thread dies with it (parent_id cascade). Tombstone
+        // it in the same beat so a Recent Activity item pointing into this
+        // thread can't push a comment screen onto a deleted object.
+        let doomed = Set([entry.id] + threadEntries.map(\.id))
+        feedViewModel.noteEntriesDeleted(doomed)
         dismiss()
         Task {
             let deleted = await feedViewModel.deleteEntry(id: entry.id)
             if !deleted {
+                feedViewModel.retractEntriesDeleted(doomed)
                 scopeCoordinator.restoreAfterFailedDelete(removals)
                 noticeCenter.show("Failed to delete")
             }
@@ -611,14 +617,21 @@ struct EntryDetailView: View {
     /// Local-first comment deletion: the subtree and the counter update
     /// immediately; a genuine backend failure restores both from truth.
     private func deleteCommentOptimistically(_ comment: Entry) {
+        let doomed = subtreeIds(of: comment.id)
         let removedCount = (threadData?.subtreeCount(for: comment.id) ?? 0) + 1
-        setThread(threadEntries.filter { !subtreeIds(of: comment.id).contains($0.id) })
+        setThread(threadEntries.filter { !doomed.contains($0.id) })
+        // Same tombstone contract as CommentDetailView: the cascade is dead
+        // everywhere at once, so nothing (a Recent Activity deep link, a
+        // still-open comment screen) can open a member of the subtree and
+        // render a ghost until the server answers.
+        feedViewModel.noteEntriesDeleted(doomed)
         feedViewModel.applyCommentCountDelta(rootId: displayedRootEntry.id, delta: -removedCount)
         markThreadCurrent()
 
         Task {
             let ok = await feedViewModel.deleteEntry(id: comment.id)
             if !ok {
+                feedViewModel.retractEntriesDeleted(doomed)
                 feedViewModel.applyCommentCountDelta(rootId: displayedRootEntry.id, delta: removedCount)
                 await reloadThread()
             }
@@ -715,17 +728,12 @@ struct EntryDetailView: View {
             // as the comment anchor's. Zero except during the one-time run.
             .background(Style.Color.composerBackground.opacity(arrivalHighlightOpacity))
 
-            // With comments present the entry is the thread's origin node and
-            // the spine carries the transition; the trailing hairline only
-            // belongs to the standalone entry.
-            if directChildren.isEmpty {
-                bottomSeparator
-            }
-        }
-        .overlay(alignment: .topLeading) {
-            if !directChildren.isEmpty {
-                ThreadRailOverlay(rail: .origin)
-            }
+            // The entry is the focal object here, so it always closes its own
+            // full-width plane with the hairline — the comment group below
+            // opens its own spine rather than continuing the entry's. Kept
+            // unconditional so nothing in this section moves when comments
+            // resolve.
+            bottomSeparator
         }
     }
 
@@ -742,7 +750,9 @@ struct EntryDetailView: View {
         EntryContentView(
             entry: displayedRootEntry,
             commentCount: threadData.map(\.totalCount) ?? displayedRootEntry.comment_count ?? 0,
-            isThreaded: !directChildren.isEmpty,
+            // Never threaded: the entry the user opened is the focal object
+            // and keeps the full-width plane whether or not it has comments.
+            isThreaded: false,
             showResurface: onRemoveFromCollection == nil,
             reminder: reminderStore.reminder(for: displayedRootEntry.id),
             remindersCanDeliver: reminderStore.authorization.canDeliver,

@@ -25,7 +25,13 @@ struct ScopeFeedView: View {
     @ObservedObject var reminderStore: ReminderStore
 
     @State private var scrollToLiveEdgeSignal = 0
-    @State private var distanceFromLiveEdge: CGFloat = 0
+    /// Whether the user is more than one screen back from the live edge — the
+    /// only thing this view ever needed from the scroll distance. Deliberately
+    /// a threshold crossing, not the raw offset: storing the distance itself
+    /// re-evaluated this body (and re-diffed the entire scroll content and
+    /// every row closure) on every scroll frame, purely to decide whether one
+    /// overlay button is visible.
+    @State private var isBeyondOneScreen = false
 
     /// Newest-first: outbox pending entries (except ones held while away)
     /// render at the live edge ahead of the server rows.
@@ -54,7 +60,10 @@ struct ScopeFeedView: View {
                     onLiveEdgeChange: { live in
                         if live { store.didReachLiveEdge() } else { store.didLeaveLiveEdge() }
                     },
-                    onDistanceChange: { distanceFromLiveEdge = $0 },
+                    onDistanceChange: { distance in
+                        let beyond = distance > containerHeight
+                        if beyond != isBeyondOneScreen { isBeyondOneScreen = beyond }
+                    },
                     onApproachHistoryEnd: {
                         Task { await store.loadOlderIfNeeded() }
                     },
@@ -129,7 +138,7 @@ struct ScopeFeedView: View {
     /// underneath exactly as before, revealed on returning to the live edge.
     private var showFAB: Bool {
         store.scope == .all
-            && (store.unseenCount > 0 || distanceFromLiveEdge > containerHeight)
+            && (store.unseenCount > 0 || isBeyondOneScreen)
     }
 
     private var fab: some View {

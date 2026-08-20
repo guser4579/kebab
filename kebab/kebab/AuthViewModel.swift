@@ -201,9 +201,22 @@ final class AuthViewModel: ObservableObject {
     /// actually references (entry image attachments + the current avatar) —
     /// the only URLs that could have been shared or persisted anywhere. Uses
     /// the Storage API `remove`, which deletes the underlying bytes (not just
-    /// the metadata row). Idempotent: re-running after a partial failure just
-    /// removes whatever remains. Throws on a real transport/permission failure
-    /// so the caller aborts the account deletion and the user can retry.
+    /// the metadata row). Throws on a real transport/permission failure so the
+    /// caller aborts the account deletion and the user can retry.
+    ///
+    /// THE GATE IS ABSENCE, NOT THE REMOVAL COUNT. Storage answers 200 with a
+    /// short (often empty) list whenever the DELETE affected fewer rows than
+    /// asked — because RLS filtered it, OR simply because the object was
+    /// already gone. Those two look identical in the response and mean opposite
+    /// things, so the count cannot be the gate: trusting it either waves
+    /// through a purge that removed nothing (the bug this call had for its
+    /// whole life) or wedges a retry forever after a partial success.
+    ///
+    /// So removal is attempted, and then every targeted path is checked against
+    /// what is actually still in the bucket. Already-absent counts as purged;
+    /// still-present is the only failure. Teardown proceeds only when the
+    /// targeted set is confirmed empty, which keeps the privacy contract exact
+    /// AND makes the whole operation safely retryable after partial success.
     private func purgeUserStorageObjects(userId uid: UUID) async throws {
         struct AttachmentsRow: Decodable { let attachments: [EntryAttachment]? }
         struct AvatarRow: Decodable { let avatar_url: String? }
@@ -242,17 +255,90 @@ final class AuthViewModel: ObservableObject {
         guard !paths.isEmpty else { return }
 
         // Remove in bounded batches so a large account doesn't send one huge
-        // request. remove() silently ignores paths that are already gone, so
-        // a retry after a partial delete is safe.
+        // request. A batch that errors is NOT fatal on its own: the objects it
+        // targeted may already be gone from an earlier attempt, and the
+        // verification below is what actually decides.
         let all = Array(paths)
         var index = 0
+        var aBatchErrored = false
         while index < all.count {
             let batch = Array(all[index..<min(index + 100, all.count)])
-            _ = try await supabase.storage
-                .from(ImageStorageRepository.bucket)
-                .remove(paths: batch)
+            do {
+                _ = try await supabase.storage
+                    .from(ImageStorageRepository.bucket)
+                    .remove(paths: batch)
+            } catch {
+                aBatchErrored = true
+            }
             index += 100
         }
+
+        // The gate. A listing failure throws out of here, which is correct:
+        // absence that cannot be confirmed must never be assumed.
+        let stillPresent = try await presentObjects(among: paths)
+        guard stillPresent.isEmpty else {
+            // Counts and status only — never a path (the first segment is the
+            // user id), never content.
+            print("Account storage purge: \(all.count) targeted, \(stillPresent.count) still present\(aBatchErrored ? " (a removal batch also errored)" : "") — aborting account deletion")
+            throw NSError(
+                domain: "Kebab.DeleteAccount",
+                code: 2,
+                userInfo: [NSLocalizedDescriptionKey:
+                    "Couldn\u{2019}t remove your uploaded images, so your account wasn\u{2019}t deleted. Please try again."]
+            )
+        }
+    }
+
+    /// Which of `paths` are STILL in the bucket.
+    ///
+    /// Uses the Storage list API — a POST that queries `storage.objects`
+    /// directly. That matters twice over: it is the authoritative record
+    /// (rather than a claim about what a DELETE affected), and it cannot be
+    /// answered from Cloudflare's cache. A public object URL can keep serving a
+    /// deleted object for its full `max-age=3600`, so verifying absence that
+    /// way would report freshly purged files as still present and wedge exactly
+    /// the retry this design exists to allow.
+    ///
+    /// Every path this purge targets is `{uid}/{file}` — entry images and
+    /// avatars both upload into the user's own folder — so in practice this is
+    /// one folder listing; deriving the folder set keeps it correct if that
+    /// ever changes. RLS scopes the listing to the caller's own folder anyway.
+    private func presentObjects(among paths: Set<String>) async throws -> Set<String> {
+        let folders = Set(
+            paths.map { $0.split(separator: "/").dropLast().joined(separator: "/") }
+        ).filter { !$0.isEmpty }
+
+        var present: Set<String> = []
+        for folder in folders {
+            let pageSize = 100
+            var offset = 0
+            // Page: a folder can hold more objects than one listing returns.
+            while true {
+                let page = try await supabase.storage
+                    .from(ImageStorageRepository.bucket)
+                    .list(
+                        path: folder,
+                        options: SearchOptions(limit: pageSize, offset: offset)
+                    )
+                for object in page {
+                    present.insert("\(folder)/\(object.name)")
+                }
+                if page.count < pageSize { break }
+                offset += pageSize
+            }
+        }
+        return Self.stillPresent(targeted: paths, presentInBucket: present)
+    }
+
+    /// The purge's decision rule, isolated from the network so it can be
+    /// pinned by tests: of everything we targeted, what is still there?
+    /// Anything targeted but absent has been successfully purged — whether by
+    /// this attempt or an earlier one — and must not block teardown.
+    nonisolated static func stillPresent(
+        targeted: Set<String>,
+        presentInBucket: Set<String>
+    ) -> Set<String> {
+        targeted.intersection(presentInBucket)
     }
 
     func resetFlow() {

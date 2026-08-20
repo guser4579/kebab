@@ -608,6 +608,16 @@ struct MainAppView: View {
                     // toggles which surface is visible.
                     ZStack {
                         let activeScope = FeedScope(filter: feedViewModel.activeCollectionFilter)
+                        // A feed row's height IS a text measurement, so it may
+                        // only ever be measured against real geometry. On its
+                        // first pass this GeometryReader reports width 0 and
+                        // the feed falls back to an ideal width (~170pt): every
+                        // body wraps wrong, every row comes out ~100pt too
+                        // tall, and the whole feed re-lays a frame later — the
+                        // newest entry visibly settling into place. Skipping
+                        // that one pass costs nothing (it is never presented)
+                        // and makes the first rendered geometry the final one.
+                        if geometry.size.width > 0 {
                         ForEach(scopeCoordinator.visitedScopes) { scope in
                             ScopeFeedView(
                                 store: scopeCoordinator.store(for: scope),
@@ -657,6 +667,7 @@ struct MainAppView: View {
                             )
                             .opacity(scope == activeScope ? 1 : 0)
                             .allowsHitTesting(scope == activeScope)
+                        }
                         }
                     }
                     .frame(maxWidth: .infinity)
@@ -745,16 +756,32 @@ struct MainAppView: View {
                             // refetches on Search's next look.
                             searchCorpusStore?.markStale()
                         }
+                        // The corpus is a cached READ surface: it drops the
+                        // row (and, through its own cascade walk, every
+                        // descendant) the instant the delete is issued, so
+                        // Search can never offer a tappable copy of something
+                        // already gone from the feed and the thread.
+                        feedViewModel.onEntryDeleteRequested = { [weak searchCorpusStore] id in
+                            searchCorpusStore?.removeEntry(id: id)
+                        }
                         // Deletes confirmed from any screen (detail included)
                         // drop and tombstone the row in every warm scope.
                         // For the feed's own optimistic path this is a no-op
                         // second removal.
-                        feedViewModel.onEntryDeleted = { [weak scopeCoordinator, weak searchCorpusStore, weak reminderStore] id in
+                        feedViewModel.onEntryDeleted = { [weak scopeCoordinator, weak reminderStore] id in
                             scopeCoordinator?.noteDeletedEverywhere(id: id)
-                            searchCorpusStore?.removeEntry(id: id)
                             // No orphan delivery, no dead deep link: the
-                            // reminder dies with the entry.
+                            // reminder dies with the entry. Deliberately on
+                            // the confirmed path — a reminder for an entry
+                            // that survived a failed delete is still correct.
                             reminderStore?.handleEntryDeleted(id: id)
+                        }
+                        // The server refused: the corpus dropped rows that
+                        // still exist. Refetch authoritative truth rather than
+                        // leaving Search quietly short a thought.
+                        feedViewModel.onEntryDeleteFailed = { [weak searchCorpusStore] _ in
+                            searchCorpusStore?.markStale()
+                            Task { await searchCorpusStore?.refreshIfNeeded() }
                         }
                         // SWR: cached page already rendered; revalidate quietly.
                         scopeCoordinator.activate(.all)

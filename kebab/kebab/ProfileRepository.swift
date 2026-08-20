@@ -86,19 +86,32 @@ final class ProfileRepository {
     /// Best-effort cleanup of a replaced or removed avatar object. A failure
     /// here never surfaces: the profile row is the source of truth and the
     /// orphaned object is unreachable (unguessable path).
+    ///
+    /// This is garbage collection, not a privacy guarantee — the object it
+    /// drops is one the account no longer references, and the account-deletion
+    /// purge covers the *current* avatar separately and strictly. So a failure
+    /// stays non-throwing (same contract as per-entry image cleanup), but it
+    /// must not be INVISIBLE: Storage answers 200 with an empty list when RLS
+    /// filters the DELETE, so without this check a permanently no-opping
+    /// cleanup looks identical to a working one.
     func deleteAvatarObject(publicUrl: String) async {
         guard let path = Self.storagePath(fromPublicUrl: publicUrl) else { return }
-        _ = try? await supabase.storage
-            .from(ImageStorageRepository.bucket)
-            .remove(paths: [path])
+        do {
+            let removed = try await supabase.storage
+                .from(ImageStorageRepository.bucket)
+                .remove(paths: [path])
+            if removed.isEmpty {
+                print("Avatar cleanup removed 0/1 object(s) — check the entry-images select+delete policies on storage.objects")
+            }
+        } catch {
+            print("Avatar cleanup failed:", error.localizedDescription)
+        }
     }
 
-    /// Extracts the in-bucket object path from a public URL
-    /// (`…/object/public/entry-images/<path>`).
+    /// Extracts the in-bucket object path from a public URL. Moved to
+    /// `ImageStorageRepository`, which owns the bucket and mints these paths;
+    /// kept here so existing avatar/account-deletion call sites read unchanged.
     static func storagePath(fromPublicUrl url: String) -> String? {
-        guard let range = url.range(of: "/object/public/\(ImageStorageRepository.bucket)/")
-        else { return nil }
-        let raw = String(url[range.upperBound...])
-        return raw.removingPercentEncoding ?? raw
+        ImageStorageRepository.storagePath(fromPublicUrl: url)
     }
 }

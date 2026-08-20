@@ -40,9 +40,19 @@ final class FeedViewModel: ObservableObject {
     /// comment, or a root beyond the loaded pages) — the owner marks the
     /// search corpus stale so its next look refetches.
     var onCommentContentChanged: (() -> Void)?
+    /// Fired the instant a delete is issued, BEFORE the network round trip,
+    /// whichever screen initiated it. Cached read surfaces (the search corpus)
+    /// drop the row and its descendants here rather than on confirmation: a
+    /// thing the user has deleted must never stay tappable somewhere else
+    /// while the request is in flight. Paired with `onEntryDeleteFailed`.
+    var onEntryDeleteRequested: ((UUID) -> Void)?
     /// Fired when a delete is confirmed by the server, whichever screen
     /// initiated it, so every warm scope store drops (and tombstones) the row.
     var onEntryDeleted: ((UUID) -> Void)?
+    /// A genuine backend rejection after the optimistic drop above: cached
+    /// surfaces reconcile back to authoritative truth rather than staying
+    /// silently short a row.
+    var onEntryDeleteFailed: ((UUID) -> Void)?
     /// Resolves the freshest warm copy of an entry (scope stores + arrival
     /// buffers). Optimistic patches are computed against this truth; a miss
     /// means nothing on any warm surface renders the entry.
@@ -567,13 +577,33 @@ final class FeedViewModel: ObservableObject {
     /// transport failures get brief in-place retries before the caller's
     /// failure path (restore + transient notice) ever runs. No feed reload —
     /// warm scope stores are told through `onEntryDeleted`.
+    ///
+    /// Descendants are NOT deleted here one by one. `entries.parent_id` is
+    /// `ON DELETE CASCADE`, so this single statement removes the whole
+    /// subtree atomically at any depth; the client's local subtree walks are
+    /// there to render the surviving geometry immediately, never to carry the
+    /// integrity guarantee.
     @discardableResult
     func deleteEntry(id: UUID) async -> Bool {
         errorMessage = nil
+        // Local truth changes before the round trip, not after it.
+        onEntryDeleteRequested?(id)
+        // Storage bytes are NOT covered by the parent_id cascade, and the rows
+        // that name them vanish the instant the DELETE lands — so read the
+        // doomed subtree's image attachments first. Read-only and optional: if
+        // this fails, the delete still proceeds and we simply skip cleanup.
+        let doomedImages = (try? await repository.imageAttachmentsInSubtree(of: id)) ?? []
         for attempt in 0..<3 {
             do {
                 try await repository.deleteEntry(id: id)
                 onEntryDeleted?(id)
+                // The database has confirmed the content is gone — only now may
+                // the bytes go. Detached and best-effort: the visible deletion
+                // never waits on the bucket, and a Storage failure can never
+                // resurrect content the database has already dropped.
+                if !doomedImages.isEmpty {
+                    Task { await self.imageStorage.removeImageObjects(for: doomedImages) }
+                }
                 return true
             } catch let error as URLError {
                 // Offline / transport: retry quietly, then give up.
@@ -585,9 +615,11 @@ final class FeedViewModel: ObservableObject {
             } catch {
                 // Server rejection: retrying won't change the answer.
                 errorMessage = error.localizedDescription
+                onEntryDeleteFailed?(id)
                 return false
             }
         }
+        onEntryDeleteFailed?(id)
         return false
     }
 

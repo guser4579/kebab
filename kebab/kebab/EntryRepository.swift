@@ -109,6 +109,34 @@ final class EntryRepository {
             .execute()
     }
 
+    /// Every image attachment owned by the content a `deleteEntry(id:)` is
+    /// about to destroy — read BEFORE the delete, because the rows that name
+    /// the Storage objects are gone the instant the cascade runs.
+    ///
+    /// `root_id` is denormalized and server-authoritative (a root's `root_id`
+    /// is its own id), so for a root entry `root_id = id` selects the root AND
+    /// every descendant at any depth — the exact set Postgres is about to
+    /// cascade, independent of what the UI happens to have loaded. For a
+    /// comment, `root_id` names its thread rather than its own subtree, so the
+    /// `id.eq` arm selects just that comment. That is complete today: comments
+    /// cannot own images (`InsertCommentPayload` has no attachments column and
+    /// both detail views compose replies with `attachments: nil`), so a
+    /// comment's subtree owns no Storage objects. Revisit this query if replies
+    /// ever gain uploads.
+    ///
+    /// RLS scopes the select to `user_id = auth.uid()`, so this only ever sees
+    /// the caller's own rows.
+    func imageAttachmentsInSubtree(of id: UUID) async throws -> [EntryAttachment] {
+        struct AttachmentsRow: Decodable { let attachments: [EntryAttachment]? }
+        let rows: [AttachmentsRow] = try await supabase
+            .from("entries")
+            .select("attachments")
+            .or("id.eq.\(id.uuidString),root_id.eq.\(id.uuidString)")
+            .execute()
+            .value
+        return rows.flatMap { ($0.attachments ?? []).filter { $0.attachmentType == .image } }
+    }
+
     func deleteEntry(id: UUID) async throws {
         try await supabase
             .from("entries")

@@ -50,6 +50,54 @@ final class ImageStorageRepository {
         return attachments
     }
 
+    /// Physically removes the Storage objects behind a set of image
+    /// attachments. Call this ONLY once the database rows that referenced them
+    /// are confirmed deleted — the bytes are the last copy, and a row that
+    /// still exists must always resolve to a live object.
+    ///
+    /// Best-effort by design: the database is the source of truth, so a bucket
+    /// failure here leaves an unreachable orphan (the path is unguessable)
+    /// rather than resurrecting content the user already deleted. Failures are
+    /// logged, never thrown. Non-image attachments are ignored, and link
+    /// preview images live on remote hosts, so `storagePath(fromPublicUrl:)`
+    /// returns nil for them — nothing outside this bucket can be touched.
+    func removeImageObjects(for attachments: [EntryAttachment]) async {
+        let paths = attachments
+            .filter { $0.attachmentType == .image }
+            .compactMap { Self.storagePath(fromPublicUrl: $0.url) }
+        guard !paths.isEmpty else { return }
+        do {
+            // An entry carries at most 4 images, so this is always one small
+            // request — no batching needed (unlike the account-wide purge).
+            let removed = try await supabase.storage
+                .from(Self.bucket)
+                .remove(paths: paths)
+            // Storage answers 200 with a SHORT list (often empty) when RLS
+            // filters the DELETE — the call "succeeds" while removing nothing.
+            // Without this check, cleanup silently no-ops forever.
+            if removed.count < paths.count {
+                print("Entry image cleanup removed \(removed.count)/\(paths.count) object(s) — check the entry-images select+delete policies on storage.objects")
+            }
+        } catch {
+            // Observable but harmless. Deliberately logs the count and the
+            // transport error only — never entry content.
+            print("Entry image cleanup failed for \(paths.count) object(s):", error.localizedDescription)
+        }
+    }
+
+    /// Extracts the in-bucket object path from a public URL
+    /// (`…/object/public/entry-images/<path>`). The canonical way back from a
+    /// stored attachment URL to the key Storage expects: `remove(paths:)` takes
+    /// in-bucket paths, and handing it a public URL deletes nothing while
+    /// reporting success. Lives here because this type owns the bucket and
+    /// mints the paths in the first place.
+    static func storagePath(fromPublicUrl url: String) -> String? {
+        guard let range = url.range(of: "/object/public/\(bucket)/")
+        else { return nil }
+        let raw = String(url[range.upperBound...])
+        return raw.removingPercentEncoding ?? raw
+    }
+
     nonisolated static func jpegData(
         from image: UIImage,
         maxDimension: CGFloat = 2048,
