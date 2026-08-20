@@ -189,10 +189,11 @@ struct SettingsView: View {
             Spacer(minLength: 0)
 
             // The feedback invitation holds the bottom edge, apart from the
-            // everyday navigation above — a window out of the room.
-            feedbackCard
+            // everyday navigation above — the same material as the groups,
+            // set low enough to read as the panel's floor.
+            feedbackCTA
                 .padding(.horizontal, 16)
-                .padding(.bottom, 48)
+                .padding(.bottom, 32)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         .background(Style.Color.background)
@@ -497,46 +498,26 @@ struct SettingsView: View {
 
     // MARK: - Feedback CTA
 
-    /// The one daylight moment in the panel: the artwork cropped to its
-    /// lower portion — the field, the solitary figure, the luminous horizon —
-    /// with the invitation resting on the grass. The scrim is the minimum
-    /// needed for the copy; the image stays luminous.
-    private var feedbackCard: some View {
+    /// A capsule in the same material as the menu groups above it, so the
+    /// invitation reads as part of the panel rather than a promotional
+    /// object. Icon and label share one tint, so they read as one thing.
+    private var feedbackCTA: some View {
         Button {
             withAnimation(Self.pushTransition) {
                 openDetail = .feedback
             }
         } label: {
-            ZStack(alignment: .bottomLeading) {
-                GeometryReader { geo in
-                    Image("FeedbackArt")
-                        .resizable()
-                        .scaledToFill()
-                        .frame(width: geo.size.width, height: geo.size.height, alignment: .bottom)
-                        .clipped()
-                }
+            HStack(spacing: Style.Spacing.x2) {
+                Icon("antenna")
+                    .foregroundColor(Style.Color.primaryText)
 
-                LinearGradient(
-                    stops: [
-                        .init(color: .black.opacity(0.38), location: 0),
-                        .init(color: .clear, location: 0.6)
-                    ],
-                    startPoint: .bottom,
-                    endPoint: .top
-                )
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Offer your feedback")
-                        .font(.custom("DMSans-SemiBold", size: 16))
-                        .foregroundColor(.white)
-
-                    Text("Help improve Kebab by sharing your feedback!")
-                        .font(Style.Typography.meta())
-                        .foregroundColor(.white.opacity(0.85))
-                }
-                .padding(16)
+                Text("send feedback")
+                    .font(.custom("DMSans-Medium", size: 16))
+                    .foregroundColor(Style.Color.primaryText)
             }
-            .frame(height: 168)
+            .frame(maxWidth: .infinity)
+            .frame(height: 52)
+            .background(Style.Color.composerBackground)
             .clipShape(RoundedRectangle(cornerRadius: containerCornerRadius))
             .contentShape(RoundedRectangle(cornerRadius: containerCornerRadius))
         }

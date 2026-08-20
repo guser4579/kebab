@@ -134,7 +134,7 @@ struct FeedbackPageView: View {
             }
             .buttonStyle(.plain)
 
-            Text("Offer your feedback")
+            Text("Send feedback")
                 .font(.custom("DMSans-Medium", size: 18))
                 .foregroundColor(Style.Color.primaryText)
 
