@@ -21,7 +21,6 @@ struct EntryActionSheetView: View {
     var onMoveEntry: (() -> Void)? = nil
     let onDismiss: () -> Void
 
-    private let sheetTopCornerRadius: CGFloat = 32
 
     private var isComment: Bool {
         entry.parent_id != nil
@@ -92,29 +91,7 @@ struct EntryActionSheetView: View {
             .padding(.bottom, 32)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Style.Color.background)
-        .clipShape(
-            UnevenRoundedRectangle(
-                topLeadingRadius: sheetTopCornerRadius,
-                bottomLeadingRadius: 0,
-                bottomTrailingRadius: 0,
-                topTrailingRadius: sheetTopCornerRadius
-            )
-        )
-        .overlay(
-            UnevenRoundedRectangle(
-                topLeadingRadius: sheetTopCornerRadius,
-                bottomLeadingRadius: 0,
-                bottomTrailingRadius: 0,
-                topTrailingRadius: sheetTopCornerRadius
-            )
-            .stroke(Style.Color.separator, lineWidth: 1)
-            // Extend the stroked shape far below the visible sheet so its
-            // bottom edge can never appear when the sheet is stretched
-            // upward; only the top corners and sides render.
-            .padding(.bottom, -400)
-        )
-        .draggableSheet(onDismiss: onDismiss)
+        .partialSheetSurface(onDismiss: onDismiss)
     }
 
     // MARK: - Header

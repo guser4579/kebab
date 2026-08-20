@@ -50,7 +50,6 @@ struct CollectionsSheetView: View {
     let onRequestDelete: () -> Void
     let onDismiss: () -> Void
 
-    private let sheetTopCornerRadius: CGFloat = 32
 
     var body: some View {
         VStack(spacing: 0) {
@@ -76,29 +75,7 @@ struct CollectionsSheetView: View {
             .padding(.bottom, 32)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Style.Color.background)
-        .clipShape(
-            UnevenRoundedRectangle(
-                topLeadingRadius: sheetTopCornerRadius,
-                bottomLeadingRadius: 0,
-                bottomTrailingRadius: 0,
-                topTrailingRadius: sheetTopCornerRadius
-            )
-        )
-        .overlay(
-            UnevenRoundedRectangle(
-                topLeadingRadius: sheetTopCornerRadius,
-                bottomLeadingRadius: 0,
-                bottomTrailingRadius: 0,
-                topTrailingRadius: sheetTopCornerRadius
-            )
-            .stroke(Style.Color.separator, lineWidth: 1)
-            // Extend the stroked shape far below the visible sheet so its
-            // bottom edge can never appear when the sheet is stretched
-            // upward; only the top corners and sides render.
-            .padding(.bottom, -400)
-        )
-        .draggableSheet(onDismiss: onDismiss)
+        .partialSheetSurface(onDismiss: onDismiss)
     }
 
     // MARK: - Header

@@ -11,8 +11,14 @@ import SwiftUI
 /// then invokes the host's normal dismiss choreography — whose removal
 /// transition is invisible because the sheet is already below the screen
 /// edge. Releasing short of the threshold springs back.
+///
+/// Applied by `PartialSheetSurface`, which owns the rest of the treatment.
 struct DraggableSheetModifier: ViewModifier {
 
+    /// How far the sheet already floats above the screen's bottom edge. The
+    /// dismissing slide has to clear it as well as the sheet's own height,
+    /// or the sheet is still onscreen when the removal transition starts.
+    let bottomInset: CGFloat
     let onDismiss: () -> Void
 
     @State private var dragOffset: CGFloat = 0
@@ -20,17 +26,11 @@ struct DraggableSheetModifier: ViewModifier {
     @State private var isDismissing = false
 
     func body(content: Content) -> some View {
+        // A floating sheet needs no overscroll extension: pulling up simply
+        // lifts it and widens its gutter, which is what a floating object
+        // does. (An edge-anchored sheet needed sheet-colored background
+        // hanging below the screen edge to hide the gap it opened.)
         content
-            // Overscroll extension: extra sheet-colored background hanging
-            // below the screen edge. Pulling up past resting position reveals
-            // more sheet — a stretch — instead of a gap showing the screen
-            // behind it.
-            .overlay(alignment: .bottom) {
-                Style.Color.background
-                    .frame(height: 400)
-                    .offset(y: 400)
-                    .allowsHitTesting(false)
-            }
             .onGeometryChange(for: CGFloat.self) { proxy in
                 proxy.size.height
             } action: { newValue in
@@ -57,7 +57,7 @@ struct DraggableSheetModifier: ViewModifier {
                 if distance > threshold || projected > sheetHeight * 0.75 {
                     isDismissing = true
                     withAnimation(.easeOut(duration: 0.2)) {
-                        dragOffset = max(sheetHeight, 300)
+                        dragOffset = max(sheetHeight, 300) + bottomInset
                     }
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
                         onDismiss()
@@ -74,7 +74,10 @@ struct DraggableSheetModifier: ViewModifier {
 extension View {
     /// Makes a floating bottom sheet draggable-to-dismiss. `onDismiss` must be
     /// the same choreography the sheet's dim-layer tap uses.
-    func draggableSheet(onDismiss: @escaping () -> Void) -> some View {
-        modifier(DraggableSheetModifier(onDismiss: onDismiss))
+    func draggableSheet(
+        bottomInset: CGFloat,
+        onDismiss: @escaping () -> Void
+    ) -> some View {
+        modifier(DraggableSheetModifier(bottomInset: bottomInset, onDismiss: onDismiss))
     }
 }

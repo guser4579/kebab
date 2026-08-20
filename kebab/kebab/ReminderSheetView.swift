@@ -49,7 +49,6 @@ struct ReminderSheetView: View {
     @State private var pastTimeWarning = false
     @FocusState private var isNoteFocused: Bool
 
-    private let sheetTopCornerRadius: CGFloat = 32
     /// Same terminal inset the entry action sheet uses below its last
     /// control — the app's one bottom-sheet ending.
     private let sheetBottomInset: CGFloat = 32
@@ -107,29 +106,7 @@ struct ReminderSheetView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Style.Color.background)
-        .clipShape(
-            UnevenRoundedRectangle(
-                topLeadingRadius: sheetTopCornerRadius,
-                bottomLeadingRadius: 0,
-                bottomTrailingRadius: 0,
-                topTrailingRadius: sheetTopCornerRadius
-            )
-        )
-        .overlay(
-            UnevenRoundedRectangle(
-                topLeadingRadius: sheetTopCornerRadius,
-                bottomLeadingRadius: 0,
-                bottomTrailingRadius: 0,
-                topTrailingRadius: sheetTopCornerRadius
-            )
-            .stroke(Style.Color.separator, lineWidth: 1)
-            // Extend the stroked shape far below the visible sheet so its
-            // bottom edge can never appear when the sheet is stretched
-            // upward; only the top corners and sides render.
-            .padding(.bottom, -400)
-        )
-        .draggableSheet(onDismiss: onDismiss)
+        .partialSheetSurface(onDismiss: onDismiss)
     }
 
     // MARK: - Header

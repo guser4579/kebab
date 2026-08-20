@@ -233,6 +233,23 @@ enum Style {
         /// Header offset from the physical top of the screen — the same
         /// 60pt used by the Search and Settings headers.
         static let authHeaderTopOffset: CGFloat = 60
+
+        /// Gutter a partial bottom sheet keeps between itself and the left,
+        /// right, and bottom edges of the screen — the physical edges, not the
+        /// safe area, so the gap reads the same on all three sides. Partial
+        /// sheets are floating objects: the dimmed screen stays visible all
+        /// the way around them. Full-screen flows are a different presentation
+        /// and never inset.
+        ///
+        /// Small enough that the sheet reads as an inset contour of the screen
+        /// rather than a card sitting inside it — see `PartialSheetSurface`,
+        /// where the bottom corners are drawn concentric to this inset.
+        static let partialSheetGutter: CGFloat = Style.Spacing.x2
+        /// Radius of a partial sheet's top corners, which sit far from any
+        /// screen corner and so answer to nothing but themselves. Also the
+        /// floor for the concentric bottom corners, which is what they fall
+        /// back to on a display with no corner radius to be concentric with.
+        static let partialSheetCornerRadius: CGFloat = 32
     }
 
     // MARK: - Animation
