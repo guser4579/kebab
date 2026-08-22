@@ -39,6 +39,22 @@ struct SettingsView: View {
     private let rowPaddingHorizontal: CGFloat = 16
     private let containerCornerRadius: CGFloat = 16
     private let avatarSize: CGFloat = 64
+    /// Internal top and bottom padding of the fixed feedback container.
+    ///
+    /// Sized from the geometry, not from taste. The container's bottom corners
+    /// are concentric with the display — around a 55pt radius once the 8pt
+    /// gutter is subtracted — and SwiftUI will not draw a corner larger than
+    /// half the surface's shorter side, so the surface has to clear about
+    /// 110pt of height before that curve can resolve at all. Below it the
+    /// corner is capped at `height / 2` and the gutter visibly widens through
+    /// the turn. With a 24pt content row this padding puts the container at
+    /// 120pt, where the concentric bottom resolves in full with room to
+    /// spare. Shrinking it back is what re-clamps the corner.
+    private let feedbackCTAVerticalPadding: CGFloat = 48
+
+    /// Measured height of that container, so the menu's scroll area can
+    /// reserve room for it instead of hiding rows underneath it.
+    @State private var feedbackCTAHeight: CGFloat = 0
 
     var body: some View {
         GeometryReader { geometry in
@@ -175,28 +191,43 @@ struct SettingsView: View {
 
             divider
 
-            VStack(alignment: .leading, spacing: 0) {
-                profileCard
+            // The navigation scrolls; the feedback container does not. The
+            // scroll area reserves exactly what the container occupies —
+            // its measured height plus the gutter it floats on and the gap
+            // above it — so the last menu row can always be scrolled clear
+            // of it however short the screen is.
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    profileCard
 
-                Color.clear
-                    .frame(height: 28)
+                    Color.clear
+                        .frame(height: 28)
 
-                menuGroup
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 24)
-
-            Spacer(minLength: 0)
-
-            // The feedback invitation holds the bottom edge, apart from the
-            // everyday navigation above — the same material as the groups,
-            // set low enough to read as the panel's floor.
-            feedbackCTA
+                    menuGroup
+                }
                 .padding(.horizontal, 16)
-                .padding(.bottom, 32)
+                .padding(.top, 24)
+                .padding(.bottom, feedbackCTAHeight + BottomEdgeSurface.gutter + 24)
+            }
+            .scrollBounceBehavior(.basedOnSize)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         .background(Style.Color.background)
+        // The feedback invitation holds the bottom edge, apart from the
+        // everyday navigation above and fixed against it: it is one of
+        // Kebab's bottom-of-screen surfaces, sharing the partial sheets'
+        // gutter and their concentric relationship to the phone's own
+        // bottom corners.
+        .overlay(alignment: .bottom) {
+            feedbackCTA
+                .onGeometryChange(for: CGFloat.self) { proxy in
+                    proxy.size.height
+                } action: { newValue in
+                    feedbackCTAHeight = newValue
+                }
+                .padding(.horizontal, BottomEdgeSurface.gutter)
+                .padding(.bottom, BottomEdgeSurface.gutter)
+        }
     }
 
     // MARK: - Appearance page (pushed)
@@ -352,7 +383,7 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 0) {
             navigationRow(
                 label: "Appearance",
-                symbol: "circle.lefthalf.filled",
+                icon: "contrast",
                 value: appearanceDisplayName
             ) {
                 withAnimation(Self.pushTransition) {
@@ -364,7 +395,7 @@ struct SettingsView: View {
 
             navigationRow(
                 label: "Manage account",
-                symbol: "person.crop.circle",
+                icon: "user-square",
                 value: nil
             ) {
                 withAnimation(Self.pushTransition) {
@@ -379,16 +410,14 @@ struct SettingsView: View {
 
     private func navigationRow(
         label: String,
-        symbol: String,
+        icon: String,
         value: String?,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
             HStack(spacing: Style.Spacing.x3) {
-                Image(systemName: symbol)
-                    .font(.system(size: 16, weight: .medium))
+                Icon(icon)
                     .foregroundColor(Style.Color.secondary)
-                    .frame(width: Style.Icon.grid)
 
                 Text(label)
                     .font(Style.Typography.body())
@@ -498,9 +527,20 @@ struct SettingsView: View {
 
     // MARK: - Feedback CTA
 
-    /// A capsule in the same material as the menu groups above it, so the
-    /// invitation reads as part of the panel rather than a promotional
-    /// object. Icon and label share one tint, so they read as one thing.
+    /// One clean, solid floating surface: the same material the menu groups
+    /// above it are made of, no border, no hairline, nothing behind it.
+    /// Icon and label share one tint, so they read as one thing.
+    ///
+    /// It shares the partial sheets' gutter and their concentric-bottom rule
+    /// through `BottomEdgeSurface`, but not their shape: its top corners are a
+    /// container's, not a sheet's. Modest fixed corners on top, deep
+    /// device-concentric ones underneath — that asymmetry is what makes this
+    /// read as mounted to the bottom of the screen rather than as another
+    /// sheet that opened there.
+    ///
+    /// The surface is deliberately tall. Its height is what lets the bottom
+    /// corners complete their curve; see `feedbackCTAVerticalPadding`. The row
+    /// itself is unchanged and simply centers in the space.
     private var feedbackCTA: some View {
         Button {
             withAnimation(Self.pushTransition) {
@@ -508,7 +548,7 @@ struct SettingsView: View {
             }
         } label: {
             HStack(spacing: Style.Spacing.x2) {
-                Icon("antenna")
+                Icon("question")
                     .foregroundColor(Style.Color.primaryText)
 
                 Text("send feedback")
@@ -516,10 +556,13 @@ struct SettingsView: View {
                     .foregroundColor(Style.Color.primaryText)
             }
             .frame(maxWidth: .infinity)
-            .frame(height: 52)
-            .background(Style.Color.composerBackground)
-            .clipShape(RoundedRectangle(cornerRadius: containerCornerRadius))
-            .contentShape(RoundedRectangle(cornerRadius: containerCornerRadius))
+            .padding(.vertical, feedbackCTAVerticalPadding)
+            .padding(.horizontal, rowPaddingHorizontal)
+            .contentShape(Rectangle())
+            .bottomEdgeSurface(
+                shape: BottomEdgeSurface.fixedContainerShape,
+                fill: Style.Color.composerBackground
+            )
         }
         .buttonStyle(.plain)
     }
@@ -538,11 +581,11 @@ struct SettingsView: View {
     // app's selection language (flat rows choose, tick marks the choice).
     private var appearancePicker: some View {
         VStack(alignment: .leading, spacing: 0) {
-            appearanceRow("System", value: "system", symbol: "circle.lefthalf.filled")
+            appearanceRow("System", value: "system", icon: "contrast")
             rowDivider
-            appearanceRow("Light", value: "light", symbol: "sun.max")
+            appearanceRow("Light", value: "light", icon: "sun-01")
             rowDivider
-            appearanceRow("Dark", value: "dark", symbol: "moon")
+            appearanceRow("Dark", value: "dark", icon: "moon-02")
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Style.Color.composerBackground)
@@ -557,7 +600,7 @@ struct SettingsView: View {
             .padding(.horizontal, rowPaddingHorizontal)
     }
 
-    private func appearanceRow(_ label: String, value: String, symbol: String) -> some View {
+    private func appearanceRow(_ label: String, value: String, icon: String) -> some View {
         Button {
             guard appearance != value else { return }
             withAnimation(.easeInOut(duration: 0.25)) {
@@ -565,10 +608,8 @@ struct SettingsView: View {
             }
         } label: {
             HStack(spacing: Style.Spacing.x3) {
-                Image(systemName: symbol)
-                    .font(.system(size: 16, weight: .medium))
+                Icon(icon)
                     .foregroundColor(Style.Color.secondary)
-                    .frame(width: Style.Icon.grid)
 
                 Text(label)
                     .font(Style.Typography.body())

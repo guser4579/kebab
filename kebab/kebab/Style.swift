@@ -250,6 +250,15 @@ enum Style {
         /// floor for the concentric bottom corners, which is what they fall
         /// back to on a display with no corner radius to be concentric with.
         static let partialSheetCornerRadius: CGFloat = 32
+        /// Radius of the top corners of a container *fixed* to the bottom of
+        /// a screen rather than presented over it — the menu's feedback
+        /// invitation. Deliberately far short of `partialSheetCornerRadius`:
+        /// a sheet's top edge announces a modal arriving, while a fixed
+        /// container is only ever furniture, and at a sheet's radius a 72pt
+        /// strip reads as a sheet that failed to open. One step up from the
+        /// 16pt menu groups it sits below, so it still reads as their
+        /// relative rather than as a different kind of object.
+        static let bottomContainerCornerRadius: CGFloat = 24
     }
 
     // MARK: - Animation

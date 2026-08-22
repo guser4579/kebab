@@ -132,22 +132,25 @@ struct ReminderSheetView: View {
                     .padding(.bottom, Style.Spacing.x2)
             }
 
-            ForEach(Array(ReminderPreset.allCases.enumerated()), id: \.element.id) { index, preset in
+            // One `now` for the whole list, so every row's label and the
+            // decision about which rows exist agree with each other.
+            let now = Date()
+
+            ForEach(Array(ReminderPreset.available(at: now).enumerated()), id: \.element.id) { index, preset in
                 if index > 0 { hairline }
-                choiceRow(preset)
+                choiceRow(preset, now: now)
             }
         }
         .padding(.top, 12)
         .padding(.bottom, sheetBottomInset)
     }
 
-    private func choiceRow(_ preset: ReminderPreset) -> some View {
+    private func choiceRow(_ preset: ReminderPreset, now: Date) -> some View {
         Button {
             select(preset)
         } label: {
             HStack(spacing: Style.Spacing.x3) {
-                Image(systemName: iconName(for: preset))
-                    .font(.system(size: 16, weight: .regular))
+                presetIcon(for: preset)
                     .foregroundColor(Style.Color.primaryText)
                     .frame(width: Style.Icon.grid, height: Style.Icon.grid)
 
@@ -158,8 +161,9 @@ struct ReminderSheetView: View {
 
                 Spacer(minLength: 0)
 
-                if preset != .random && preset != .pickADate {
-                    Text(ReminderDisplay.dayAndTime(for: ReminderSchedule.prefill(for: preset, from: Date())))
+                if preset != .random && preset != .pickADate,
+                   let prefill = ReminderSchedule.prefill(for: preset, from: now) {
+                    Text(ReminderDisplay.dayAndTime(for: prefill, now: now))
                         .font(Style.Typography.meta())
                         .foregroundColor(Style.Color.secondary)
                         .lineLimit(1)
@@ -173,13 +177,20 @@ struct ReminderSheetView: View {
         .buttonStyle(.plain)
     }
 
-    private func iconName(for preset: ReminderPreset) -> String {
+    @ViewBuilder
+    private func presetIcon(for preset: ReminderPreset) -> some View {
         switch preset {
-        case .laterToday: return "clock"
-        case .tomorrow: return "sun.max"
-        case .inAWeek: return "calendar"
-        case .pickADate: return "calendar.badge.plus"
-        case .random: return "dice"
+        case .laterToday:
+            Image(systemName: "clock")
+                .font(.system(size: 16, weight: .regular))
+        case .tomorrow:
+            Icon("sun-01")
+        case .inAWeek:
+            Icon("calendar-04")
+        case .pickADate:
+            Icon("date-time")
+        case .random:
+            Icon("dices")
         }
     }
 
@@ -199,8 +210,13 @@ struct ReminderSheetView: View {
             expanded = .date
             advance(to: .timing)
         case .laterToday, .tomorrow, .inAWeek:
+            // A row that has no prefill is never rendered, so nil here can
+            // only mean the clock crossed the cutoff between draw and tap:
+            // leave the selector up rather than open the editor on a
+            // meaningless time.
+            guard let prefill = ReminderSchedule.prefill(for: preset, from: Date()) else { return }
             mode = .scheduled
-            fireAt = ReminderSchedule.prefill(for: preset, from: Date())
+            fireAt = prefill
             expanded = nil
             advance(to: .timing)
         }
@@ -328,8 +344,7 @@ struct ReminderSheetView: View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 8) {
-                    Image(systemName: "dice")
-                        .font(.system(size: 15, weight: .regular))
+                    Icon("dices", glyphSize: 18, gridSize: 18)
                         .foregroundColor(Style.Color.primaryText)
                     Text(ReminderDisplay.randomAffordanceLabel)
                         .font(.custom("DMSans-Medium", size: 16))

@@ -110,6 +110,44 @@ struct ReminderTests {
         return Calendar.current.date(from: components)!
     }
 
+    /// A calendar pinned to a named zone, so a preset's boundaries can be
+    /// checked as the *user's* wall clock rather than the test machine's.
+    nonisolated private static func calendar(_ timeZone: String) -> Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: timeZone)!
+        return calendar
+    }
+
+    /// The instant at a given wall-clock time on a given day in `calendar`.
+    nonisolated private static func wallClock(
+        _ calendar: Calendar,
+        year: Int = 2026,
+        month: Int = 3,
+        day: Int = 10,
+        hour: Int,
+        minute: Int = 0
+    ) -> Date {
+        var components = DateComponents()
+        components.year = year
+        components.month = month
+        components.day = day
+        components.hour = hour
+        components.minute = minute
+        components.second = 0
+        return calendar.date(from: components)!
+    }
+
+    /// Every zone the preset boundaries are swept in: a whole-hour offset
+    /// either side of UTC, a half-hour offset, and the extreme +14 — enough
+    /// that a rule surviving all four is not quietly relying on the test
+    /// machine's own zone.
+    nonisolated private static let sweptZones = [
+        "UTC",
+        "America/New_York",
+        "Asia/Kolkata",
+        "Pacific/Kiritimati",
+    ]
+
     private static func entry(
         id: UUID = UUID(),
         content: String = "Could Bitcoin mining become the buyer of last resort for stranded nuclear capacity?",
@@ -177,9 +215,9 @@ struct ReminderTests {
     // MARK: - Presets
 
     @Test
-    func laterTodayLandsAFewHoursOutOnTheSameDay() {
+    func laterTodayLandsAFewHoursOutOnTheSameDay() throws {
         let now = Self.baseDate(hour: 8, minute: 7)
-        let result = ReminderSchedule.laterToday(from: now)
+        let result = try #require(ReminderSchedule.laterToday(from: now))
         let calendar = Calendar.current
         #expect(calendar.isDate(result, inSameDayAs: now))
         #expect(result > now)
@@ -189,23 +227,144 @@ struct ReminderTests {
     }
 
     @Test
-    func laterTodayCapsAtTheEveningRatherThanSchedulingAfterMidnight() {
+    func laterTodayCapsAtTheEveningRatherThanSchedulingAfterMidnight() throws {
         let now = Self.baseDate(hour: 20, minute: 0)
-        let result = ReminderSchedule.laterToday(from: now)
+        let result = try #require(ReminderSchedule.laterToday(from: now))
         let calendar = Calendar.current
         #expect(calendar.isDate(result, inSameDayAs: now))
         #expect(calendar.component(.hour, from: result) == ReminderSchedule.laterTodayCapHour)
         #expect(result > now)
     }
 
-    @Test
-    func laterTodayLateAtNightBecomesTomorrowMorning() {
-        let now = Self.baseDate(hour: 23, minute: 30)
-        let result = ReminderSchedule.laterToday(from: now)
-        let calendar = Calendar.current
-        #expect(!calendar.isDate(result, inSameDayAs: now))
-        #expect(calendar.component(.hour, from: result) == ReminderSchedule.morningHour)
-        #expect(result > now)
+    // MARK: - "Later today" ends rather than becoming a second "Tomorrow"
+
+    /// The last minute today still has something to offer, and the first
+    /// minute it does not. The cutoff is the evening cap minus the minimum
+    /// lead — 8:30 PM — and it is a property of the two constants, not a
+    /// clock time written into the rule.
+    @Test(arguments: sweptZones)
+    func laterTodaySurvivesUpToTheCutoffAndEndsOnIt(zone: String) throws {
+        let calendar = Self.calendar(zone)
+        let capHour = ReminderSchedule.laterTodayCapHour
+        let leadMinutes = Int(ReminderSchedule.minimumLead / 60)
+
+        let justBefore = Self.wallClock(
+            calendar, hour: capHour - 1, minute: 60 - leadMinutes - 1
+        )
+        let atCutoff = Self.wallClock(calendar, hour: capHour - 1, minute: 60 - leadMinutes)
+        let justAfter = Self.wallClock(calendar, hour: capHour - 1, minute: 60 - leadMinutes + 1)
+
+        let surviving = try #require(
+            ReminderSchedule.laterToday(from: justBefore, calendar: calendar),
+            "\(zone): later today should still be offered at 8:29 PM"
+        )
+        #expect(calendar.component(.hour, from: surviving) == capHour)
+        #expect(calendar.isDate(surviving, inSameDayAs: justBefore))
+
+        #expect(
+            ReminderSchedule.laterToday(from: atCutoff, calendar: calendar) == nil,
+            "\(zone): later today should be gone at 8:30 PM"
+        )
+        #expect(
+            ReminderSchedule.laterToday(from: justAfter, calendar: calendar) == nil,
+            "\(zone): later today should be gone at 8:31 PM"
+        )
+    }
+
+    /// Late evening has no "later today" left, and it must not borrow
+    /// tomorrow's — that is the duplicate this whole rule exists to prevent.
+    @Test(arguments: sweptZones)
+    func laterTodayEndsLateAtNightInsteadOfRollingIntoTomorrow(zone: String) {
+        let calendar = Self.calendar(zone)
+        for hour in [21, 22, 23] {
+            let now = Self.wallClock(calendar, hour: hour, minute: 30)
+            #expect(
+                ReminderSchedule.laterToday(from: now, calendar: calendar) == nil,
+                "\(zone) at \(hour):30 still offered a later-today"
+            )
+        }
+    }
+
+    /// Just past midnight the day is new, so "later today" is available
+    /// again — the rule is about the user's calendar day, not a rolling
+    /// window.
+    @Test(arguments: sweptZones)
+    func laterTodayComesBackAfterMidnight(zone: String) throws {
+        let calendar = Self.calendar(zone)
+        let lastMinute = Self.wallClock(calendar, hour: 23, minute: 59)
+        #expect(ReminderSchedule.laterToday(from: lastMinute, calendar: calendar) == nil)
+
+        let firstMinute = Self.wallClock(calendar, day: 11, hour: 0, minute: 0)
+        let result = try #require(
+            ReminderSchedule.laterToday(from: firstMinute, calendar: calendar)
+        )
+        #expect(calendar.isDate(result, inSameDayAs: firstMinute))
+        #expect(calendar.component(.hour, from: result) == 3)
+    }
+
+    /// The product rule itself, swept minute by minute: whenever both exist,
+    /// they are different reminders — and "Later today" always means today.
+    @Test(arguments: sweptZones)
+    func laterTodayAndTomorrowNeverResolveToTheSameInstant(zone: String) {
+        let calendar = Self.calendar(zone)
+        for hour in 0...23 {
+            for minute in stride(from: 0, to: 60, by: 1) {
+                let now = Self.wallClock(calendar, hour: hour, minute: minute)
+                let tomorrow = ReminderSchedule.tomorrowMorning(from: now, calendar: calendar)
+                guard let laterToday = ReminderSchedule.laterToday(from: now, calendar: calendar)
+                else { continue }
+                #expect(
+                    laterToday != tomorrow,
+                    "\(zone) at \(hour):\(minute) collapsed later-today into tomorrow"
+                )
+                #expect(
+                    calendar.isDate(laterToday, inSameDayAs: now),
+                    "\(zone) at \(hour):\(minute) put later-today on another day"
+                )
+                #expect(laterToday > now)
+            }
+        }
+    }
+
+    /// What the sheet actually renders: the full list before the cutoff, the
+    /// same list minus its first row after it — never two rows that set the
+    /// same reminder.
+    @Test(arguments: sweptZones)
+    func offeredPresetsDropLaterTodayPastTheCutoff(zone: String) {
+        let calendar = Self.calendar(zone)
+
+        let daytime = Self.wallClock(calendar, hour: 9, minute: 0)
+        #expect(ReminderPreset.available(at: daytime, calendar: calendar) == ReminderPreset.allCases)
+
+        let evening = Self.wallClock(calendar, hour: 22, minute: 0)
+        let offered = ReminderPreset.available(at: evening, calendar: calendar)
+        #expect(offered == [.tomorrow, .inAWeek, .pickADate, .random])
+        #expect(!offered.contains(.laterToday))
+    }
+
+    /// No two offered presets that *state a time* may ever state the same
+    /// one, at any hour of any day — the general form of the duplicate rule.
+    ///
+    /// Random and Pick a date are excluded because neither shows a time: one
+    /// keeps its instant hidden by design, the other only opens the editor
+    /// somewhere sane. Two rows are duplicates when they read the same, and
+    /// those two read as actions, not as times.
+    @Test(arguments: sweptZones)
+    func offeredPresetsNeverShowTheSameTimeTwice(zone: String) {
+        let calendar = Self.calendar(zone)
+        let timed: Set<ReminderPreset> = [.laterToday, .tomorrow, .inAWeek]
+        for hour in 0...23 {
+            for minute in [0, 17, 29, 30, 31, 45, 59] {
+                let now = Self.wallClock(calendar, hour: hour, minute: minute)
+                let prefills = ReminderPreset.available(at: now, calendar: calendar)
+                    .filter { timed.contains($0) }
+                    .compactMap { ReminderSchedule.prefill(for: $0, from: now, calendar: calendar) }
+                #expect(
+                    Set(prefills).count == prefills.count,
+                    "\(zone) at \(hour):\(minute) offered two presets with the same time"
+                )
+            }
+        }
     }
 
     @Test
@@ -242,12 +401,13 @@ struct ReminderTests {
     }
 
     @Test
-    func everyPresetPrefillIsInTheFuture() {
+    func everyOfferedPresetPrefillIsInTheFuture() {
         for hour in 0...23 {
             let now = Self.baseDate(hour: hour, minute: 31)
-            for preset in ReminderPreset.allCases {
+            for preset in ReminderPreset.available(at: now) {
                 let prefill = ReminderSchedule.prefill(for: preset, from: now)
-                #expect(prefill > now, "\(preset) at hour \(hour) prefilled into the past")
+                #expect(prefill != nil, "\(preset) at hour \(hour) was offered without a time")
+                #expect(prefill! > now, "\(preset) at hour \(hour) prefilled into the past")
             }
         }
     }

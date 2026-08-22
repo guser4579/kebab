@@ -135,6 +135,20 @@ nonisolated enum ReminderPreset: String, CaseIterable, Identifiable, Sendable {
         case .random: return "Random"
         }
     }
+
+    /// The presets worth offering at `now`, in their fixed order.
+    ///
+    /// "Later today" is the only one that can run out, and when it does it
+    /// is dropped rather than rolled forward: a "Later today" that resolves
+    /// to tomorrow morning is not a shortcut, it is a second name for the
+    /// Tomorrow row sitting directly beneath it. Two rows that set the same
+    /// reminder are worse than one row fewer, so past the cutoff the list
+    /// simply starts at Tomorrow.
+    static func available(at now: Date, calendar: Calendar = .current) -> [ReminderPreset] {
+        allCases.filter { preset in
+            ReminderSchedule.prefill(for: preset, from: now, calendar: calendar) != nil
+        }
+    }
 }
 
 // MARK: - Date math
@@ -159,21 +173,34 @@ nonisolated enum ReminderSchedule {
     static let laterTodayCapHour = 21
 
     /// A few hours out, rounded to a clean quarter hour, and never pushed
-    /// into the small hours: past the evening cap it becomes 9:00 PM today,
-    /// and once even that is gone it becomes tomorrow morning.
-    static func laterToday(from now: Date, calendar: Calendar = .current) -> Date {
+    /// into the small hours: past the evening cap it becomes 9:00 PM today.
+    ///
+    /// `nil` once today has nothing left to offer — that is, once 9:00 PM is
+    /// closer than `minimumLead`. Deliberately *not* a roll-forward to
+    /// tomorrow morning: that would make this preset a duplicate of
+    /// `tomorrow`, which is what `ReminderPreset.available(at:calendar:)`
+    /// uses this nil to prevent. Every boundary is decided through
+    /// `calendar`, so the cutoff lands at the user's own 8:30 PM whatever
+    /// timezone they are in, and "today" means their calendar day.
+    static func laterToday(from now: Date, calendar: Calendar = .current) -> Date? {
+        guard let eveningCap = eveningCap(on: now, calendar: calendar) else { return nil }
         let candidate = roundedUpToQuarterHour(now.addingTimeInterval(3 * 3600), calendar: calendar)
-        let eveningCap = calendar.date(
-            bySettingHour: laterTodayCapHour, minute: 0, second: 0, of: now
-        )
-        if calendar.isDate(candidate, inSameDayAs: now),
-           let eveningCap, candidate <= eveningCap {
+        if calendar.isDate(candidate, inSameDayAs: now), candidate <= eveningCap {
             return candidate
         }
-        if let eveningCap, eveningCap > now.addingTimeInterval(minimumLead) {
-            return eveningCap
-        }
-        return tomorrowMorning(from: now, calendar: calendar)
+        guard eveningCap > now.addingTimeInterval(minimumLead) else { return nil }
+        return eveningCap
+    }
+
+    /// `laterTodayCapHour` on the calendar day `now` falls in — built from
+    /// that day's components rather than by searching forward from `now`, so
+    /// it stays today's cap even when today's cap has already passed.
+    private static func eveningCap(on now: Date, calendar: Calendar) -> Date? {
+        var components = calendar.dateComponents([.year, .month, .day], from: now)
+        components.hour = laterTodayCapHour
+        components.minute = 0
+        components.second = 0
+        return calendar.date(from: components)
     }
 
     /// Tomorrow at 9:00 AM local.
@@ -197,7 +224,10 @@ nonisolated enum ReminderSchedule {
         tomorrowMorning(from: now, calendar: calendar)
     }
 
-    static func prefill(for preset: ReminderPreset, from now: Date, calendar: Calendar = .current) -> Date {
+    /// The instant a preset pre-fills the editor with, or `nil` when the
+    /// preset has nothing left to offer at `now` and should not be shown.
+    /// Only `.laterToday` is ever nil.
+    static func prefill(for preset: ReminderPreset, from now: Date, calendar: Calendar = .current) -> Date? {
         switch preset {
         case .laterToday: return laterToday(from: now, calendar: calendar)
         case .tomorrow: return tomorrowMorning(from: now, calendar: calendar)
