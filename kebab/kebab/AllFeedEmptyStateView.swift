@@ -6,6 +6,12 @@ import SwiftUI
 /// of an imagined kebab. The question reads first; the fragments are meant to
 /// be discovered on a second look. There are no buttons here by design: the
 /// composer below is the call to action.
+///
+/// One thing in the room moves: a wide, soft band of light crosses the glyph
+/// field about once every fourteen seconds, leaning the field toward
+/// legibility as it passes and letting it settle back afterward. It is
+/// deliberately not a skeleton shimmer — no hard diagonal, no loading
+/// cadence. Light is the emotional subject; this is weather, not a spinner.
 struct AllFeedEmptyStateView: View {
 
     /// One mark in the glyph field. Coordinates are fractions of the
@@ -48,6 +54,29 @@ struct AllFeedEmptyStateView: View {
 
     private static let fragmentOpacity: Double = 0.65
 
+    /// Constants for the light pass. The phase is a position along the axis
+    /// the band travels, measured in multiples of the sweep span, with 0 at
+    /// the middle of the screen. Start and end sit far enough outside that
+    /// the band is only over the field for roughly four seconds of the
+    /// fourteen-second cycle — the light arrives, crosses, and is gone, and
+    /// then the room is still for ten seconds. The loop resets while the
+    /// band is off-screen, so `autoreverses: false` never shows a snap.
+    private enum LightPass {
+        static let start: CGFloat = -2.1
+        static let end: CGFloat = 2.1
+        static let period: Double = 14
+        /// Opacity of the second, lit copy of the field, composited over the
+        /// base copy where the band is. Tuned so a glyph at rest around 0.3
+        /// reaches roughly 0.55 at the center of the pass — clearly a change
+        /// in the weather, never a highlight.
+        static let litOpacity: Double = 0.85
+        /// Tilt of the band. Shallow: a horizon lifting, not a wipe.
+        static let angle: Double = -24
+    }
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var lightPhase: CGFloat = LightPass.start
+
     var body: some View {
         GeometryReader { geo in
             ZStack {
@@ -56,6 +85,7 @@ struct AllFeedEmptyStateView: View {
                 copy(in: geo.size)
             }
         }
+        .onAppear(perform: startLightPass)
     }
 
     // MARK: - Copy
@@ -63,6 +93,7 @@ struct AllFeedEmptyStateView: View {
     /// Centered slightly above the geometric middle: calm, dominant, and far
     /// enough from the composer that the two never compete. The question
     /// stands alone — the fragments in the atmosphere are its only support.
+    /// The light never touches it; the question is not weather.
     private func copy(in size: CGSize) -> some View {
         Text("What’s something you’d normally text yourself?")
             .font(Style.Typography.emptyStatePrompt())
@@ -100,9 +131,41 @@ struct AllFeedEmptyStateView: View {
 
     // MARK: - Atmosphere
 
-    /// The glyph field and fragments, masked so the whole layer dissolves
-    /// toward the composer area instead of ending at an edge.
+    /// The glyph field and fragments, lit by the travelling band and then
+    /// masked so the whole layer dissolves toward the composer area instead
+    /// of ending at an edge.
     private func atmosphere(in size: CGSize) -> some View {
+        atmosphereContent(in: size)
+            .overlay {
+                // The lit copy: the same field again, revealed only where the
+                // band is. Compositing a second copy rather than animating
+                // each glyph's opacity keeps the effect to one animatable
+                // value and preserves the hand-tuned relative weights — a
+                // glyph placed at 0.22 stays quieter than its 0.40 neighbour
+                // all the way through the pass.
+                if !reduceMotion {
+                    atmosphereContent(in: size)
+                        .opacity(LightPass.litOpacity)
+                        .mask { lightBand(in: size) }
+                }
+            }
+            .mask {
+                LinearGradient(
+                    stops: [
+                        .init(color: .black, location: 0),
+                        .init(color: .black, location: 0.58),
+                        .init(color: .black.opacity(0.4), location: 0.80),
+                        .init(color: .clear, location: 0.96)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            }
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
+
+    private func atmosphereContent(in size: CGSize) -> some View {
         ZStack {
             ForEach(Self.field.indices, id: \.self) { index in
                 let glyph = Self.field[index]
@@ -122,21 +185,51 @@ struct AllFeedEmptyStateView: View {
             linkFragment
                 .position(x: size.width * 0.66, y: size.height * 0.72)
         }
-        .mask {
-            LinearGradient(
-                stops: [
-                    .init(color: .black, location: 0),
-                    .init(color: .black, location: 0.58),
-                    .init(color: .black.opacity(0.4), location: 0.80),
-                    .init(color: .clear, location: 0.96)
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-        }
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
     }
+
+    // MARK: - Light pass
+
+    /// The travelling band, as a mask. A soft-shouldered gradient with no
+    /// hard stop anywhere: the field should never show an edge of light
+    /// crossing it, only a region that is briefly more present. Offset is
+    /// applied before rotation so the band travels perpendicular to itself.
+    private func lightBand(in size: CGSize) -> some View {
+        let span = size.width + size.height
+        return Rectangle()
+            .fill(
+                LinearGradient(
+                    stops: [
+                        .init(color: .clear, location: 0.00),
+                        .init(color: .black.opacity(0.18), location: 0.28),
+                        .init(color: .black.opacity(0.62), location: 0.42),
+                        .init(color: .black, location: 0.50),
+                        .init(color: .black.opacity(0.62), location: 0.58),
+                        .init(color: .black.opacity(0.18), location: 0.72),
+                        .init(color: .clear, location: 1.00)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            )
+            .frame(width: span * 2.2, height: span * 0.55)
+            .offset(y: lightPhase * span)
+            .rotationEffect(.degrees(LightPass.angle))
+    }
+
+    private func startLightPass() {
+        guard !reduceMotion else { return }
+        // Re-entrant safe: once the animation is running the phase already
+        // reads as `end`, so a second onAppear (scope change, returning to
+        // the tab) never restarts the cycle mid-pass.
+        guard lightPhase == LightPass.start else { return }
+        withAnimation(
+            .linear(duration: LightPass.period).repeatForever(autoreverses: false)
+        ) {
+            lightPhase = LightPass.end
+        }
+    }
+
+    // MARK: - Fragments
 
     /// A whisper-volume trace of another kebab: plain mono text, no card, no
     /// chrome, nothing that reads as interactive.
