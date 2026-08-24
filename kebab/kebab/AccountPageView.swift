@@ -85,7 +85,9 @@ struct AccountPageView: View {
             Color.clear
                 .frame(height: 12)
 
+            // Invisible at its exact 1pt footprint (menu-root rule).
             divider
+                .opacity(0)
 
             VStack(alignment: .leading, spacing: 0) {
                 avatarBlock
@@ -134,7 +136,6 @@ struct AccountPageView: View {
             .padding(.bottom, 48)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-        .background(Style.Color.background)
         .onChange(of: isOpen) { _, open in
             if open {
                 resetStagedState()

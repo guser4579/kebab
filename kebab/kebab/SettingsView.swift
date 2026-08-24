@@ -63,11 +63,20 @@ struct SettingsView: View {
     var body: some View {
         GeometryReader { geometry in
             ZStack {
+                // One ambient field for the entire settings hierarchy —
+                // mounted once behind the root and every pushed page, so
+                // navigating reads as movement through a single living
+                // environment and no push spawns a second renderer.
+                MetaballBackground.ambient(paused: !isOpen)
+                    .ignoresSafeArea()
+
                 rootPage
-                    // Parallax: the root recedes while the detail covers it,
-                    // so the pop reads as returning, not appearing.
+                    // Pages are transparent planes over the shared field, so
+                    // root and detail tile edge-to-edge during the slide
+                    // (full-width travel, not parallax) — anything less and
+                    // the two transparent pages would overlap mid-push.
                     .offset(x: openDetail != nil
-                        ? -geometry.size.width * 0.25 + detailDragOffset * 0.25
+                        ? -geometry.size.width + detailDragOffset
                         : 0)
 
                 detailPage(.account, geometry: geometry) {
@@ -222,13 +231,6 @@ struct SettingsView: View {
             .scrollBounceBehavior(.basedOnSize)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-        // Ambient echo of the auth field — same living world, quieter
-        // voice. Drawn over the surface color below, under all content.
-        .background {
-            MetaballBackground.ambient(paused: !isOpen)
-                .ignoresSafeArea()
-        }
-        .background(Style.Color.background)
         // The feedback invitation holds the bottom edge, apart from the
         // everyday navigation above and fixed against it: it is one of
         // Kebab's bottom-of-screen surfaces, sharing the partial sheets'
@@ -258,7 +260,10 @@ struct SettingsView: View {
             Color.clear
                 .frame(height: 12)
 
+            // Invisible at its exact 1pt footprint (menu-root rule): the
+            // shared field flows uninterrupted under the header.
             divider
+                .opacity(0)
 
             appearancePicker
                 .padding(.horizontal, 16)
@@ -267,7 +272,6 @@ struct SettingsView: View {
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-        .background(Style.Color.background)
     }
 
     // MARK: - Header
@@ -473,7 +477,9 @@ struct SettingsView: View {
             Color.clear
                 .frame(height: 12)
 
+            // Invisible at its exact 1pt footprint (menu-root rule).
             divider
+                .opacity(0)
 
             accountGroup
                 .padding(.horizontal, 16)
@@ -482,7 +488,6 @@ struct SettingsView: View {
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-        .background(Style.Color.background)
     }
 
     /// Sign out and delete share one grouped container — the account's exit

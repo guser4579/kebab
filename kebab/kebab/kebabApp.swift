@@ -76,8 +76,10 @@ private struct InitialSessionLoadingView: View {
         ZStack {
             Style.Color.background
                 .ignoresSafeArea()
-            ProgressView()
-                .tint(Style.Color.secondary)
+            // One quiet piece of the lava field while kebab wakes up —
+            // leaves the hierarchy (and stops rendering) the moment the
+            // session resolves.
+            MorphingBlob()
         }
     }
 }

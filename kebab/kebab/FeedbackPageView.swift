@@ -55,7 +55,9 @@ struct FeedbackPageView: View {
             Color.clear
                 .frame(height: 12)
 
+            // Invisible at its exact 1pt footprint (menu-root rule).
             divider
+                .opacity(0)
 
             VStack(alignment: .leading, spacing: 0) {
                 Text("Help improve Kebab by sharing your feedback! If something feels wrong, missing, or especially good, I\u{2019}d love to know.")
@@ -93,7 +95,6 @@ struct FeedbackPageView: View {
             .padding(.bottom, 48)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-        .background(Style.Color.background)
         .onChange(of: isOpen) { _, open in
             if open {
                 // Identity prefills from what kebab already knows; both stay
