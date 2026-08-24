@@ -295,7 +295,7 @@ struct EntryRowView: View {
 
     // MARK: - Long-body collapsing
 
-    /// Cheap gate ahead of measurement: at 16pt DM Sans on common widths a
+    /// Cheap gate ahead of measurement: at 16pt body type on common widths a
     /// body needs well over 200 characters (or more hard lines than the cap)
     /// before it can reach ~8 rendered lines.
     private var isCollapseCandidate: Bool {
@@ -469,7 +469,7 @@ struct EntryRowView: View {
             HStack(alignment: .center, spacing: Style.Spacing.x2) {
                 if count > 0 {
                     Text(count == 1 ? "1 comment" : "\(count) comments")
-                        .font(.custom("DMSans-Regular", size: 16))
+                        .font(Style.Typography.face(16))
                         .foregroundColor(Style.Color.secondary)
                 }
 

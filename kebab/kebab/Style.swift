@@ -89,54 +89,79 @@ enum Style {
         static func authWordmark() -> Font {
             .custom("JetBrainsMonoNL-Bold", size: 24)
         }
-        /// Entry body: DM Sans regular, 16pt, 24pt line height
+        /// Entry body: Inter regular, 16pt, 24pt line height
         static func body() -> Font {
-            .custom("DMSans-Regular", size: 16)
+            .custom("Inter-Regular", size: 16)
         }
-        /// Timestamp/overline, reply count: DM Sans regular, 14pt, 24pt line height, use secondary color
+        /// Timestamp/overline, reply count: Inter regular, 14pt, 24pt line height, use secondary color
         static func meta() -> Font {
-            .custom("DMSans-Regular", size: 14)
+            .custom("Inter-Regular", size: 14)
         }
-        /// Composer placeholder: DM Sans medium, 16pt, 24pt line height, use secondary color
+        /// Composer placeholder: Inter medium, 16pt, 24pt line height, use secondary color
         static func composerPlaceholder() -> Font {
-            .custom("DMSans-Medium", size: 16)
+            .custom("Inter-Medium", size: 16)
         }
-        /// Composer active text: DM Sans regular, 16pt, 24pt line height, use primary color
+        /// Composer active text: Inter regular, 16pt, 24pt line height, use primary color
         static func composerText() -> Font {
-            .custom("DMSans-Regular", size: 16)
+            .custom("Inter-Regular", size: 16)
         }
-        /// Link card text: DM Sans medium, 14pt, underlined, use primary color
+        /// Link card text: Inter medium, 14pt, underlined, use primary color
         static func linkCard() -> Font {
-            .custom("DMSans-Medium", size: 14)
+            .custom("Inter-Medium", size: 14)
         }
-        /// Auth screen titles: DM Sans extra bold, 24pt, 32pt line height
+        /// Auth screen titles: Inter extra bold, 24pt, 32pt line height
         static func authTitle() -> Font {
-            .custom("DMSans-ExtraBold", size: 24)
+            .custom("Inter-ExtraBold", size: 24)
         }
-        /// Auth button labels: DM Sans semibold, 16pt, 24pt line height
+        /// Auth button labels: Inter semibold, 16pt, 24pt line height
         static func authButton() -> Font {
-            .custom("DMSans-SemiBold", size: 16)
+            .custom("Inter-SemiBold", size: 16)
         }
-        /// Empty state title: DM Sans extra bold, 16pt, 24pt line height
+        /// Empty state title: Inter extra bold, 16pt, 24pt line height
         static func emptyStateTitle() -> Font {
-            .custom("DMSans-ExtraBold", size: 16)
+            .custom("Inter-ExtraBold", size: 16)
         }
         /// All-feed empty-state question: one step below authTitle so the
         /// prompt owns the screen without shouting into an empty room.
         static func emptyStatePrompt() -> Font {
-            .custom("DMSans-ExtraBold", size: 22)
+            .custom("Inter-ExtraBold", size: 22)
         }
-        /// Annotation mono — the data-sky voice (glyph fields, whisper
-        /// fragments in empty states). DM Mono rather than the bold JetBrains
-        /// wordmark face: the atmosphere labels, it never speaks.
+        /// Annotation voice (glyph fields, whisper fragments in empty
+        /// states). Inter like all interface text — the atmospheric role
+        /// survives in size and tone, not in a second typeface.
         static func mono(size: CGFloat) -> Font {
-            .custom("DMMono-Regular", size: size)
+            .custom("Inter-Regular", size: size)
         }
         /// Pill/chip label — the app-wide selected-pill rule: a modest weight
         /// bump on selection (medium vs regular), same 14pt size. Used by the
         /// feed's sub-collection chips and Search's collection-filter pills.
         static func pill(selected: Bool) -> Font {
-            selected ? .custom("DMSans-Medium", size: 14) : meta()
+            selected ? .custom("Inter-Medium", size: 14) : meta()
+        }
+
+        /// The interface face at an explicit size, for the handful of spots
+        /// that size type outside the semantic tokens. One place knows the
+        /// family is Inter; call sites stay semantic about size and weight.
+        enum FaceWeight {
+            case regular, medium, semibold, extrabold
+
+            var fontName: String {
+                switch self {
+                case .regular: return "Inter-Regular"
+                case .medium: return "Inter-Medium"
+                case .semibold: return "Inter-SemiBold"
+                case .extrabold: return "Inter-ExtraBold"
+                }
+            }
+        }
+
+        static func face(_ size: CGFloat, _ weight: FaceWeight = .regular) -> Font {
+            .custom(weight.fontName, size: size)
+        }
+
+        /// UIKit twin for the UITextView-backed editors.
+        static func faceUIFont(_ size: CGFloat, _ weight: FaceWeight = .regular) -> UIFont {
+            UIFont(name: weight.fontName, size: size) ?? .systemFont(ofSize: size)
         }
 
         static let bodyLineHeight: CGFloat = 24

@@ -32,6 +32,13 @@ struct AuthView: View {
             Style.Color.background
                 .ignoresSafeArea()
 
+            // One shared living field for the whole auth journey — mounted
+            // once at the flow root, so moving between welcome, email, and
+            // code never respawns the composition. Purely decorative: no
+            // layout participation, no touches.
+            MetaballBackground()
+                .ignoresSafeArea()
+
             Group {
                 switch flow {
                 case .welcome:
@@ -131,12 +138,6 @@ struct AuthView: View {
             .frame(width: geo.size.width, height: geo.size.height)
             .overlay(alignment: .topLeading) {
                 welcomeDemoStack(geo: geo)
-            }
-            .background {
-                // Ambient monochrome field behind the whole welcome surface.
-                // Purely decorative: no layout participation, no touches.
-                MetaballBackground()
-                    .ignoresSafeArea()
             }
         }
         // The copy block anchors to the physical bottom (its own 24pt
@@ -359,7 +360,7 @@ struct AuthView: View {
         let digits = Array(viewModel.code)
         let isCurrent = isCodeFocused && index == min(digits.count, 5)
         return Text(index < digits.count ? String(digits[index]) : "")
-            .font(.custom("DMSans-Medium", size: 24))
+            .font(Style.Typography.face(24, .medium))
             .foregroundColor(Style.Color.primaryText)
             .frame(width: 48, height: 56)
             .background(

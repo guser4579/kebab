@@ -209,7 +209,7 @@ struct AccountPageView: View {
             .buttonStyle(.plain)
 
             Text("Account")
-                .font(.custom("DMSans-Medium", size: 18))
+                .font(Style.Typography.face(18, .medium))
                 .foregroundColor(Style.Color.primaryText)
 
             Spacer(minLength: 0)
@@ -295,7 +295,7 @@ struct AccountPageView: View {
             .frame(width: avatarSize, height: avatarSize)
             .overlay(
                 Text(avatarInitial)
-                    .font(.custom("DMSans-SemiBold", size: 36))
+                    .font(Style.Typography.face(36, .semibold))
                     .foregroundColor(Style.Color.composerSendForeground)
             )
     }

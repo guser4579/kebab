@@ -568,7 +568,7 @@ struct CommentDetailView: View {
             // structurally. Search keeps the numeric mark, where a result is
             // shown outside its conversational context.
             Text("Comment")
-                .font(.custom("DMSans-Medium", size: 16))
+                .font(Style.Typography.face(16, .medium))
                 .foregroundColor(Style.Color.primaryText)
 
             HStack {
@@ -726,7 +726,7 @@ struct CommentDetailView: View {
         let count = threadData?.subtreeCount(for: displayedComment.id) ?? 0
         if count > 0 {
             Text(count == 1 ? "1 comment" : "\(count) comments")
-                .font(.custom("DMSans-Regular", size: 16))
+                .font(Style.Typography.face(16))
                 .foregroundColor(Style.Color.secondary)
                 .frame(height: 24, alignment: .leading)
         }

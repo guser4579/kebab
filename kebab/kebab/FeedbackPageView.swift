@@ -135,7 +135,7 @@ struct FeedbackPageView: View {
             .buttonStyle(.plain)
 
             Text("Send feedback")
-                .font(.custom("DMSans-Medium", size: 18))
+                .font(Style.Typography.face(18, .medium))
                 .foregroundColor(Style.Color.primaryText)
 
             Spacer(minLength: 0)

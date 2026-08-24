@@ -98,7 +98,7 @@ struct EntryActionSheetView: View {
 
     private var header: some View {
         Text(isComment ? "Comment actions" : "Entry actions")
-            .font(.custom("DMSans-Medium", size: 16))
+            .font(Style.Typography.face(16, .medium))
             .foregroundColor(Style.Color.primaryText)
             .lineLimit(1)
             .padding(.horizontal, 56)
@@ -152,7 +152,7 @@ struct EntryActionSheetView: View {
             onDismiss()
         }) {
             Text(isComment ? "Delete comment" : "Delete entry")
-                .font(.custom("DMSans-Medium", size: 14))
+                .font(Style.Typography.face(14, .medium))
                 .foregroundColor(Style.Color.destructive)
                 .lineLimit(1)
                 .padding(.horizontal, Style.Spacing.x4 + Style.Spacing.x2)

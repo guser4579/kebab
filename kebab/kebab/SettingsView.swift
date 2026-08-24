@@ -8,6 +8,10 @@ import SwiftUI
 struct SettingsView: View {
 
     let onClose: () -> Void
+    /// Whether the panel is currently presented. The panel itself is
+    /// always-mounted (parked offscreen when closed), so the ambient field
+    /// uses this to stop ticking while nothing is visible.
+    let isOpen: Bool
     @ObservedObject var authViewModel: AuthViewModel
     @ObservedObject var profileStore: ProfileStore
 
@@ -189,7 +193,11 @@ struct SettingsView: View {
             Color.clear
                 .frame(height: 12)
 
+            // The hairline stays in the layout at its exact 1pt height but
+            // renders clear, so the ambient field flows uninterrupted under
+            // the header without the profile card moving a pixel.
             divider
+                .opacity(0)
 
             // The navigation scrolls; the feedback container does not. The
             // scroll area reserves exactly what the container occupies —
@@ -214,6 +222,12 @@ struct SettingsView: View {
             .scrollBounceBehavior(.basedOnSize)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        // Ambient echo of the auth field — same living world, quieter
+        // voice. Drawn over the surface color below, under all content.
+        .background {
+            MetaballBackground.ambient(paused: !isOpen)
+                .ignoresSafeArea()
+        }
         .background(Style.Color.background)
         // The feedback invitation holds the bottom edge, apart from the
         // everyday navigation above and fixed against it: it is one of
@@ -274,7 +288,7 @@ struct SettingsView: View {
             }
 
             Text(title)
-                .font(.custom("DMSans-Medium", size: 18))
+                .font(Style.Typography.face(18, .medium))
                 .foregroundColor(Style.Color.primaryText)
 
             Spacer(minLength: 0)
@@ -311,7 +325,7 @@ struct SettingsView: View {
             VStack(spacing: Style.Spacing.base) {
                 if let name = profileStore.displayName, !name.isEmpty {
                     Text(name)
-                        .font(.custom("DMSans-Medium", size: 16))
+                        .font(Style.Typography.face(16, .medium))
                         .foregroundColor(Style.Color.primaryText)
                         .lineLimit(1)
                 }
@@ -363,7 +377,7 @@ struct SettingsView: View {
                 .frame(width: avatarSize, height: avatarSize)
                 .overlay(
                     Text(avatarInitial)
-                        .font(.custom("DMSans-SemiBold", size: 26))
+                        .font(Style.Typography.face(26, .semibold))
                         .foregroundColor(Style.Color.composerSendForeground)
                 )
         }
@@ -482,7 +496,7 @@ struct SettingsView: View {
             } label: {
                 HStack {
                     Text("Sign out")
-                        .font(.system(size: 16, weight: .medium))
+                        .font(Style.Typography.body())
                         .foregroundColor(Style.Color.primaryText)
                     Spacer(minLength: 0)
                     Icon("logout-05")
@@ -503,7 +517,7 @@ struct SettingsView: View {
             } label: {
                 HStack {
                     Text("Delete account")
-                        .font(.system(size: 16, weight: .medium))
+                        .font(Style.Typography.body())
                         .foregroundColor(Style.Color.destructive)
                     Spacer(minLength: 0)
                     if isDeleting {
@@ -554,7 +568,7 @@ struct SettingsView: View {
                     .foregroundColor(Style.Color.primaryText)
 
                 Text("send feedback")
-                    .font(.custom("DMSans-Medium", size: 16))
+                    .font(Style.Typography.face(16, .medium))
                     .foregroundColor(Style.Color.primaryText)
             }
             .frame(maxWidth: .infinity)

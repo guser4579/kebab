@@ -145,7 +145,7 @@ struct CollectionNavBarView: View {
 
                 Text(label)
                     .font(isSelected
-                        ? .custom("DMSans-Medium", size: 16)
+                        ? Style.Typography.face(16, .medium)
                         : Style.Typography.body())
                     .foregroundColor(isSelected ? Style.Color.primaryText : Style.Color.secondary)
                     .lineLimit(1)

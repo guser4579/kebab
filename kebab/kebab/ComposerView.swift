@@ -71,8 +71,12 @@ private struct GrowingTextView: UIViewRepresentable {
     /// Routes a pasted bare URL into the staged-link attachment.
     var onPasteLink: ((URL) -> Void)?
 
-    private let textInsetTop: CGFloat    = 13
-    private let textInsetBottom: CGFloat = 13
+    // Asymmetric by one point: Inter's ascent/descent split rides ~1pt
+    // higher in its line box than the faces these insets were tuned for,
+    // so the extra top point re-centers glyphs against the trailing
+    // controls without changing the composer's overall height.
+    private let textInsetTop: CGFloat    = 14
+    private let textInsetBottom: CGFloat = 12
     private let minHeight: CGFloat       = 48
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
@@ -90,7 +94,7 @@ private struct GrowingTextView: UIViewRepresentable {
         textView.textContainer.lineBreakMode        = .byWordWrapping
         textView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         textView.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        textView.font      = UIFont.systemFont(ofSize: 16, weight: .regular)
+        textView.font      = Style.Typography.faceUIFont(16)
         textView.textColor = Style.Color.primaryTextUIColor
         textView.delegate  = context.coordinator
         textView.text      = text
@@ -257,12 +261,6 @@ struct ComposerView: View {
     /// composerState animation would walk the send button downward through
     /// that collapse — send state changes must land instantly instead.
     @State private var suppressLayoutAnimation = false
-    /// Drives paste-control recreation on appearance flips — the system
-    /// control bakes its colors in at creation. The app's own appearance
-    /// setting is the authority; the environment scheme only decides the
-    /// "system" case.
-    @AppStorage("kebab.appearance") private var appearance = "dark"
-    @Environment(\.colorScheme) private var colorScheme
     @StateObject private var voice = VoiceTranscriber()
     /// Text present when dictation started; the streaming transcript is
     /// appended after it so dictation never destroys typed text.
@@ -282,8 +280,8 @@ struct ComposerView: View {
     }
 
     /// Paste is a permanent capability of attachment-capable composers — no
-    /// clipboard-state gating. The system control dims itself when nothing
-    /// acceptable is on the pasteboard; kebab never inspects availability.
+    /// clipboard-state gating, and kebab never inspects availability. The
+    /// tap itself is the only clipboard read.
     private var showsPasteAffordance: Bool {
         allowsAttachments
     }
@@ -458,8 +456,11 @@ struct ComposerView: View {
                     .truncationMode(.tail)
                     .padding(.leading, textLeadingInset)
                     .padding(.trailing, Style.Spacing.x2)
-                    .padding(.top, 13)
-                    .padding(.bottom, 13)
+                    // Mirrors GrowingTextView's 14/12 text insets — the 1pt
+                    // top bias recenters Inter's line box against the
+                    // trailing controls.
+                    .padding(.top, 14)
+                    .padding(.bottom, 12)
             }
             GrowingTextView(
                 text: $text,
@@ -529,103 +530,55 @@ struct ComposerView: View {
 
     // MARK: - Clipboard paste affordance
 
-    /// One-tap Paste for supported clipboard content. The tappable element is
-    /// Apple's own paste control (no repeated permission prompt); kebab wraps
-    /// it in the chip's capsule stroke. The system supplies the payload —
-    /// this path never reads UIPasteboard.
-    /// The appearance the paste control must render in: kebab's setting
-    /// wins outright; "system" follows the device.
-    private var pasteControlStyle: UIUserInterfaceStyle {
-        switch appearance {
-        case "light": return .light
-        case "dark": return .dark
-        default: return colorScheme == .light ? .light : .dark
-        }
-    }
-
+    /// One-tap Paste in kebab's own chip language — the same capsule stroke,
+    /// meta type, and secondary tone as the rest of the composer cluster.
+    /// The tap is the first (and only) clipboard read; iOS may show its
+    /// standard paste confirmation, which is accepted.
     private var pasteChip: some View {
-        SystemPasteControl(uiStyle: pasteControlStyle) { providers in
-            handlePastePayload(providers)
+        Button {
+            pasteFromClipboard()
+        } label: {
+            Text("Paste")
+                .font(Style.Typography.meta())
+                .foregroundColor(Style.Color.secondary)
+                .padding(.horizontal, Style.Spacing.x3)
+                .frame(height: 28)
+                .background(Capsule().stroke(Style.Color.separator, lineWidth: 1))
+                .contentShape(Capsule())
         }
-        // Rebuild the control when the appearance flips: it resolves its
-        // configuration colors once at creation.
-        .id(pasteControlStyle)
-        .fixedSize()
-        .frame(height: 28)
-        .background(Capsule().stroke(Style.Color.separator, lineWidth: 1))
+        .buttonStyle(.plain)
     }
 
-    /// Routes the system-provided payload into the pipelines that content
-    /// already uses everywhere else: images join the attachment strip, a bare
-    /// URL becomes the staged link chip, and plain text lands in the draft as
-    /// ordinary editable text. Consumption happens only after content
-    /// actually arrives.
-    private func handlePastePayload(_ providers: [NSItemProvider]) {
-        guard !providers.isEmpty else { return }
-
-        let imageProviders = providers.filter { $0.canLoadObject(ofClass: UIImage.self) }
-        if !imageProviders.isEmpty {
-            Task { @MainActor in
-                var images: [UIImage] = []
-                for provider in imageProviders {
-                    if let image = await Self.loadImage(from: provider) {
-                        images.append(image)
-                    }
-                }
-                guard !images.isEmpty else { return }
-                appendPastedImages(images)
+    /// Routes the clipboard into the pipelines that content already uses
+    /// everywhere else: images join the attachment strip, a bare URL becomes
+    /// the staged link chip, and plain text lands in the draft as ordinary
+    /// editable text. The string form is the authority when present (same
+    /// rule as the text views' paste overrides): a bare link stages the
+    /// chip; prose — even prose containing a URL — pastes as text and is
+    /// still parsed at send.
+    private func pasteFromClipboard() {
+        let pasteboard = UIPasteboard.general
+        if pasteboard.hasImages, let images = pasteboard.images, !images.isEmpty {
+            appendPastedImages(images)
+            return
+        }
+        if let string = pasteboard.string, !string.isEmpty {
+            if let url = PastedLink.from(string: string) {
+                stageLink(url)
+            } else {
+                insertPastedText(string)
             }
             return
         }
-
-        Task { @MainActor in
-            // The string form is the authority when present (same rule as the
-            // pasteboard path): a bare link stages the chip, prose — even
-            // prose containing a URL — pastes as text and is parsed at send.
-            if let string = await Self.loadString(from: providers) {
-                if let url = PastedLink.from(string: string) {
-                    stageLink(url)
-                } else {
-                    insertPastedText(string)
-                }
-            } else if let url = await Self.loadURL(from: providers) {
-                // URL-only object with no string form.
-                stageLink(url)
-            }
+        if let url = pasteboard.url {
+            // URL-only object with no string form.
+            stageLink(url)
         }
     }
 
     private func insertPastedText(_ string: String) {
         guard !string.isEmpty else { return }
         text = text.isEmpty ? string : text + string
-    }
-
-    private static func loadImage(from provider: NSItemProvider) async -> UIImage? {
-        await withCheckedContinuation { continuation in
-            provider.loadObject(ofClass: UIImage.self) { object, _ in
-                continuation.resume(returning: object as? UIImage)
-            }
-        }
-    }
-
-    private static func loadString(from providers: [NSItemProvider]) async -> String? {
-        guard let provider = providers.first(where: { $0.canLoadObject(ofClass: NSString.self) })
-        else { return nil }
-        return await withCheckedContinuation { continuation in
-            provider.loadObject(ofClass: NSString.self) { object, _ in
-                continuation.resume(returning: (object as? NSString).map(String.init))
-            }
-        }
-    }
-
-    private static func loadURL(from providers: [NSItemProvider]) async -> URL? {
-        guard let provider = providers.first(where: { $0.canLoadObject(ofClass: NSURL.self) })
-        else { return nil }
-        return await withCheckedContinuation { continuation in
-            provider.loadObject(ofClass: NSURL.self) { object, _ in
-                continuation.resume(returning: (object as? NSURL) as URL?)
-            }
-        }
     }
 
     /// The single place a URL becomes a staged link, whichever route brought

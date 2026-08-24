@@ -82,7 +82,7 @@ struct CollectionsSheetView: View {
 
     private var header: some View {
         Text((context.managed?.name ?? "").collectionDisplayName)
-            .font(.custom("DMSans-Medium", size: 16))
+            .font(Style.Typography.face(16, .medium))
             .foregroundColor(Style.Color.primaryText)
             .lineLimit(1)
             .padding(.horizontal, 56)
@@ -170,7 +170,7 @@ struct CollectionsSheetView: View {
         VStack(spacing: Style.Spacing.x2) {
             Button(action: onRequestDelete) {
                 Text(deleteLabel)
-                    .font(.custom("DMSans-Medium", size: 14))
+                    .font(Style.Typography.face(14, .medium))
                     .foregroundColor(Style.Color.destructive)
                     .lineLimit(1)
                     .padding(.horizontal, Style.Spacing.x4 + Style.Spacing.x2)

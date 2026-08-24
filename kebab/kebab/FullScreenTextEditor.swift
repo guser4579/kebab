@@ -87,7 +87,7 @@ struct FullScreenTextEditor: UIViewRepresentable {
     func makeUIView(context: Context) -> FocusingTextView {
         let tv = FocusingTextView()
         tv.backgroundColor = .clear
-        tv.font = UIFont(name: "DMSans-Regular", size: 16) ?? .systemFont(ofSize: 16, weight: .regular)
+        tv.font = Style.Typography.faceUIFont(16)
         tv.textColor = Style.Color.primaryTextUIColor
         tv.textContainerInset = UIEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)
         tv.textContainer.lineFragmentPadding = 0

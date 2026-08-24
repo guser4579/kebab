@@ -83,7 +83,7 @@ struct XPostCardView: View {
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 4) {
                     Text(post.author.name)
-                        .font(.custom("DMSans-Medium", size: 14))
+                        .font(Style.Typography.face(14, .medium))
                         .foregroundColor(Style.Color.primaryText)
                         .lineLimit(1)
 
@@ -97,7 +97,7 @@ struct XPostCardView: View {
                 }
 
                 Text("@\(post.author.username)")
-                    .font(.custom("DMSans-Regular", size: 12))
+                    .font(Style.Typography.face(12))
                     .foregroundColor(Style.Color.secondary)
                     .lineLimit(1)
             }

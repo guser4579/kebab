@@ -896,6 +896,7 @@ struct MainAppView: View {
                 // interactively; commit uses threshold or projected velocity.
                 SettingsView(
                     onClose: { closeSettings() },
+                    isOpen: isSettingsOpen,
                     authViewModel: authViewModel,
                     profileStore: profileStore
                 )

@@ -113,7 +113,7 @@ struct ReminderSheetView: View {
 
     private var header: some View {
         Text(isEditingExisting ? "Reminder" : "Remind me")
-            .font(.custom("DMSans-Medium", size: 16))
+            .font(Style.Typography.face(16, .medium))
             .foregroundColor(Style.Color.primaryText)
             .lineLimit(1)
             .padding(.horizontal, 56)
@@ -347,7 +347,7 @@ struct ReminderSheetView: View {
                     Icon("dices", glyphSize: 18, gridSize: 18)
                         .foregroundColor(Style.Color.primaryText)
                     Text(ReminderDisplay.randomAffordanceLabel)
-                        .font(.custom("DMSans-Medium", size: 16))
+                        .font(Style.Typography.face(16, .medium))
                         .foregroundColor(Style.Color.primaryText)
                 }
 
@@ -466,7 +466,7 @@ struct ReminderSheetView: View {
                 backAction()
             } label: {
                 Text("Back")
-                    .font(.custom("DMSans-Medium", size: 14))
+                    .font(Style.Typography.face(14, .medium))
                     .foregroundColor(Style.Color.secondary)
                     .frame(height: 44)
                     .frame(maxWidth: .infinity)
@@ -481,7 +481,7 @@ struct ReminderSheetView: View {
                     onDismiss()
                 } label: {
                     Text("Remove reminder")
-                        .font(.custom("DMSans-Medium", size: 14))
+                        .font(Style.Typography.face(14, .medium))
                         .foregroundColor(Style.Color.destructive)
                         .frame(height: 36)
                         .frame(maxWidth: .infinity)
@@ -498,7 +498,7 @@ struct ReminderSheetView: View {
     private var permissionBlock: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Reminders are off")
-                .font(.custom("DMSans-Medium", size: 16))
+                .font(Style.Typography.face(16, .medium))
                 .foregroundColor(Style.Color.primaryText)
 
             Text("Turn on notifications so Kebab can bring this back to you.")
@@ -510,7 +510,7 @@ struct ReminderSheetView: View {
                 openSystemSettings()
             } label: {
                 Text("Open Settings")
-                    .font(.custom("DMSans-Medium", size: 14))
+                    .font(Style.Typography.face(14, .medium))
                     .foregroundColor(Style.Color.primaryText)
                     .padding(.horizontal, Style.Spacing.x4)
                     .frame(height: 36)

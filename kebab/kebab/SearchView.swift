@@ -299,7 +299,7 @@ private struct SearchContentView: View {
     private func sectionHeader(title: String, trailing: (() -> AnyView)? = nil) -> some View {
         HStack(alignment: .center) {
             Text(title)
-                .font(.custom("DMSans-Medium", size: 16))
+                .font(Style.Typography.face(16, .medium))
                 .foregroundColor(Style.Color.primaryText)
 
             Spacer(minLength: 0)

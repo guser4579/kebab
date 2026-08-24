@@ -34,6 +34,18 @@ struct MetaballBackground: View {
     /// THE visibility knob: opacity of the whole field over the app
     /// background. Raise/lower this first when tuning presence.
     var intensity: Double = 0.12
+    /// Stops the timeline entirely (the field holds its current frame).
+    /// For always-mounted hosts that park offscreen — no ticking while the
+    /// surface can't be seen. Resuming picks the wall clock back up, so the
+    /// field continues rather than restarting.
+    var paused: Bool = false
+
+    /// The quieter expression for ambient surfaces (the Menu panel): the
+    /// same field, same shapes, same crisp edges — lower presence, slower
+    /// pace. Auth keeps the defaults as the strongest branded expression.
+    static func ambient(paused: Bool = false) -> MetaballBackground {
+        MetaballBackground(speed: 0.65, intensity: 0.07, paused: paused)
+    }
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -43,7 +55,7 @@ struct MetaballBackground: View {
     private static let frozenTime: Double = 8
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1 / 30, paused: reduceMotion)) { timeline in
+        TimelineView(.animation(minimumInterval: 1 / 30, paused: reduceMotion || paused)) { timeline in
             let t = reduceMotion
                 ? Self.frozenTime
                 : timeline.date.timeIntervalSinceReferenceDate * speed

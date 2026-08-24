@@ -31,7 +31,7 @@ enum SearchDisplay {
             guard range.lowerBound >= 0, range.upperBound <= count, !range.isEmpty else { continue }
             let start = attributed.characters.index(attributed.startIndex, offsetBy: range.lowerBound)
             let end = attributed.characters.index(attributed.startIndex, offsetBy: range.upperBound)
-            attributed[start..<end].font = .custom("DMSans-Medium", size: size)
+            attributed[start..<end].font = Style.Typography.face(size, .medium)
         }
         return attributed
     }

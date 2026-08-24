@@ -293,7 +293,7 @@ struct WelcomeDemoCardView: View {
                     .frame(height: 8)
 
                 Text(entry.commentCount == 1 ? "1 comment" : "\(entry.commentCount) comments")
-                    .font(.custom("DMSans-Regular", size: 16))
+                    .font(Style.Typography.face(16))
                     .foregroundColor(Style.Color.secondary)
                     .frame(height: 24, alignment: .leading)
             }
@@ -417,7 +417,7 @@ struct WelcomeDemoCardView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
 
                 Text(domain)
-                    .font(.custom("DMSans-Regular", size: 12))
+                    .font(Style.Typography.face(12))
                     .foregroundColor(Style.Color.secondary)
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -463,7 +463,7 @@ struct WelcomeDemoCardView: View {
             }
             .overlay(alignment: .bottomTrailing) {
                 Text(duration)
-                    .font(.custom("DMSans-Medium", size: 11))
+                    .font(Style.Typography.face(11, .medium))
                     .foregroundColor(.white)
                     .padding(.horizontal, 4)
                     .padding(.vertical, 2)
@@ -488,7 +488,7 @@ struct WelcomeDemoCardView: View {
                     .lineLimit(2)
 
                 Text(domain)
-                    .font(.custom("DMSans-Regular", size: 12))
+                    .font(Style.Typography.face(12))
                     .foregroundColor(Style.Color.secondary)
                     .lineLimit(1)
             }

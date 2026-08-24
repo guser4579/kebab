@@ -112,7 +112,7 @@ struct EntryContentView: View {
     private var commentCounter: some View {
         if commentCount > 0 {
             Text(commentCount == 1 ? "1 comment" : "\(commentCount) comments")
-                .font(.custom("DMSans-Regular", size: 16))
+                .font(Style.Typography.face(16))
                 .foregroundColor(Style.Color.secondary)
                 .frame(height: 24, alignment: .leading)
         }

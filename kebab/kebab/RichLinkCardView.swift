@@ -153,7 +153,7 @@ struct RichLinkCardView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             Text(displayDomain)
-                .font(.custom("DMSans-Regular", size: 12))
+                .font(Style.Typography.face(12))
                 .foregroundColor(Style.Color.secondary)
                 .lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -176,7 +176,7 @@ struct RichLinkCardView: View {
                     .lineLimit(2)
 
                 Text(displayDomain)
-                    .font(.custom("DMSans-Regular", size: 12))
+                    .font(Style.Typography.face(12))
                     .foregroundColor(Style.Color.secondary)
                     .lineLimit(1)
             }

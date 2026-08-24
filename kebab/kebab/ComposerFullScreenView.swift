@@ -86,7 +86,7 @@ struct ComposerFullScreenView: View {
 
             ZStack {
                 Text("New entry")
-                    .font(.custom("DMSans-Medium", size: 16))
+                    .font(Style.Typography.face(16, .medium))
                     .foregroundColor(Style.Color.primaryText)
 
                 HStack {

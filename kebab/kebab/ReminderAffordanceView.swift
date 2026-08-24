@@ -121,7 +121,7 @@ struct ReminderInAppBannerView: View {
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(ReminderNotificationContent.title)
-                        .font(.custom("DMSans-Medium", size: 14))
+                        .font(Style.Typography.face(14, .medium))
                         .foregroundColor(Style.Color.primaryText)
 
                     Text(body_)
