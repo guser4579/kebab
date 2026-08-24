@@ -59,26 +59,30 @@ struct FeedbackPageView: View {
             divider
                 .opacity(0)
 
-            VStack(alignment: .leading, spacing: 0) {
-                Text("Help improve Kebab by sharing your feedback! If something feels wrong, missing, or especially good, I\u{2019}d love to know.")
-                    .font(Style.Typography.body())
-                    .foregroundColor(Style.Color.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+            // A scroll container, not a static stack: the drag surface is
+            // what lets the keyboard ride down with the finger (the panel
+            // ignores the keyboard safe area, so a gesture is the only way
+            // back to the send button while typing).
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("Help improve Kebab by sharing your feedback! If something feels wrong, missing, or especially good, I\u{2019}d love to know.")
+                        .font(Style.Typography.body())
+                        .foregroundColor(Style.Color.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
 
-                Color.clear
-                    .frame(height: 20)
+                    Color.clear
+                        .frame(height: 20)
 
-                identityGroup
+                    identityGroup
 
-                Color.clear
-                    .frame(height: Style.Spacing.x3)
+                    Color.clear
+                        .frame(height: Style.Spacing.x3)
 
-                messageGroup
+                    messageGroup
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 24)
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 24)
-
-            Spacer(minLength: 0)
 
             VStack(spacing: 0) {
                 if isToastVisible {
@@ -95,6 +99,11 @@ struct FeedbackPageView: View {
             .padding(.bottom, 48)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        // On the page root so the message TextEditor's own scrolling gets it
+        // too — dragging anywhere downward walks the keyboard out. Default
+        // bounce (never .basedOnSize here) keeps the drag alive even when the
+        // form fits the screen.
+        .scrollDismissesKeyboard(.interactively)
         .onChange(of: isOpen) { _, open in
             if open {
                 // Identity prefills from what kebab already knows; both stay

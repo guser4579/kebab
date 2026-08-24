@@ -30,6 +30,11 @@ struct MainAppView: View {
     @State private var isSettingsOpen: Bool = false
     /// Live finger translation while dragging the settings panel closed.
     @State private var settingsDragOffset: CGFloat = 0
+    /// Whether the settings panel has a detail page pushed. While one is
+    /// open, the panel's swipe-to-feed dismissal is suspended — the swipe
+    /// belongs to the detail's own back navigation, and the hierarchy
+    /// unwinds one level at a time (Submenu → Menu → Feed).
+    @State private var isSettingsDetailOpen: Bool = false
     @State private var isSearchActive: Bool = false
     /// The suspended Search session. Created when Search opens; destroyed when
     /// the user fully backs out (fully backing out ends Search). Never
@@ -897,6 +902,7 @@ struct MainAppView: View {
                 SettingsView(
                     onClose: { closeSettings() },
                     isOpen: isSettingsOpen,
+                    isDetailPresented: $isSettingsDetailOpen,
                     authViewModel: authViewModel,
                     profileStore: profileStore
                 )
@@ -910,13 +916,18 @@ struct MainAppView: View {
                 .simultaneousGesture(
                     DragGesture(minimumDistance: 15)
                         .onChanged { value in
-                            guard isSettingsOpen else { return }
+                            // Swipe-to-feed belongs to the Menu root alone:
+                            // with a detail pushed, a horizontal swipe is the
+                            // detail's back gesture and must never reach the
+                            // panel (state-gated, not hit-tested, so slow and
+                            // fast swipes arbitrate identically).
+                            guard isSettingsOpen, !isSettingsDetailOpen else { return }
                             // Track the finger directly; only leftward
                             // movement pulls the panel out.
                             settingsDragOffset = min(0, value.translation.width)
                         }
                         .onEnded { value in
-                            guard isSettingsOpen else { return }
+                            guard isSettingsOpen, !isSettingsDetailOpen else { return }
                             let projected = value.predictedEndTranslation.width
                             if value.translation.width < -80 || projected < -200 {
                                 withAnimation(Self.settingsTransition) {

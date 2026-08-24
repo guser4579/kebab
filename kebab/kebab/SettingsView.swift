@@ -12,6 +12,11 @@ struct SettingsView: View {
     /// always-mounted (parked offscreen when closed), so the ambient field
     /// uses this to stop ticking while nothing is visible.
     let isOpen: Bool
+    /// Reports whether a detail page is currently pushed, so the host can
+    /// suspend the panel's swipe-to-feed dismissal while inside a submenu:
+    /// back navigation must resolve one level at a time (Submenu → Menu →
+    /// Feed), never tear the whole panel down from a sub-screen.
+    @Binding var isDetailPresented: Bool
     @ObservedObject var authViewModel: AuthViewModel
     @ObservedObject var profileStore: ProfileStore
 
@@ -112,6 +117,9 @@ struct SettingsView: View {
         }
         .background(Style.Color.background)
         .ignoresSafeArea(edges: .all)
+        .onChange(of: openDetail) { _, detail in
+            isDetailPresented = detail != nil
+        }
         .alert("Delete your account?", isPresented: $isDeleteConfirmPresented) {
             Button("Delete account", role: .destructive) {
                 Task { await handleDeleteAccount() }
@@ -167,19 +175,30 @@ struct SettingsView: View {
     ) -> some View {
         let isOpen = openDetail == detail
         return content()
+            // The pages are transparent planes, and a plain stack only
+            // hit-tests where it has drawn something — which silently killed
+            // the back-drag over a page's empty regions. The whole visible
+            // plane is the page; the whole plane takes the gesture.
+            .contentShape(Rectangle())
             .offset(x: (isOpen ? detailDragOffset : 0) + (isOpen ? 0 : geometry.size.width))
             .allowsHitTesting(isOpen)
             .simultaneousGesture(
                 DragGesture(minimumDistance: 15)
                     .onChanged { value in
                         guard openDetail == detail else { return }
+                        // Only a horizontally-dominant drag is back
+                        // navigation — the detail pages scroll now, and a
+                        // vertical scroll with sideways drift must not tug
+                        // the page.
+                        guard abs(value.translation.width) > abs(value.translation.height) else { return }
                         // Only rightward movement pulls the page back.
                         detailDragOffset = max(0, value.translation.width)
                     }
                     .onEnded { value in
                         guard openDetail == detail else { return }
                         let projected = value.predictedEndTranslation.width
-                        if value.translation.width > 80 || projected > 200 {
+                        let isHorizontal = abs(value.translation.width) > abs(value.translation.height)
+                        if isHorizontal, value.translation.width > 80 || projected > 200 {
                             closeDetail()
                         } else {
                             withAnimation(Self.pushTransition) {

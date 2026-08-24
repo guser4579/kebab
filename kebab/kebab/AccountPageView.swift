@@ -89,34 +89,38 @@ struct AccountPageView: View {
             divider
                 .opacity(0)
 
-            VStack(alignment: .leading, spacing: 0) {
-                avatarBlock
-                    .frame(maxWidth: .infinity)
+            // Same scroll-container rule as the feedback page: the drag
+            // surface is what carries the interactive keyboard dismissal
+            // (the panel ignores the keyboard safe area, so a gesture is the
+            // only way back to Save while the name field is focused).
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    avatarBlock
+                        .frame(maxWidth: .infinity)
 
-                Color.clear
-                    .frame(height: 28)
+                    Color.clear
+                        .frame(height: 28)
 
-                sectionLabel("name")
+                    sectionLabel("name")
 
-                Color.clear
-                    .frame(height: Style.Spacing.x2)
+                    Color.clear
+                        .frame(height: Style.Spacing.x2)
 
-                nameGroup
+                    nameGroup
 
-                Color.clear
-                    .frame(height: 28)
+                    Color.clear
+                        .frame(height: 28)
 
-                sectionLabel("email")
+                    sectionLabel("email")
 
-                Color.clear
-                    .frame(height: Style.Spacing.x2)
+                    Color.clear
+                        .frame(height: Style.Spacing.x2)
 
-                emailGroup
+                    emailGroup
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 24)
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 24)
-
-            Spacer(minLength: 0)
 
             // Bottom action block: the transient confirmation floats in the
             // space directly above Save; the spacer absorbs its height so
@@ -136,6 +140,9 @@ struct AccountPageView: View {
             .padding(.bottom, 48)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        // Default bounce (never .basedOnSize) keeps the dismissal drag alive
+        // even though this form fits the screen.
+        .scrollDismissesKeyboard(.interactively)
         .onChange(of: isOpen) { _, open in
             if open {
                 resetStagedState()
