@@ -201,12 +201,14 @@ struct SettingsView: View {
                     profileCard
 
                     Color.clear
-                        .frame(height: 28)
+                        .frame(height: 16)
 
                     menuGroup
                 }
                 .padding(.horizontal, 16)
-                .padding(.top, 24)
+                // One 16pt rhythm around the cards: top inset, side gutters,
+                // and the gap between containers all match.
+                .padding(.top, 16)
                 .padding(.bottom, feedbackCTAHeight + BottomEdgeSurface.gutter + 24)
             }
             .scrollBounceBehavior(.basedOnSize)

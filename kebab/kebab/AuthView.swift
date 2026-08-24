@@ -19,6 +19,9 @@ struct AuthView: View {
     /// Measured height of the welcome copy + CTA + legal block, so the demo
     /// stack overlay can bottom out above it without ever pushing it around.
     @State private var welcomeCopyHeight: CGFloat = 0
+    /// Measured height of the wordmark, so the demo stack overlay knows where
+    /// the open field below it begins.
+    @State private var wordmarkHeight: CGFloat = 0
 
     private var bottomButtonPadding: CGFloat {
         isKeyboardVisible ? 12 : 40
@@ -53,32 +56,18 @@ struct AuthView: View {
 
     private var welcomeScreen: some View {
         GeometryReader { geo in
-            // Hero height is measured from the physical top of the screen
-            // (the art bleeds under the status bar); cap it so smaller
-            // devices always keep room for the copy block and actions.
-            let topInset = geo.safeAreaInsets.top
-            // 1.25 is the artwork's own 4:5 ratio, so on current iPhone
-            // sizes the full composition shows uncropped; the height cap
-            // only bites (and center-crops) on very short screens.
-            let heroHeight = min(
-                geo.size.width * 1.25,
-                (geo.size.height + topInset) * 0.58
-            )
-
-            // The hero is full-bleed, so horizontal padding lives on each
-            // content element below it — never on this stack, where it would
-            // fight the fixed-width hero and shift the composition sideways.
             VStack(spacing: 0) {
-                heroArtwork(
-                    width: geo.size.width,
-                    height: heroHeight,
-                    topInset: topInset
-                )
-                .padding(.top, -topInset)
+                Text("kebab")
+                    .font(Style.Typography.authWordmark())
+                    .foregroundColor(Style.Color.primaryText)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: {
+                        wordmarkHeight = $0
+                    }
+                    .padding(.top, Style.Spacing.x4)
 
-                // Open space lives here, between art and the bottom-anchored
-                // copy + CTA group, so headline → sub-copy → button read as
-                // one intentional composition.
+                // Open space lives here, between the wordmark and the
+                // bottom-anchored copy + CTA group, so headline → sub-copy
+                // → button read as one intentional composition.
                 Spacer(minLength: Style.Spacing.x4)
 
                 // Everything below the spacer is measured as one block so the
@@ -128,7 +117,11 @@ struct AuthView: View {
                     .font(Style.Typography.meta())
                     .multilineTextAlignment(.center)
                     .padding(.top, 24)
-                    .padding(.bottom, Style.Spacing.x3)
+                    // Measured from the physical bottom edge — the screen
+                    // ignores the bottom container inset below — so the
+                    // legal line sits low in the home-indicator band while
+                    // staying clear of the indicator itself.
+                    .padding(.bottom, 24)
                     .padding(.horizontal, Style.Layout.entryContentPadding)
                 }
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: {
@@ -137,95 +130,43 @@ struct AuthView: View {
             }
             .frame(width: geo.size.width, height: geo.size.height)
             .overlay(alignment: .topLeading) {
-                welcomeDemoStack(geo: geo, heroHeight: heroHeight, topInset: topInset)
+                welcomeDemoStack(geo: geo)
+            }
+            .background {
+                // Ambient monochrome field behind the whole welcome surface.
+                // Purely decorative: no layout participation, no touches.
+                MetaballBackground()
+                    .ignoresSafeArea()
             }
         }
+        // The copy block anchors to the physical bottom (its own 24pt
+        // padding is the entire clearance) instead of stacking padding on
+        // top of the 34pt home-indicator inset, which read as a dead band
+        // under the legal text. `.container` only — never the keyboard.
+        .ignoresSafeArea(.container, edges: .bottom)
     }
 
     /// Positions the ambient demo-entry deck in the open region between the
-    /// hero's fade zone and the locked copy block. An overlay (not a layout
+    /// wordmark and the locked copy block. An overlay (not a layout
     /// participant), so the cycling cards can never move the headline or CTA.
     /// The deck occupies one stable location: every front card starts at the
-    /// same fixed top edge (near where the artwork begins dissolving) and
-    /// shorter cards simply end higher. The deck renders full-width; it only
-    /// scales down when the tallest example genuinely cannot fit between the
-    /// strong upper hero and the copy block (short screens).
-    private func welcomeDemoStack(geo: GeometryProxy, heroHeight: CGFloat, topInset: CGFloat) -> some View {
+    /// same fixed top edge and shorter cards simply end higher. The deck
+    /// bottoms out against the copy block, so spare room reads as breathing
+    /// space under the wordmark. It renders full-width, scaling down only
+    /// when the tallest example genuinely cannot fit (short screens).
+    private func welcomeDemoStack(geo: GeometryProxy) -> some View {
         let copyHeight = welcomeCopyHeight > 0 ? welcomeCopyHeight : 260
-        let heroBottom = heroHeight - topInset
+        let markHeight = wordmarkHeight > 0 ? wordmarkHeight : 32
+        let regionTop = Style.Spacing.x4 + markHeight + Style.Spacing.x4
         let stackBottom = geo.size.height - copyHeight - Style.Spacing.x3
-        // Ideal top edge: just above where the artwork starts dissolving, so
-        // the cards read as product UI emerging out of the visual world.
-        let desiredTop = heroBottom - heroHeight * 0.42
-        // The deck may sit higher than ideal (into the fade zone) before it
-        // ever scales, but never past the strong upper composition.
-        let safeTop = heroBottom - heroHeight * 0.55
-        let scale = min(1, max(0.75, (stackBottom - safeTop) / WelcomeDemoStackView.designHeight))
-        let top = min(desiredTop, stackBottom - WelcomeDemoStackView.designHeight * scale)
+        let scale = min(1, max(0.75, (stackBottom - regionTop) / WelcomeDemoStackView.designHeight))
+        let top = max(regionTop, stackBottom - WelcomeDemoStackView.designHeight * scale)
 
         return WelcomeDemoStackView()
             .frame(width: geo.size.width)
             .scaleEffect(scale, anchor: .top)
             .offset(y: top)
             .allowsHitTesting(false)
-    }
-
-    /// The welcome hero: full-bleed artwork whose visible edges feather into
-    /// the screen background rather than ending in a rectangle. Three layers
-    /// do the work — a heavily blurred rectangle mask softens the sides and
-    /// corners, an eased vertical gradient mask carries the long dissolve
-    /// into the copy area, and a background-colored wash smears the last of
-    /// the art into the surface so the transition tracks light/dark mode.
-    /// The image itself is never blurred; only its boundary is.
-    private func heroArtwork(width: CGFloat, height: CGFloat, topInset: CGFloat) -> some View {
-        Image("AuthHero")
-            .resizable()
-            .scaledToFill()
-            .frame(width: width, height: height)
-            .clipped()
-            .mask {
-                Rectangle()
-                    .padding(.horizontal, Style.Spacing.x4)
-                    .padding(.bottom, 56)
-                    // Pushed past the frame so the top edge stays a crisp
-                    // bleed under the status bar instead of feathering.
-                    .padding(.top, -80)
-                    .blur(radius: 36)
-            }
-            .mask {
-                LinearGradient(
-                    stops: [
-                        .init(color: .black, location: 0),
-                        .init(color: .black, location: 0.6),
-                        .init(color: .black.opacity(0.85), location: 0.76),
-                        .init(color: .black.opacity(0.5), location: 0.89),
-                        .init(color: .clear, location: 1)
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-            }
-            .overlay {
-                LinearGradient(
-                    stops: [
-                        .init(color: .clear, location: 0.55),
-                        .init(color: Style.Color.background.opacity(0.25), location: 0.8),
-                        .init(color: Style.Color.background.opacity(0.6), location: 1)
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-            }
-            .overlay(alignment: .top) {
-                // Wordmark in the screen's background color so it reads as
-                // cut out of the art — embedded, not badged.
-                Text("kebab")
-                    .font(Style.Typography.authWordmark())
-                    .foregroundColor(Style.Color.background)
-                    .padding(.top, topInset + Style.Spacing.x4)
-            }
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
     }
 
     // MARK: - Email
