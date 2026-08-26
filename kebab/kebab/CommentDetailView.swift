@@ -598,31 +598,46 @@ struct CommentDetailView: View {
     /// from there — no divider, no closing spacer; the first child's own
     /// top inset is the whole transition. Display variant: no ellipsis, no
     /// action row; checklist toggles stay live.
+    ///
+    /// The root is a real navigation target: the same background-link idiom
+    /// as feed and comment rows pushes its normal detail screen onto the
+    /// current stack (Search provenance intact), while interactive pieces —
+    /// checklist toggles, link cards — absorb their own taps above it.
     private func spineRootSection(_ root: Entry) -> some View {
-        VStack(spacing: 0) {
-            Color.clear
-                .frame(height: 16)
-
-            EntryContentView(
+        ZStack(alignment: .leading) {
+            NavigationLink(destination: EntryDetailView(
                 entry: root,
-                commentCount: threadData?.totalCount ?? root.comment_count ?? 0,
-                isThreaded: true,
-                showsEllipsis: false,
-                showsActionRow: false,
-                onToggleChecklistItem: { snapshot, lineIndex in
-                    spineRoot = snapshot.withContent(
-                        Checklist.toggling(snapshot.content, lineIndex: lineIndex)
-                    )
-                    Task {
-                        if await feedViewModel.toggleChecklistItem(entry: snapshot, lineIndex: lineIndex) == false {
-                            spineRoot = snapshot
+                feedViewModel: feedViewModel
+            )) {
+                Color.clear
+                    .contentShape(Rectangle())
+            }
+
+            VStack(spacing: 0) {
+                Color.clear
+                    .frame(height: 16)
+
+                EntryContentView(
+                    entry: root,
+                    commentCount: threadData?.totalCount ?? root.comment_count ?? 0,
+                    isThreaded: true,
+                    showsEllipsis: false,
+                    showsActionRow: false,
+                    onToggleChecklistItem: { snapshot, lineIndex in
+                        spineRoot = snapshot.withContent(
+                            Checklist.toggling(snapshot.content, lineIndex: lineIndex)
+                        )
+                        Task {
+                            if await feedViewModel.toggleChecklistItem(entry: snapshot, lineIndex: lineIndex) == false {
+                                spineRoot = snapshot
+                            }
                         }
                     }
-                }
-            )
+                )
 
-            Color.clear
-                .frame(height: 16)
+                Color.clear
+                    .frame(height: 16)
+            }
         }
         .overlay(alignment: .topLeading) {
             ThreadRailOverlay(rail: .origin)

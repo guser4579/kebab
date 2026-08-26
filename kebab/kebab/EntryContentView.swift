@@ -115,14 +115,19 @@ struct EntryContentView: View {
                 .font(Style.Typography.face(16))
                 .foregroundColor(Style.Color.secondary)
                 .frame(height: 24, alignment: .leading)
+                .allowsHitTesting(false)
         }
     }
 
     private var headerRow: some View {
         HStack {
+            // Passive meta is non-interactive, so a host that backs this view
+            // with a NavigationLink (the thread spine's root) receives the
+            // taps; the reminder affordance and ellipsis stay live targets.
             Text(Style.Timestamp.absolute(for: entry.created_at))
                 .font(Style.Typography.meta())
                 .foregroundColor(Style.Color.secondary)
+                .allowsHitTesting(false)
 
             if entry.resurface_count > 0 {
                 HStack(spacing: 0) {
@@ -134,6 +139,7 @@ struct EntryContentView: View {
                         .foregroundColor(Style.Color.resurface)
                 }
                 .padding(.leading, 2)
+                .allowsHitTesting(false)
             }
 
             if entry.fire_count > 0 {
@@ -146,6 +152,7 @@ struct EntryContentView: View {
                         .foregroundColor(Style.Color.fire)
                 }
                 .padding(.leading, 2)
+                .allowsHitTesting(false)
             }
 
             if let reminder, reminder.lifecycle() == .scheduled {
@@ -187,6 +194,9 @@ struct EntryContentView: View {
                 .foregroundColor(Style.Color.primaryText)
                 .lineSpacing(4)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                // Non-interactive: taps pass through to a host's background
+                // NavigationLink (the thread spine's root).
+                .allowsHitTesting(false)
         }
     }
 
@@ -202,6 +212,7 @@ struct EntryContentView: View {
                         .foregroundColor(Style.Color.primaryText)
                         .lineSpacing(4)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        .allowsHitTesting(false)
                 case .item(_, let lineIndex, let text, let checked):
                     Button {
                         onToggleChecklistItem?(entry, lineIndex)
