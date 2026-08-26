@@ -222,12 +222,9 @@ struct SearchLinkTeaser: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 5) {
-            ZStack {
+            LinkFavicon(faviconURL: url.faviconURL, size: 14) {
                 Icon("link-02", glyphSize: 12)
                     .foregroundColor(Style.Color.secondary)
-                CachedAsyncImage(url: url.faviconURL, contentMode: .fit)
-                    .frame(width: 14, height: 14)
-                    .clipShape(RoundedRectangle(cornerRadius: 3))
             }
             .frame(width: 14, height: 14)
             // Optical centering against the text: the meta font reserves

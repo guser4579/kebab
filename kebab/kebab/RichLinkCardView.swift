@@ -166,8 +166,11 @@ struct RichLinkCardView: View {
 
     private func mediumCard(title: String) -> some View {
         HStack(alignment: .center, spacing: 12) {
-            Icon("link-02")
-                .foregroundColor(Style.Color.primaryText)
+            LinkFavicon(faviconURL: URL(string: urlString)?.faviconURL, size: Style.Icon.glyphSmall) {
+                Icon("link-02")
+                    .foregroundColor(Style.Color.primaryText)
+            }
+            .frame(width: Style.Icon.grid, height: Style.Icon.grid)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)

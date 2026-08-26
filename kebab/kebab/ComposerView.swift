@@ -256,10 +256,13 @@ struct ComposerView: View {
     /// True while the text content exceeds the max inline height (internal
     /// scrolling active) — the composer's constrained state.
     @State private var isConstrained: Bool = false
-    /// True for the render pass triggered by a send. Clearing the draft can
-    /// collapse the expanded layout (drafted-unfocused send), and the
-    /// composerState animation would walk the send button downward through
-    /// that collapse — send state changes must land instantly instead.
+    /// Armed by a send, cleared on the next focus change or fresh typing.
+    /// While armed, every animation reaching the composer subtree is
+    /// stripped (see the .transaction guard on the body): clearing the
+    /// draft collapses the composer, and any animation in flight — the
+    /// composerState layout animation or a host's ambient withAnimation —
+    /// would walk the send button through that collapse. Send state
+    /// changes must land instantly instead.
     @State private var suppressLayoutAnimation = false
     @StateObject private var voice = VoiceTranscriber()
     /// Text present when dictation started; the streaming transcript is
@@ -352,10 +355,37 @@ struct ComposerView: View {
                 actionRow
             }
         }
+        // While a send is settling, strip EVERY animation reaching this
+        // subtree — the composerState layout animation below, and ambient
+        // transactions inherited from a host's withAnimation (the entry
+        // path's post-capture strip insertion). Without this the send
+        // button's frame rides whatever animation is in flight and visibly
+        // flings through the composer's instant collapse.
+        .transaction { transaction in
+            if suppressLayoutAnimation {
+                transaction.animation = nil
+                transaction.disablesAnimations = true
+            }
+        }
         .animation(
             suppressLayoutAnimation ? nil : Style.Animation.composerState,
             value: isExpandedLayout
         )
+        // Re-arm animations on the next genuine interaction, never on a
+        // timer. (The previous DispatchQueue.main.async re-arm drained
+        // BEFORE SwiftUI's commit, so the suppression flag was already false
+        // when the send's render pass resolved — the guard was a no-op and
+        // the fling shipped.) Accepted trade: the first blur-collapse after
+        // a send lands instantly — it is part of the composer resetting —
+        // and every transition after it animates normally.
+        .onChange(of: isFocused) { _, _ in
+            suppressLayoutAnimation = false
+        }
+        .onChange(of: text) { _, newValue in
+            if !newValue.isEmpty {
+                suppressLayoutAnimation = false
+            }
+        }
         // Liquid Glass capsule: feed content scrolls visibly behind the
         // composer. The subtle tint keeps placeholder/text contrast on the
         // dark theme without going opaque.
@@ -712,10 +742,9 @@ struct ComposerView: View {
         suppressLayoutAnimation = true
         onSent(trimmed)
         text = ""
-        // Re-arm the layout animation once the send's render pass has landed.
-        DispatchQueue.main.async {
-            suppressLayoutAnimation = false
-        }
+        // Stays suppressed until the next focus change or fresh typing (see
+        // the onChange re-arms on the body) — send state changes land
+        // instantly across every commit they touch.
         // Height resets automatically: updateUIView clears the UITextView text,
         // then sizeThatFits returns single-line height in the same layout pass.
     }

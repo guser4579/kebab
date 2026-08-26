@@ -34,8 +34,11 @@ struct LinkCardView: View {
 
     private var cardContent: some View {
         HStack(spacing: 12) {
-            Icon("link-02")
-                .foregroundColor(Style.Color.primaryText)
+            LinkFavicon(faviconURL: URL(string: urlString)?.faviconURL, size: Style.Icon.glyphSmall) {
+                Icon("link-02")
+                    .foregroundColor(Style.Color.primaryText)
+            }
+            .frame(width: Style.Icon.grid, height: Style.Icon.grid)
 
             Text(displayText)
                 .font(Style.Typography.linkCard())

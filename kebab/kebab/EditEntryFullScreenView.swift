@@ -77,8 +77,11 @@ struct EditEntryFullScreenView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     if let link = entry.linkAttachment, let url = URL(string: link.url) {
                         HStack(spacing: 6) {
-                            Icon("link-02", glyphSize: Style.Icon.glyphSmall)
-                                .foregroundColor(Style.Color.secondary)
+                            LinkFavicon(faviconURL: url.faviconURL, size: Style.Icon.glyphSmall) {
+                                Icon("link-02", glyphSize: Style.Icon.glyphSmall)
+                                    .foregroundColor(Style.Color.secondary)
+                            }
+                            .frame(width: Style.Icon.grid, height: Style.Icon.grid)
                             Text(url.rootDomainDisplay)
                                 .font(Style.Typography.meta())
                                 .foregroundColor(Style.Color.primaryText)

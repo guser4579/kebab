@@ -144,11 +144,20 @@ struct CachedAsyncImage: View {
             image = nil
             return
         }
-        if let cached = ImageCache.shared.object(forKey: url as NSURL) {
-            image = cached
-            return
+        if let loaded = await Self.fetch(url) {
+            image = loaded
         }
-        if ImageLoadFailures.urls.contains(url) { return }
+    }
+
+    /// Cache-through fetch shared with LinkFavicon: memory cache → disk
+    /// cache → network (one retry on transient failure). Returns nil on
+    /// definitive failure or cancellation; definitive failures are recorded
+    /// in ImageLoadFailures so they aren't re-requested this session.
+    static func fetch(_ url: URL) async -> UIImage? {
+        if let cached = ImageCache.shared.object(forKey: url as NSURL) {
+            return cached
+        }
+        if ImageLoadFailures.urls.contains(url) { return nil }
 
         // Local file (pending outbox images): plain read + downsampled decode
         // off-main. File URLs never produce HTTPURLResponse, so they must not
@@ -159,9 +168,8 @@ struct CachedAsyncImage: View {
             }.value
             if let loaded {
                 ImageCache.insert(loaded, for: url)
-                image = loaded
             }
-            return
+            return loaded
         }
 
         // Disk layer: bytes fetched in an earlier session decode off-main —
@@ -169,11 +177,10 @@ struct CachedAsyncImage: View {
         let diskLoaded = await Task.detached(priority: .userInitiated) {
             ImageDiskCache.read(for: url).flatMap { ImageDecode.downsampled($0) }
         }.value
-        if Task.isCancelled { return }
+        if Task.isCancelled { return nil }
         if let diskLoaded {
             ImageCache.insert(diskLoaded, for: url)
-            image = diskLoaded
-            return
+            return diskLoaded
         }
 
         for attempt in 0..<2 {
@@ -189,7 +196,7 @@ struct CachedAsyncImage: View {
                        (400..<500).contains(http.statusCode) {
                         ImageLoadFailures.urls.insert(url)
                     }
-                    return
+                    return nil
                 }
                 // Decode off-main at the downsample cap; persist the original
                 // bytes for future launches.
@@ -199,25 +206,25 @@ struct CachedAsyncImage: View {
                 guard let loaded else {
                     // Undecodable payload won't improve on retry this session.
                     ImageLoadFailures.urls.insert(url)
-                    return
+                    return nil
                 }
                 Task.detached(priority: .utility) {
                     ImageDiskCache.write(data, for: url)
                 }
                 ImageCache.insert(loaded, for: url)
-                image = loaded
-                return
+                return loaded
             } catch is CancellationError {
                 // Fast scrolling cancels row tasks — not a failure, no retry.
-                return
+                return nil
             } catch let error as URLError where error.code == .cancelled {
-                return
+                return nil
             } catch {
                 if attempt == 0 {
                     try? await Task.sleep(for: .milliseconds(400))
-                    if Task.isCancelled { return }
+                    if Task.isCancelled { return nil }
                 }
             }
         }
+        return nil
     }
 }

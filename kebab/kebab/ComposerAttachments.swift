@@ -112,12 +112,9 @@ struct ComposerLinkChip: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            ZStack {
+            LinkFavicon(faviconURL: url.faviconURL, size: 16) {
                 Icon("link-02", glyphSize: Style.Icon.glyphSmall)
                     .foregroundColor(Style.Color.secondary)
-                CachedAsyncImage(url: url.faviconURL, contentMode: .fit)
-                    .frame(width: 16, height: 16)
-                    .clipShape(RoundedRectangle(cornerRadius: 3))
             }
             .frame(width: 16, height: 16)
 
