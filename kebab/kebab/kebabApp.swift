@@ -61,7 +61,7 @@ struct RootView: View {
     /// keeps the hold a once-per-process event exactly like the loader itself.
     @State private var hasHeldLaunchMinimum = false
 
-    private static let launchMinimumHold: Duration = .milliseconds(800)
+    private static let launchMinimumHold: Duration = .milliseconds(1600)
 
     init(supabase: SupabaseClient) {
         self.supabase = supabase
