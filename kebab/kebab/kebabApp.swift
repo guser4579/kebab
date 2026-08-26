@@ -53,6 +53,16 @@ struct RootView: View {
     let supabase: SupabaseClient
     @StateObject private var authViewModel: AuthViewModel
 
+    /// The launch blob deserves to be seen: hold the loading state on screen
+    /// for a minimum span so a fast session restore doesn't flash past it.
+    /// This is a floor, not a delay — `checkSession()` starts immediately and
+    /// the destination reveals the moment BOTH it and this have finished, so
+    /// a slow startup pays nothing extra. Once flipped it never resets, which
+    /// keeps the hold a once-per-process event exactly like the loader itself.
+    @State private var hasHeldLaunchMinimum = false
+
+    private static let launchMinimumHold: Duration = .milliseconds(800)
+
     init(supabase: SupabaseClient) {
         self.supabase = supabase
         _authViewModel = StateObject(wrappedValue: AuthViewModel(supabase: supabase))
@@ -60,8 +70,18 @@ struct RootView: View {
 
     var body: some View {
         Group {
-            if !authViewModel.hasResolvedInitialSession {
+            if !authViewModel.hasResolvedInitialSession || !hasHeldLaunchMinimum {
                 InitialSessionLoadingView()
+                    .task {
+                        // Counted from the loader's first appearance, on the
+                        // continuous (monotonic) clock so wall-clock changes
+                        // can't stretch or skip the hold. Cancellation only
+                        // happens if the loader leaves early, which this very
+                        // flag prevents — but flip unconditionally so a
+                        // cancelled sleep can never strand the loader.
+                        try? await Task.sleep(for: Self.launchMinimumHold, clock: .continuous)
+                        hasHeldLaunchMinimum = true
+                    }
             } else if authViewModel.isAuthenticated {
                 MainAppView(supabase: supabase, authViewModel: authViewModel)
             } else {
