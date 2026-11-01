@@ -230,6 +230,23 @@ final class SearchCorpusStore: ObservableObject {
         return entryById[rootId]
     }
 
+    /// `entry(id:)` that also finds pending outbox entries — for surfaces
+    /// built over `indexedEntries()`.
+    func indexedEntry(id: UUID) -> Entry? {
+        entryById[id] ?? pendingProvider?().first { $0.id == id }
+    }
+
+    /// The mirror plus pending outbox entries — exactly what the engine
+    /// indexes, and what the Explore lenses compute over.
+    func indexedEntries() -> [Entry] {
+        var combined = entries
+        if let pending = pendingProvider?() {
+            let known = Set(combined.map(\.id))
+            combined += pending.filter { !known.contains($0.id) }
+        }
+        return combined
+    }
+
     func containsRoot(_ id: UUID) -> Bool {
         if let entry = entryById[id] { return entry.parent_id == nil }
         return false
@@ -284,13 +301,8 @@ final class SearchCorpusStore: ObservableObject {
         indexPush = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(150))
             guard !Task.isCancelled, let self else { return }
-            var combined = self.entries
-            if let pending = self.pendingProvider?() {
-                let known = Set(combined.map(\.id))
-                combined += pending.filter { !known.contains($0.id) }
-            }
             let snapshot = SearchCorpusSnapshot(
-                entries: combined,
+                entries: self.indexedEntries(),
                 membership: self.membership,
                 collectionNames: self.collectionNamesProvider?() ?? [:]
             )

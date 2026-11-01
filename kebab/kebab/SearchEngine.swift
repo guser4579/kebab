@@ -51,18 +51,9 @@ actor SearchEngine {
             }
         }
 
-        descendantCount = [:]
-        lastActivityByRoot = [:]
-        for entry in snapshot.entries {
-            let rootId = entry.root_id ?? entry.id
-            if entry.parent_id != nil {
-                descendantCount[rootId, default: 0] += 1
-            }
-            let existing = lastActivityByRoot[rootId] ?? .distantPast
-            if entry.created_at > existing {
-                lastActivityByRoot[rootId] = entry.created_at
-            }
-        }
+        let activity = ThreadActivity(entries: snapshot.entries)
+        descendantCount = activity.descendantCount
+        lastActivityByRoot = activity.lastActivityByRoot
 
         docs = snapshot.entries.compactMap { entry in
             // Hidden content is deliberately concealed — it never matches, and

@@ -54,6 +54,31 @@ enum Style {
         /// Fire indicator
         static let fire = dynamic(light: "E36D9A", dark: "F49CC0")
 
+        /// Search Explore tiles ONLY — never use these anywhere else. Each
+        /// fill is its hue at 20% over `background`; light-mode marks are
+        /// darkened to hold ~3.5:1 on their fill. Titles stay primaryText.
+        enum Tile {
+            static func fill(_ color: SearchTileColor) -> SwiftUI.Color {
+                switch color {
+                case .violet: return dynamic(light: "E1D5EB", dark: "322A3C")
+                case .azure: return dynamic(light: "CCE3F3", dark: "162E41")
+                case .green: return dynamic(light: "CFDBCE", dark: "2D362E")
+                case .pink: return dynamic(light: "F1D8DF", dark: "3E2D35")
+                case .amber: return dynamic(light: "EFDCC9", dark: "3E2F23")
+                }
+            }
+
+            static func mark(_ color: SearchTileColor) -> SwiftUI.Color {
+                switch color {
+                case .violet: return dynamic(light: "6E46A0", dark: "B48CE6")
+                case .azure: return dynamic(light: "207ABF", dark: "2AA2FF")
+                case .green: return dynamic(light: "3D7A47", dark: "9DCB9F")
+                case .pink: return dynamic(light: "AA5274", dark: "F49CC0")
+                case .amber: return dynamic(light: "A36220", dark: "F0A868")
+                }
+            }
+        }
+
         // UIKit-facing dynamics for the UITextView-backed editors.
         static let composerBackgroundUIColor = UIColor { trait in
             trait.userInterfaceStyle == .light

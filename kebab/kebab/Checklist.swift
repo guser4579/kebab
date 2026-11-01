@@ -10,7 +10,7 @@
 
 import Foundation
 
-enum Checklist {
+nonisolated enum Checklist {
 
     static let uncheckedMarker = "- [ ] "
     static let checkedMarker   = "- [x] "

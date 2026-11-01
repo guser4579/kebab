@@ -23,6 +23,51 @@ final class SearchResultsModel: ObservableObject {
     @Published var reacquisitionEntryId: UUID?
 }
 
+/// Explore tiles for the resting state. Recomputed once per corpus revision
+/// and whenever Recent Activity changes — never per body evaluation.
+@MainActor
+final class SearchLensModel: ObservableObject {
+
+    @Published private(set) var tiles: [SearchTile] = []
+
+    private var generation = 0
+    private var cancellables: Set<AnyCancellable> = []
+
+    init(corpus: SearchCorpusStore, recentActivity: RecentActivityStore) {
+        // First frame renders with tiles in place (one synchronous pass when
+        // Search opens); later changes compute off-main.
+        tiles = Self.compute(entries: corpus.indexedEntries(), activity: recentActivity.items)
+
+        // @Published emits on willSet: Recent Activity arrives as the new
+        // value; the corpus's entries are already adopted by the time its
+        // revision bumps.
+        corpus.$revision
+            .combineLatest(recentActivity.$items)
+            .dropFirst()
+            .sink { [weak self, weak corpus] _, items in
+                guard let self, let corpus else { return }
+                self.recompute(entries: corpus.indexedEntries(), activity: items)
+            }
+            .store(in: &cancellables)
+    }
+
+    private func recompute(entries: [Entry], activity: [RecentActivityItem]) {
+        generation += 1
+        let current = generation
+        Task {
+            let fresh = await Task.detached(priority: .userInitiated) {
+                Self.compute(entries: entries, activity: activity)
+            }.value
+            guard current == self.generation, fresh != self.tiles else { return }
+            self.tiles = fresh
+        }
+    }
+
+    private nonisolated static func compute(entries: [Entry], activity: [RecentActivityItem]) -> [SearchTile] {
+        SearchLenses.tiles(entries: entries, recentActivity: activity, now: Date(), calendar: .current)
+    }
+}
+
 /// One Search session: a suspended workspace. Created when Search opens,
 /// destroyed when the user fully backs out — never resurrected across cold
 /// launches. Everything in between (entering results, editing, deleting,
@@ -36,8 +81,11 @@ final class SearchWorkspace {
     let corpus: SearchCorpusStore
     let recentSearches: RecentSearchesStore
     let recentActivity: RecentActivityStore
+    let lenses: SearchLensModel
 
     private var generation = 0
+    /// Random's draws this session, oldest first — in memory only.
+    private var randomPicks: [UUID] = []
     private var cancellables: Set<AnyCancellable> = []
     private var hasAppeared = false
     private var lastOpenedEntryId: UUID?
@@ -50,6 +98,7 @@ final class SearchWorkspace {
         self.corpus = corpus
         self.recentSearches = recentSearches
         self.recentActivity = recentActivity
+        self.lenses = SearchLensModel(corpus: corpus, recentActivity: recentActivity)
 
         // Deduplicate on the EFFECTIVE (trimmed) query: whitespace-only edits
         // never re-run the same search or reset per-query state (like an
@@ -176,6 +225,20 @@ final class SearchWorkspace {
         if results.hasActiveQuery {
             recentSearches.recordResultActivation(query: results.resultSet.query)
         }
+    }
+
+    /// Random's tap: a fresh draw from the tile's members that avoids the
+    /// last few picks this session.
+    func drawRandom(from tile: SearchTile) -> Entry? {
+        var generator = SystemRandomNumberGenerator()
+        guard let id = SearchLenses.pickRandom(
+            from: tile.entryIds,
+            recentPicks: randomPicks,
+            using: &generator
+        ) else { return nil }
+        randomPicks.append(id)
+        randomPicks = Array(randomPicks.suffix(SearchLensTuning.randomAvoidedRecentPicks))
+        return corpus.indexedEntry(id: id)
     }
 
     // MARK: - Lifecycle

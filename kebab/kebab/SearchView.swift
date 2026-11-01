@@ -5,7 +5,9 @@ import SwiftUI
 /// implementation; the field — not a title — is the screen's identity.
 ///
 /// Three states:
-///   1. field unfocused, query empty  → Recent Activity (resume stack)
+///   1. field unfocused, query empty  → Explore tiles (lenses over the corpus,
+///                                      plus Random) above Recent Activity
+///                                      (resume stack)
 ///   2. field focused, query empty    → Recent Searches
 ///   3. query has ≥ 1 character       → live results (local, instantaneous)
 struct SearchView: View {
@@ -31,6 +33,7 @@ struct SearchView: View {
                 recentSearches: workspace.recentSearches,
                 recentActivity: workspace.recentActivity,
                 corpus: workspace.corpus,
+                lenses: workspace.lenses,
                 feedViewModel: feedViewModel,
                 isFieldFocused: isFieldFocused
             )
@@ -57,38 +60,9 @@ private struct SearchHeaderView: View {
     let onSubmit: () -> Void
 
     var body: some View {
-        VStack(spacing: 0) {
-            Color.clear
-                .frame(height: 60)
-
-            // One navigation row: chevron + field, chevron centered against
-            // the field. The push/pop behavior itself is unchanged.
-            HStack(spacing: 12) {
-                Button {
-                    onBack()
-                } label: {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 18, weight: .medium))
-                        .foregroundColor(Style.Color.secondary)
-                        .frame(width: 24, height: 44)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-
-                searchField
-            }
-            .padding(.horizontal, Style.Spacing.x4)
-
-            Color.clear
-                .frame(height: 16)
-
-            Rectangle()
-                .fill(Style.Color.separator)
-                .frame(height: 1)
-                .frame(maxWidth: .infinity)
+        SearchHeaderBar(onBack: onBack) {
+            searchField
         }
-        .frame(maxWidth: .infinity)
-        .background(Style.Color.background)
     }
 
     private var searchField: some View {
@@ -129,6 +103,119 @@ private struct SearchHeaderView: View {
     }
 }
 
+/// Search-surface header chrome: top spacer, one navigation row (chevron +
+/// center content, chevron centered against it), 16pt, separator. The field
+/// fills the center on Search itself; a lens list puts its title there.
+struct SearchHeaderBar<Center: View>: View {
+
+    let onBack: () -> Void
+    @ViewBuilder let center: () -> Center
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Color.clear
+                .frame(height: 60)
+
+            HStack(spacing: 12) {
+                Button {
+                    onBack()
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundColor(Style.Color.secondary)
+                        .frame(width: 24, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+
+                center()
+            }
+            .padding(.horizontal, Style.Spacing.x4)
+
+            Color.clear
+                .frame(height: 16)
+
+            Rectangle()
+                .fill(Style.Color.separator)
+                .frame(height: 1)
+                .frame(maxWidth: .infinity)
+        }
+        .frame(maxWidth: .infinity)
+        .background(Style.Color.background)
+    }
+}
+
+// MARK: - Resting-state row
+
+/// Resume rows invert the search-result hierarchy — action cue first,
+/// content second — so the surface reads as "my activity", never as a stack
+/// of results. Shared by Recent Activity and the Explore lens lists.
+struct SearchMetaRow<Destination: View>: View {
+
+    let meta: String
+    let entry: Entry
+    let destination: Destination
+    var onOpen: (() -> Void)?
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ZStack(alignment: .leading) {
+                NavigationLink(destination: destination) {
+                    Color.clear
+                        .contentShape(Rectangle())
+                }
+                .simultaneousGesture(TapGesture().onEnded { onOpen?() })
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(meta)
+                        .font(Style.Typography.meta())
+                        .foregroundColor(Style.Color.secondary)
+                        .lineLimit(1)
+
+                    // Same checklist-aware renderer as results (no highlights
+                    // here) — markers never leak as raw text.
+                    SearchSnippetView(
+                        snippet: SearchSnippet(
+                            text: SearchDisplay.previewText(for: entry),
+                            highlights: []
+                        ),
+                        maxSourceLines: 2,
+                        perLineLimit: 1
+                    )
+                }
+                .allowsHitTesting(false)
+            }
+            .padding(.horizontal, Style.Spacing.x4)
+            .padding(.vertical, Style.Spacing.x3)
+
+            Rectangle()
+                .fill(Style.Color.separator)
+                .frame(height: 1)
+                .frame(maxWidth: .infinity)
+        }
+    }
+}
+
+// MARK: - Explore navigation
+
+/// Programmatic pushes from the Explore row: Random lands on a thought drawn
+/// at tap time; every other tile opens its lens list.
+private enum SearchExploreRoute: Hashable {
+    case thought(Entry)
+    case lens(SearchTile)
+
+    func hash(into hasher: inout Hasher) {
+        switch self {
+        case .thought(let entry):
+            hasher.combine(0)
+            hasher.combine(entry.id)
+        case .lens(let tile):
+            hasher.combine(1)
+            hasher.combine(tile)
+        }
+    }
+}
+
 // MARK: - Content (three states)
 
 private struct SearchContentView: View {
@@ -138,8 +225,15 @@ private struct SearchContentView: View {
     @ObservedObject var recentSearches: RecentSearchesStore
     @ObservedObject var recentActivity: RecentActivityStore
     @ObservedObject var corpus: SearchCorpusStore
+    @ObservedObject var lenses: SearchLensModel
     let feedViewModel: FeedViewModel
     let isFieldFocused: Bool
+
+    @State private var exploreRoute: SearchExploreRoute?
+
+    private let tileWidth: CGFloat = 156
+    private let tileHeight: CGFloat = 88
+    private let tileSpacing: CGFloat = 8
 
     var body: some View {
         Group {
@@ -153,6 +247,22 @@ private struct SearchContentView: View {
         }
         .onAppear {
             workspace.surfaceDidAppear()
+        }
+        .navigationDestination(item: $exploreRoute) { route in
+            switch route {
+            case .thought(let entry):
+                EntryDetailView(
+                    entry: entry,
+                    feedViewModel: feedViewModel,
+                    highlightOnArrival: true
+                )
+            case .lens(let tile):
+                SearchLensListView(
+                    tile: tile,
+                    workspace: workspace,
+                    feedViewModel: feedViewModel
+                )
+            }
         }
     }
 
@@ -360,47 +470,43 @@ private struct SearchContentView: View {
     }
 
     private var recentActivityList: some View {
-        Group {
-            let resolved = resolvedActivityItems
-            if resolved.isEmpty {
-                VStack(spacing: 0) {
+        let resolved = resolvedActivityItems
+        return ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                if !lenses.tiles.isEmpty {
+                    exploreSection
+                }
+
+                if resolved.isEmpty {
                     Text("Nothing recent yet")
                         .font(Style.Typography.body())
                         .foregroundColor(Style.Color.secondary)
-                        .padding(.top, 120)
-                    Spacer()
-                }
-                .frame(maxWidth: .infinity)
-            } else {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 0) {
-                        // Clear is a deliberate section-level action, anchored
-                        // to the heading — not floating in space.
-                        sectionHeader(title: "Recent activity") {
-                            AnyView(
-                                Button {
-                                    recentActivity.clear()
-                                } label: {
-                                    Text("Clear")
-                                        .font(Style.Typography.meta())
-                                        .foregroundColor(Style.Color.secondary)
-                                }
-                            )
-                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, lenses.tiles.isEmpty ? 120 : 48)
+                } else {
+                    // Clear is a deliberate section-level action, anchored
+                    // to the heading — not floating in space.
+                    sectionHeader(title: "Recent activity") {
+                        AnyView(
+                            Button {
+                                recentActivity.clear()
+                            } label: {
+                                Text("Clear")
+                                    .font(Style.Typography.meta())
+                                    .foregroundColor(Style.Color.secondary)
+                            }
+                        )
+                    }
 
-                        ForEach(resolved, id: \.item.id) { pair in
-                            activityRow(pair.item, root: pair.root)
-                        }
+                    ForEach(resolved, id: \.item.id) { pair in
+                        activityRow(pair.item, root: pair.root)
                     }
                 }
-                .scrollDismissesKeyboard(.interactively)
             }
         }
+        .scrollDismissesKeyboard(.interactively)
     }
 
-    /// Resume rows invert the search-result hierarchy — action cue first,
-    /// content second — so the surface reads as "my recent activity", never
-    /// as a stack of results.
     private func activityRow(_ item: RecentActivityItem, root: Entry) -> some View {
         // Exact-context restoration: a deeply nested comment reopens that
         // comment; anything else reopens the thought.
@@ -408,39 +514,49 @@ private struct SearchContentView: View {
             ? corpus.entry(id: item.contextEntryId)
             : nil
 
-        return VStack(spacing: 0) {
-            ZStack(alignment: .leading) {
-                NavigationLink(destination: activityDestination(root: root, context: context)) {
-                    Color.clear
-                        .contentShape(Rectangle())
-                }
+        return SearchMetaRow(
+            meta: "\(item.kind.label) · \(Style.Timestamp.relative(for: item.date))",
+            entry: root,
+            destination: activityDestination(root: root, context: context)
+        )
+    }
 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("\(item.kind.label) · \(Style.Timestamp.relative(for: item.date))")
-                        .font(Style.Typography.meta())
-                        .foregroundColor(Style.Color.secondary)
-                        .lineLimit(1)
+    // MARK: State 1 · Explore
 
-                    // Same checklist-aware renderer as results (no highlights
-                    // here) — markers never leak as raw text.
-                    SearchSnippetView(
-                        snippet: SearchSnippet(
-                            text: SearchDisplay.previewText(for: root),
-                            highlights: []
-                        ),
-                        maxSourceLines: 2,
-                        perLineLimit: 1
-                    )
+    /// Two-row, column-major tile grid scrolling sideways; the cut-off third
+    /// column hints that there's more.
+    private var exploreSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            sectionHeader(title: "Explore")
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHGrid(
+                    rows: [
+                        GridItem(.fixed(tileHeight), spacing: tileSpacing),
+                        GridItem(.fixed(tileHeight), spacing: tileSpacing)
+                    ],
+                    spacing: tileSpacing
+                ) {
+                    ForEach(lenses.tiles) { tile in
+                        SearchTileView(tile: tile, width: tileWidth, height: tileHeight) {
+                            open(tile)
+                        }
+                    }
                 }
-                .allowsHitTesting(false)
+                .padding(.horizontal, Style.Spacing.x4)
             }
-            .padding(.horizontal, Style.Spacing.x4)
-            .padding(.vertical, Style.Spacing.x3)
+            .frame(height: tileHeight * 2 + tileSpacing)
+        }
+    }
 
-            Rectangle()
-                .fill(Style.Color.separator)
-                .frame(height: 1)
-                .frame(maxWidth: .infinity)
+    private func open(_ tile: SearchTile) {
+        switch tile.behavior {
+        case .random:
+            guard let entry = workspace.drawRandom(from: tile) else { return }
+            workspace.noteOpened(entryId: entry.id)
+            exploreRoute = .thought(entry)
+        case .list:
+            exploreRoute = .lens(tile)
         }
     }
 
