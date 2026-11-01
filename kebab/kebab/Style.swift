@@ -54,27 +54,45 @@ enum Style {
         /// Fire indicator
         static let fire = dynamic(light: "E36D9A", dark: "F49CC0")
 
-        /// Search Explore tiles ONLY — never use these anywhere else. Each
-        /// fill is its hue at 20% over `background`; light-mode marks are
-        /// darkened to hold ~3.5:1 on their fill. Titles stay primaryText.
+        /// Search Explore tiles ONLY — never use these anywhere else.
+        ///
+        /// Every hue is one OKLCH recipe, so the ten read as one family; only
+        /// the hue angle changes (chroma pulled in where sRGB clips). Derive
+        /// any future hue the same way:
+        ///   fill light  L 0.905  C 0.038      fill dark  L 0.300  C 0.042
+        ///   mark light  L 0.52   C 0.13       mark dark  L 0.77   C 0.12
+        /// Hues: violet 310 · indigo 280 · azure 248 · sky 215 · teal 185 ·
+        /// green 150 · olive 122 · lemon 95 · amber 62 · pink 358.
+        /// Titles stay primaryText (≥ 11.6:1 on every fill); marks hold
+        /// ≥ 3.9:1 light / ≥ 6.3:1 dark.
         enum Tile {
             static func fill(_ color: SearchTileColor) -> SwiftUI.Color {
                 switch color {
-                case .violet: return dynamic(light: "E1D5EB", dark: "322A3C")
-                case .azure: return dynamic(light: "CCE3F3", dark: "162E41")
-                case .green: return dynamic(light: "CFDBCE", dark: "2D362E")
-                case .pink: return dynamic(light: "F1D8DF", dark: "3E2D35")
-                case .amber: return dynamic(light: "EFDCC9", dark: "3E2F23")
+                case .violet: return dynamic(light: "E7D9F3", dark: "34283E")
+                case .indigo: return dynamic(light: "DADEF9", dark: "2A2B43")
+                case .azure:  return dynamic(light: "CDE3F8", dark: "1C3042")
+                case .sky:    return dynamic(light: "C4E7F0", dark: "10333B")
+                case .teal:   return dynamic(light: "C5E8E3", dark: "103531")
+                case .green:  return dynamic(light: "CFE7D3", dark: "1E3422")
+                case .olive:  return dynamic(light: "DBE4C9", dark: "2A3119")
+                case .lemon:  return dynamic(light: "E7E0C4", dark: "342E14")
+                case .amber:  return dynamic(light: "F3DBC7", dark: "3D2917")
+                case .pink:   return dynamic(light: "F6D6DF", dark: "3F252E")
                 }
             }
 
             static func mark(_ color: SearchTileColor) -> SwiftUI.Color {
                 switch color {
-                case .violet: return dynamic(light: "6E46A0", dark: "B48CE6")
-                case .azure: return dynamic(light: "207ABF", dark: "2AA2FF")
-                case .green: return dynamic(light: "3D7A47", dark: "9DCB9F")
-                case .pink: return dynamic(light: "AA5274", dark: "F49CC0")
-                case .amber: return dynamic(light: "A36220", dark: "F0A868")
+                case .violet: return dynamic(light: "8050A0", dark: "CC9EED")
+                case .indigo: return dynamic(light: "5C5DB1", dark: "A5ACFE")
+                case .azure:  return dynamic(light: "166DAF", dark: "73BAFD")
+                case .sky:    return dynamic(light: "00768A", dark: "3FC7E4")
+                case .teal:   return dynamic(light: "007A70", dark: "3FCDBE")
+                case .green:  return dynamic(light: "1D7D3E", dark: "79CA8B")
+                case .olive:  return dynamic(light: "5D7300", dark: "A7C066")
+                case .lemon:  return dynamic(light: "7C6702", dark: "CCB352")
+                case .amber:  return dynamic(light: "995600", dark: "EBA25F")
+                case .pink:   return dynamic(light: "A14469", dark: "F293B4")
                 }
             }
         }

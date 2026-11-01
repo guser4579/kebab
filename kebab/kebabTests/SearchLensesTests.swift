@@ -343,41 +343,75 @@ struct SearchLensesTests {
 
     // MARK: - Colour
 
-    private static func plainTile(_ id: String, reserved: SearchTileColor? = nil) -> SearchTile {
+    private static func plainTile(_ id: String, fixed: SearchTileColor? = nil) -> SearchTile {
         SearchTile(
             id: id,
             title: id,
             icon: "dices",
             behavior: .list,
             members: [SearchLensMember(entryId: UUID(), reason: "", date: now)],
-            reservedColor: reserved
+            fixedColor: fixed
         )
     }
 
-    @Test("Fired is pink, Resurfaced is amber, and nothing else uses either")
-    func reservedColours() {
+    /// Every v1 tile present: one root carrying most kinds, one X post.
+    private static func everyTile() -> [SearchTile] {
         let entries = [
             Self.root("- [ ] x", created: Self.date(2025, 6, 15), fires: 1, resurfaces: 1, attachments: [Self.link, Self.image]),
             Self.root(created: Self.daysAgo(100), attachments: [Self.xPost])
         ]
-        let all = entries + (0..<3).map { _ in Self.comment(on: entries[0], created: Self.daysAgo(400)) }
+        let comments = (0..<3).map { _ in Self.comment(on: entries[0], created: Self.daysAgo(400)) }
+        return Self.tiles(entries + comments)
+    }
 
-        for tile in Self.tiles(all) {
+    @Test("Each v1 tile has its own fixed colour")
+    func fixedColours() {
+        let expected: [String: SearchTileColor] = [
+            "random": .violet, "onThisDay": .sky, "beenAWhile": .olive,
+            "fired": .pink, "resurfaced": .amber, "longThreads": .teal,
+            "lists": .green, "links": .azure, "xPosts": .indigo, "photos": .lemon
+        ]
+        let tiles = Self.everyTile()
+
+        #expect(tiles.count == expected.count)
+        for tile in tiles {
+            #expect(tile.color == expected[tile.id])
+        }
+        #expect(Set(tiles.map(\.color)).count == tiles.count)
+    }
+
+    @Test("A month ago keeps On this day's colour")
+    func monthAgoColour() {
+        let tile = Self.tile("onThisDay", in: Self.tiles([Self.root(created: Self.date(2026, 5, 15)), Self.root()]))
+        #expect(tile?.title == "A month ago")
+        #expect(tile?.color == .sky)
+    }
+
+    @Test("Pink and amber appear only on Fired and Resurfaced")
+    func reservedColours() {
+        #expect(!SearchTileColor.rotation.contains(.pink))
+        #expect(!SearchTileColor.rotation.contains(.amber))
+        #expect(SearchTileColor.rotation.count == 8)
+
+        for tile in Self.everyTile() {
             switch tile.id {
             case "fired": #expect(tile.color == .pink)
             case "resurfaced": #expect(tile.color == .amber)
-            default: #expect(SearchTileColor.rotation.contains(tile.color))
+            default: #expect(tile.color != .pink && tile.color != .amber)
             }
         }
     }
 
-    @Test("No tile matches its left or upper neighbour, whichever tiles are hidden")
-    func neighboursNeverMatch() {
+    @Test("Tiles without a fixed colour never match a neighbour, whichever tiles are hidden")
+    func greedyFallbackNeverMatchesNeighbours() {
+        // v1's fixed tiles interleaved with unfixed (v2-style) ones, so the
+        // fallback has to dodge fixed neighbours as well as its own.
         let full: [SearchTile] = [
-            Self.plainTile("random"), Self.plainTile("onThisDay"), Self.plainTile("beenAWhile"),
-            Self.plainTile("fired", reserved: .pink), Self.plainTile("resurfaced", reserved: .amber),
-            Self.plainTile("longThreads"), Self.plainTile("lists"), Self.plainTile("links"),
-            Self.plainTile("xPosts"), Self.plainTile("photos")
+            Self.plainTile("random", fixed: .violet), Self.plainTile("g1"),
+            Self.plainTile("onThisDay", fixed: .sky), Self.plainTile("g2"),
+            Self.plainTile("fired", fixed: .pink), Self.plainTile("g3"),
+            Self.plainTile("resurfaced", fixed: .amber), Self.plainTile("g4"),
+            Self.plainTile("links", fixed: .azure), Self.plainTile("g5")
         ]
 
         // Every subset of the ten tiles (order preserved) — 1,024 layouts.
@@ -392,9 +426,22 @@ struct SearchLensesTests {
                 if index % 2 == 1 {
                     #expect(coloured[index].color != coloured[index - 1].color)
                 }
-                if coloured[index].reservedColor == nil {
+                if let fixed = coloured[index].fixedColor {
+                    #expect(coloured[index].color == fixed)
+                } else {
                     #expect(SearchTileColor.rotation.contains(coloured[index].color))
                 }
+            }
+        }
+    }
+
+    @Test("All-unfixed rows never match a neighbour")
+    func greedyFallbackAlone() {
+        for count in 1...12 {
+            let coloured = SearchLenses.assignColors((0..<count).map { Self.plainTile("g\($0)") })
+            for index in coloured.indices {
+                if index >= 2 { #expect(coloured[index].color != coloured[index - 2].color) }
+                if index % 2 == 1 { #expect(coloured[index].color != coloured[index - 1].color) }
             }
         }
     }

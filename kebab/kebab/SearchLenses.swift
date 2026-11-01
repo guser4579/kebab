@@ -32,10 +32,11 @@ nonisolated enum SearchLensTuning {
 
 /// Colour key for a tile; resolved to `Style.Color.Tile` in the view layer.
 nonisolated enum SearchTileColor: String, Sendable, Hashable, CaseIterable {
-    case violet, azure, green, pink, amber
+    case violet, indigo, azure, sky, teal, green, olive, lemon, amber, pink
 
-    /// Hues free tiles rotate through. Pink and amber are reserved.
-    static let rotation: [SearchTileColor] = [.violet, .azure, .green]
+    /// Hues a tile without a fixed colour picks from. Pink and amber are
+    /// reserved for Fired and Resurfaced, which already mean "something I did".
+    static let rotation: [SearchTileColor] = [.violet, .indigo, .azure, .sky, .teal, .green, .olive, .lemon]
 }
 
 /// One thought in a lens, with the reason it's there ("Fired 4 times") and
@@ -60,8 +61,9 @@ nonisolated struct SearchTile: Identifiable, Hashable, Sendable {
     let icon: String
     let behavior: Behavior
     let members: [SearchLensMember]
-    /// Set for tiles whose hue carries meaning (Fired, Resurfaced).
-    let reservedColor: SearchTileColor?
+    /// The tile's own colour. Every v1 tile has one; tiles without one (v2's
+    /// generated tiles) take a rotation colour from `assignColors`.
+    let fixedColor: SearchTileColor?
     /// Assigned over the visible row by `SearchLenses.assignColors`.
     var color: SearchTileColor = .violet
 
@@ -97,7 +99,7 @@ nonisolated enum SearchLenses {
                 icon: "dices",
                 behavior: .random,
                 members: newestFirst.map { member($0, "Created", $0.created_at) },
-                reservedColor: nil
+                fixedColor: .violet
             ))
         }
 
@@ -105,12 +107,12 @@ nonisolated enum SearchLenses {
         let window = SearchLensTuning.anniversaryWindowDays
         let onThisDay = newestFirst.filter { isAnniversary(of: $0.created_at, now: now, window: window, calendar: calendar) }
         if !onThisDay.isEmpty {
-            tiles.append(listTile("onThisDay", "On this day", "calendar-04", onThisDay.map { member($0, "Created", $0.created_at) }))
+            tiles.append(listTile("onThisDay", "On this day", "calendar-04", onThisDay.map { member($0, "Created", $0.created_at) }, color: .sky))
         } else if let monthAgo = calendar.date(byAdding: .month, value: -1, to: now) {
             let matches = newestFirst.filter {
                 abs(dayDistance($0.created_at, monthAgo, calendar: calendar)) <= window
             }
-            tiles.append(listTile("onThisDay", "A month ago", "calendar-04", matches.map { member($0, "Created", $0.created_at) }))
+            tiles.append(listTile("onThisDay", "A month ago", "calendar-04", matches.map { member($0, "Created", $0.created_at) }, color: .sky))
         }
 
         // 3 · Been a while
@@ -125,7 +127,7 @@ nonisolated enum SearchLenses {
             }
         tiles.append(listTile("beenAWhile", "Been a while", "clock-01", beenAWhile.map {
             member($0, "Last touched", lastActivity[$0.id, default: $0.created_at])
-        }))
+        }, color: .olive))
 
         // 4 · Fired
         let fired = roots
@@ -133,7 +135,7 @@ nonisolated enum SearchLenses {
             .sorted(by: byCount(\.fire_count, lastActivity: lastActivity))
         tiles.append(listTile("fired", "Fired", "fire-03", fired.map {
             member($0, "Fired \(times($0.fire_count))", lastActivity[$0.id, default: $0.created_at])
-        }, reserved: .pink))
+        }, color: .pink))
 
         // 5 · Resurfaced
         let resurfaced = roots
@@ -141,7 +143,7 @@ nonisolated enum SearchLenses {
             .sorted(by: byCount(\.resurface_count, lastActivity: lastActivity))
         tiles.append(listTile("resurfaced", "Resurfaced", "refresh-04", resurfaced.map {
             member($0, "Resurfaced \(times($0.resurface_count))", lastActivity[$0.id, default: $0.created_at])
-        }, reserved: .amber))
+        }, color: .amber))
 
         // 6 · Long threads
         let longThreads = roots
@@ -153,7 +155,7 @@ nonisolated enum SearchLenses {
             }
         tiles.append(listTile("longThreads", "Long threads", "message-circle", longThreads.map {
             member($0, "\(activity.descendants(of: $0.id)) comments", lastActivity[$0.id, default: $0.created_at])
-        }))
+        }, color: .teal))
 
         // 7 · Lists — anything still open first, then newest
         let lists = newestFirst
@@ -162,35 +164,36 @@ nonisolated enum SearchLenses {
         let orderedLists = lists.filter { $0.open > 0 } + lists.filter { $0.open == 0 }
         tiles.append(listTile("lists", "Lists", "tick-02", orderedLists.map {
             member($0.entry, $0.open > 0 ? "\($0.open) open" : "Done", lastActivity[$0.entry.id, default: $0.entry.created_at])
-        }))
+        }, color: .green))
 
         // 8 · Links (X posts have their own tile)
         let links = newestFirst.filter { $0.linkAttachment != nil && $0.xPostSource == nil }
-        tiles.append(listTile("links", "Links", "link-02", links.map { member($0, "Created", $0.created_at) }))
+        tiles.append(listTile("links", "Links", "link-02", links.map { member($0, "Created", $0.created_at) }, color: .azure))
 
         // 9 · X posts
         let xPosts = newestFirst.filter { $0.xPostSource != nil }
-        tiles.append(listTile("xPosts", "X posts", "new-twitter", xPosts.map { member($0, "Created", $0.created_at) }))
+        tiles.append(listTile("xPosts", "X posts", "new-twitter", xPosts.map { member($0, "Created", $0.created_at) }, color: .indigo))
 
         // 10 · Photos
         let photos = newestFirst.filter { !$0.imageAttachments.isEmpty }
-        tiles.append(listTile("photos", "Photos", "image-01", photos.map { member($0, "Created", $0.created_at) }))
+        tiles.append(listTile("photos", "Photos", "image-01", photos.map { member($0, "Created", $0.created_at) }, color: .lemon))
 
         return assignColors(tiles.filter { !$0.members.isEmpty })
     }
 
     // MARK: Colour
 
-    /// Reserved tiles keep their hue; every other tile takes the first
-    /// rotation colour that differs from its left and upper neighbours in the
-    /// two-row, column-major grid. Two constraints over three colours always
-    /// succeeds, and reserved hues never appear in the rotation, so no two
-    /// neighbours ever match.
+    /// Tiles with a fixed colour keep it — the ten v1 tiles all differ, so
+    /// they never match a neighbour however many are hidden. A tile without
+    /// one takes the first rotation colour that differs from its left and
+    /// upper neighbours in the two-row, column-major grid; two constraints
+    /// over eight colours always succeeds, and the reserved hues never
+    /// appear in the rotation.
     static func assignColors(_ tiles: [SearchTile], rows: Int = 2) -> [SearchTile] {
         var coloured = tiles
         for index in coloured.indices {
-            if let reserved = coloured[index].reservedColor {
-                coloured[index].color = reserved
+            if let fixed = coloured[index].fixedColor {
+                coloured[index].color = fixed
                 continue
             }
             var taken: Set<SearchTileColor> = []
@@ -229,9 +232,9 @@ nonisolated enum SearchLenses {
         _ title: String,
         _ icon: String,
         _ members: [SearchLensMember],
-        reserved: SearchTileColor? = nil
+        color: SearchTileColor
     ) -> SearchTile {
-        SearchTile(id: id, title: title, icon: icon, behavior: .list, members: members, reservedColor: reserved)
+        SearchTile(id: id, title: title, icon: icon, behavior: .list, members: members, fixedColor: color)
     }
 
     private static func member(_ entry: Entry, _ reason: String, _ date: Date) -> SearchLensMember {
