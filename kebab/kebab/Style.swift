@@ -186,7 +186,7 @@ enum Style {
         /// that size type outside the semantic tokens. One place knows the
         /// family is Inter; call sites stay semantic about size and weight.
         enum FaceWeight {
-            case regular, medium, semibold, extrabold
+            case regular, medium, semibold, extrabold, italic, semiboldItalic
 
             var fontName: String {
                 switch self {
@@ -194,6 +194,8 @@ enum Style {
                 case .medium: return "Inter-Medium"
                 case .semibold: return "Inter-SemiBold"
                 case .extrabold: return "Inter-ExtraBold"
+                case .italic: return "Inter-Italic"
+                case .semiboldItalic: return "Inter-SemiBoldItalic"
                 }
             }
         }

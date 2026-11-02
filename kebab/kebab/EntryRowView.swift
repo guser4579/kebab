@@ -267,16 +267,30 @@ struct EntryRowView: View {
         }
     }
 
-    private var isChecklistBody: Bool {
-        !entry.isContentHidden && Checklist.hasChecklist(entry.content)
+    /// nil for hidden bodies: masked text is never read as markup.
+    private var markup: Markup.Document? {
+        entry.isContentHidden ? nil : MarkupCache.document(entry.content)
+    }
+
+    private var isListBody: Bool {
+        markup?.hasLists == true
+    }
+
+    /// The body as one Text: plain thoughts and masked bodies exactly as
+    /// typed, inline styles when there are any.
+    private var bodyTextView: Text {
+        if let markup, markup.hasInlineStyles {
+            return Text(MarkupText.attributed(entry.content))
+        }
+        return Text(displayContent)
     }
 
     @ViewBuilder
     private var contentText: some View {
-        if isChecklistBody {
-            checklistContent
+        if isListBody {
+            listContent
         } else {
-            Text(displayContent)
+            bodyTextView
                 .font(Style.Typography.body())
                 .foregroundColor(Style.Color.primaryText)
                 .lineSpacing(4)
@@ -322,7 +336,7 @@ struct EntryRowView: View {
     }
 
     private func measurementText(lineLimit: Int?) -> some View {
-        Text(displayContent)
+        bodyTextView
             .font(Style.Typography.body())
             .lineSpacing(4)
             .lineLimit(lineLimit)
@@ -331,10 +345,10 @@ struct EntryRowView: View {
     }
 
     /// Whether the body genuinely overflows the collapsed presentation.
-    /// Checklists decide by line budget; plain text by measured height.
+    /// Lists decide by line budget; plain text by measured height.
     private var bodyOverflowsCollapse: Bool {
-        if isChecklistBody {
-            return checklistLineCount > Self.collapseLineLimit
+        if isListBody {
+            return listLineCount > Self.collapseLineLimit
         }
         return isCollapseCandidate && fullBodyHeight > cappedBodyHeight + 1
     }
@@ -362,42 +376,35 @@ struct EntryRowView: View {
         }
     }
 
-    /// Visual line count of a checklist body: items are one line each; text
-    /// blocks count their hard lines.
-    private var checklistLineCount: Int {
-        Checklist.segments(of: entry.content).reduce(0) { total, segment in
-            switch segment {
-            case .text(_, let block):
-                return total + block.components(separatedBy: "\n").count
-            case .item:
-                return total + 1
-            }
-        }
+    /// Visual line count of a list body: items are one line each; paragraphs
+    /// count their hard lines.
+    private var listLineCount: Int {
+        (markup?.blocks ?? []).reduce(0) { $0 + $1.lineCount }
     }
 
-    /// Segments actually rendered: the full list, or — collapsed — a prefix
-    /// capped at the line budget. Truncating by whole segments/lines keeps
-    /// checkbox structure, paragraphs, and line breaks fully intact.
-    private var visibleChecklistSegments: [Checklist.Segment] {
-        let segments = Checklist.segments(of: entry.content)
-        guard !isBodyExpanded, checklistLineCount > Self.collapseLineLimit else {
-            return segments
+    /// Blocks actually rendered: the full list, or — collapsed — a prefix
+    /// capped at the line budget. Truncating by whole blocks/lines keeps
+    /// list structure, paragraphs, and line breaks fully intact.
+    private var visibleListBlocks: [Markup.Block] {
+        let blocks = markup?.blocks ?? []
+        guard !isBodyExpanded, listLineCount > Self.collapseLineLimit else {
+            return blocks
         }
         var budget = Self.collapseLineLimit
-        var shown: [Checklist.Segment] = []
-        for segment in segments {
+        var shown: [Markup.Block] = []
+        for block in blocks {
             guard budget > 0 else { break }
-            switch segment {
+            switch block {
             case .item:
-                shown.append(segment)
+                shown.append(block)
                 budget -= 1
-            case .text(let id, let block):
-                let lines = block.components(separatedBy: "\n")
+            case .paragraph(let id, let text):
+                let lines = text.components(separatedBy: "\n")
                 if lines.count <= budget {
-                    shown.append(segment)
+                    shown.append(block)
                     budget -= lines.count
                 } else {
-                    shown.append(.text(id: id, lines.prefix(budget).joined(separator: "\n")))
+                    shown.append(.paragraph(id: id, text: lines.prefix(budget).joined(separator: "\n")))
                     budget = 0
                 }
             }
@@ -405,57 +412,21 @@ struct EntryRowView: View {
         return shown
     }
 
-    // Checklist entries render their marker lines as tappable checkbox rows
-    // directly in the feed — no detail-screen round trip to check an item.
-    // Text segments stay hit-transparent so entry navigation still works;
-    // only the checkbox buttons intercept taps.
-    private var checklistContent: some View {
-        VStack(alignment: .leading, spacing: Style.Spacing.x2) {
-            ForEach(visibleChecklistSegments) { segment in
-                switch segment {
-                case .text(_, let block):
-                    Text(block)
-                        .font(Style.Typography.body())
-                        .foregroundColor(Style.Color.primaryText)
-                        .lineSpacing(4)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .allowsHitTesting(false)
-                case .item(_, let lineIndex, let text, let checked):
-                    // The Spacer sits OUTSIDE the button: only the checkbox
-                    // and its label toggle. The rest of the row's width falls
-                    // through to the entry's normal open-detail behavior.
-                    HStack(spacing: 0) {
-                        Button {
-                            guard let feedViewModel else { return }
-                            Task {
-                                await feedViewModel.toggleChecklistItem(entry: entry, lineIndex: lineIndex)
-                            }
-                        } label: {
-                            HStack(alignment: .firstTextBaseline, spacing: Style.Spacing.x3) {
-                                Image(systemName: checked ? "checkmark.square" : "square")
-                                    .font(.system(size: 17, weight: .regular))
-                                    .foregroundColor(checked ? Style.Color.secondary : Style.Color.primaryText)
-
-                                Text(text)
-                                    .font(Style.Typography.body())
-                                    .foregroundColor(checked ? Style.Color.secondary : Style.Color.primaryText)
-                                    .strikethrough(checked, color: Style.Color.secondary)
-                                    .lineSpacing(4)
-                                    .multilineTextAlignment(.leading)
-                            }
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        // Toggling needs the server row; pending lists sync in
-                        // under a second online.
-                        .allowsHitTesting(!entry.isPending && feedViewModel != nil)
-
-                        Spacer(minLength: 0)
-                    }
+    // List bodies render directly in the feed, with checklist items tappable —
+    // no detail-screen round trip to check an item. Toggling needs the server
+    // row; pending lists sync in under a second online.
+    private var listContent: some View {
+        MarkupBlocksView(
+            blocks: visibleListBlocks,
+            checklistHitArea: .label,
+            allowsChecklistToggle: !entry.isPending && feedViewModel != nil,
+            onToggleChecklistItem: { lineIndex in
+                guard let feedViewModel else { return }
+                Task {
+                    await feedViewModel.toggleChecklistItem(entry: entry, lineIndex: lineIndex)
                 }
             }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        )
     }
 
     /// Bottom metadata line: comment count leading (unchanged), and — in the

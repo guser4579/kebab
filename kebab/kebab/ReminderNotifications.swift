@@ -66,7 +66,7 @@ nonisolated enum ReminderNotificationContent {
             // Checklists read as their first item rather than a marker line.
             let flattened = Checklist.hasChecklist(text)
                 ? checklistExcerpt(text)
-                : text
+                : Markup.plainText(text)
             if !flattened.isEmpty { return truncated(flattened) }
         }
         if let link = entry.linkAttachment {
@@ -85,15 +85,14 @@ nonisolated enum ReminderNotificationContent {
     }
 
     private static func checklistExcerpt(_ text: String) -> String {
-        for segment in Checklist.segments(of: text) {
-            switch segment {
-            case .text(_, let block):
-                let trimmed = block.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !trimmed.isEmpty { return trimmed }
-            case .item(_, _, let itemText, _):
-                let trimmed = itemText.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !trimmed.isEmpty { return trimmed }
+        for block in Markup.document(text).blocks {
+            let source: String
+            switch block {
+            case .paragraph(_, let paragraph): source = Markup.plainText(paragraph)
+            case .item(_, _, _, _, let content): source = Markup.inline(content).plainText
             }
+            let trimmed = source.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty { return trimmed }
         }
         return ""
     }

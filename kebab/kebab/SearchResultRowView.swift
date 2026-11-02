@@ -11,7 +11,7 @@ enum SearchDisplay {
             return entry.content.map { $0.isWhitespace ? $0 : "*" }.map(String.init).joined()
         }
         if !entry.content.isEmpty {
-            return entry.content
+            return Markup.plainText(entry.content)
         }
         if let link = entry.linkAttachment {
             return link.title ?? URL(string: link.url)?.host ?? link.url
@@ -116,8 +116,9 @@ struct SearchSnippetView: View {
     }
 
     /// Splits the snippet into lines, mapping global highlight offsets into
-    /// per-line local ranges and stripping checklist markers (highlights that
-    /// fell inside a marker are dropped, never misdrawn).
+    /// per-line local ranges and stripping `Markup.plainText`'s checklist
+    /// markers (highlights that fell inside a marker are dropped, never
+    /// misdrawn).
     private static func parse(_ snippet: SearchSnippet) -> [Line] {
         var lines: [Line] = []
         var offset = 0
@@ -138,14 +139,14 @@ struct SearchSnippetView: View {
             // line's marker; look through it so the item still renders.
             var probe = text
             var prefixLength = 0
-            if probe.hasPrefix("… "), Checklist.marker(of: String(probe.dropFirst(2))) != nil {
+            if probe.hasPrefix("… "), Self.checklistMarker(of: String(probe.dropFirst(2))) != nil {
                 probe = String(probe.dropFirst(2))
                 prefixLength = 2
             }
 
             var checked: Bool?
-            if let marker = Checklist.marker(of: probe) {
-                checked = marker == Checklist.checkedMarker
+            if let marker = Self.checklistMarker(of: probe) {
+                checked = marker == Markup.plainCheckedMarker
                 let drop = prefixLength + marker.count
                 text = String(text.dropFirst(drop))
                 local = local.compactMap { range -> Range<Int>? in
@@ -159,6 +160,10 @@ struct SearchSnippetView: View {
             id += 1
         }
         return lines
+    }
+
+    private static func checklistMarker(of line: String) -> String? {
+        [Markup.plainUncheckedMarker, Markup.plainCheckedMarker].first { line.hasPrefix($0) }
     }
 
     /// Caps content lines (blank lines render as spacing but don't count).

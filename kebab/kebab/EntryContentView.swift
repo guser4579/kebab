@@ -184,12 +184,24 @@ struct EntryContentView: View {
         .frame(minHeight: 24)
     }
 
+    /// nil for hidden bodies: masked text is never read as markup.
+    private var markup: Markup.Document? {
+        entry.isContentHidden ? nil : MarkupCache.document(entry.content)
+    }
+
     @ViewBuilder
     private var contentText: some View {
-        if !entry.isContentHidden, Checklist.hasChecklist(entry.content) {
-            checklistContent
+        if let markup, markup.hasLists {
+            // Mirrors the feed row: tappable checklist items, strikethrough
+            // completion. The host's closure owns the optimistic patch.
+            MarkupBlocksView(
+                blocks: markup.blocks,
+                onToggleChecklistItem: { lineIndex in
+                    onToggleChecklistItem?(entry, lineIndex)
+                }
+            )
         } else {
-            Text(displayContent)
+            bodyTextView
                 .font(Style.Typography.body())
                 .foregroundColor(Style.Color.primaryText)
                 .lineSpacing(4)
@@ -200,43 +212,12 @@ struct EntryContentView: View {
         }
     }
 
-    // Checklist rendering mirrors the feed row: tappable items, strikethrough
-    // completion. The host's closure owns the optimistic patch.
-    private var checklistContent: some View {
-        VStack(alignment: .leading, spacing: Style.Spacing.x2) {
-            ForEach(Checklist.segments(of: entry.content)) { segment in
-                switch segment {
-                case .text(_, let block):
-                    Text(block)
-                        .font(Style.Typography.body())
-                        .foregroundColor(Style.Color.primaryText)
-                        .lineSpacing(4)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .allowsHitTesting(false)
-                case .item(_, let lineIndex, let text, let checked):
-                    Button {
-                        onToggleChecklistItem?(entry, lineIndex)
-                    } label: {
-                        HStack(alignment: .firstTextBaseline, spacing: Style.Spacing.x3) {
-                            Image(systemName: checked ? "checkmark.square" : "square")
-                                .font(.system(size: 17, weight: .regular))
-                                .foregroundColor(checked ? Style.Color.secondary : Style.Color.primaryText)
-
-                            Text(text)
-                                .font(Style.Typography.body())
-                                .foregroundColor(checked ? Style.Color.secondary : Style.Color.primaryText)
-                                .strikethrough(checked, color: Style.Color.secondary)
-                                .lineSpacing(4)
-                                .multilineTextAlignment(.leading)
-
-                            Spacer(minLength: 0)
-                        }
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
+    /// Plain thoughts and masked bodies exactly as typed; inline styles when
+    /// there are any.
+    private var bodyTextView: Text {
+        if let markup, markup.hasInlineStyles {
+            return Text(MarkupText.attributed(entry.content))
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        return Text(displayContent)
     }
 }

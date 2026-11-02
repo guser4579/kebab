@@ -21,6 +21,8 @@ actor SearchEngine {
     private struct Doc {
         let entry: Entry
         let rootId: UUID
+        /// `Markup.plainText` of the content: what's matched and displayed.
+        let plainContent: String
         let contentTokens: [Token]
         /// Title + domain + URL of the link attachment, tokenized. Offsets are
         /// into `attachmentTitle` only while they fall inside it.
@@ -83,10 +85,14 @@ actor SearchEngine {
                 }
             }
 
+            // Everything searchable reads the markup-free text, so a highlight
+            // offset is an offset into what the snippet displays.
+            let plainContent = Markup.plainText(entry.content)
             return Doc(
                 entry: entry,
                 rootId: rootId,
-                contentTokens: Self.tokenize(entry.content),
+                plainContent: plainContent,
+                contentTokens: Self.tokenize(plainContent),
                 attachmentTokens: Self.tokenize(attachmentText),
                 attachmentTitle: attachmentTitle,
                 collectionNameFolded: collectionName.map(Self.fold)
@@ -124,11 +130,11 @@ actor SearchEngine {
 
             // Phrase pass: the whole query appearing verbatim dominates.
             if plan.terms.count >= 2,
-               let phraseRange = doc.entry.content.range(
+               let phraseRange = doc.plainContent.range(
                    of: trimmed,
                    options: [.caseInsensitive, .diacriticInsensitive]
                ) {
-                let content = doc.entry.content
+                let content = doc.plainContent
                 let start = content.distance(from: content.startIndex, to: phraseRange.lowerBound)
                 let end = content.distance(from: content.startIndex, to: phraseRange.upperBound)
                 var score = 1000.0
@@ -227,7 +233,7 @@ actor SearchEngine {
             let doc = docs[hit.docIndex]
             let snippet: SearchSnippet
             if hit.matchedInContent || !doc.entry.content.isEmpty {
-                snippet = Self.makeSnippet(content: doc.entry.content, highlights: hit.highlights)
+                snippet = Self.makeSnippet(content: doc.plainContent, highlights: hit.highlights)
             } else {
                 // Link-only entry matched through its attachment.
                 snippet = SearchSnippet(

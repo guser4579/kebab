@@ -160,7 +160,7 @@ nonisolated enum SearchLenses {
         // 7 · Lists — anything still open first, then newest
         let lists = newestFirst
             .filter { Checklist.hasChecklist($0.content) }
-            .map { (entry: $0, open: openItemCount($0.content)) }
+            .map { (entry: $0, open: Checklist.openItemCount($0.content)) }
         let orderedLists = lists.filter { $0.open > 0 } + lists.filter { $0.open == 0 }
         tiles.append(listTile("lists", "Lists", "tick-02", orderedLists.map {
             member($0.entry, $0.open > 0 ? "\($0.open) open" : "Done", lastActivity[$0.entry.id, default: $0.entry.created_at])
@@ -264,10 +264,6 @@ nonisolated enum SearchLenses {
 
     private static func times(_ count: Int) -> String {
         count == 1 ? "once" : "\(count) times"
-    }
-
-    private static func openItemCount(_ content: String) -> Int {
-        content.components(separatedBy: "\n").filter { $0.hasPrefix(Checklist.uncheckedMarker) }.count
     }
 
     /// Whole calendar days from `b` to `a` (negative when `a` is earlier).
