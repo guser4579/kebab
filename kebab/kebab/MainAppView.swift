@@ -364,12 +364,14 @@ struct MainAppView: View {
         }
     }
 
-    private func dismissReminderSheet() {
-        withAnimation(.easeOut(duration: 0.25)) {
-            isReminderSheetVisible = false
+    /// Rows no warm store holds (roots beyond the loaded pages) live only in
+    /// the corpus: patched there, and never offered to a feed as an arrival.
+    private func wireColdEntryHooks() {
+        feedViewModel.coldEntryResolver = { [weak searchCorpusStore] id in
+            searchCorpusStore?.entry(id: id)
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-            reminderSheetEntry = nil
+        feedViewModel.onColdEntryChanged = { [weak searchCorpusStore] fresh in
+            searchCorpusStore?.patch(fresh)
         }
     }
 
@@ -472,17 +474,6 @@ struct MainAppView: View {
     /// gone — while the backend delete runs invisibly (with its own transport
     /// retries). Only a genuine failure restores the entry and surfaces a
     /// transient notice.
-    private func performEntryDelete(_ entry: Entry) {
-        let removals = scopeCoordinator.removeForDelete(id: entry.id)
-        Task {
-            let deleted = await feedViewModel.deleteEntry(id: entry.id)
-            if !deleted {
-                scopeCoordinator.restoreAfterFailedDelete(removals)
-                showTransientNotice("Failed to delete")
-            }
-        }
-    }
-
     private func showTransientNotice(_ message: String) {
         noticeCenter.show(message)
     }
@@ -756,6 +747,7 @@ struct MainAppView: View {
                             scopeCoordinator?.reconcile(fresh)
                             searchCorpusStore?.upsert(fresh)
                         }
+                        wireColdEntryHooks()
                         feedViewModel.onCommentContentChanged = { [weak searchCorpusStore] in
                             // Comments aren't in warm stores; the corpus
                             // refetches on Search's next look.
@@ -942,162 +934,17 @@ struct MainAppView: View {
                         }
                 )
             }
-            .overlay(alignment: .bottom) {
-                if activeEntryMenuEntry != nil {
-                    ZStack(alignment: .bottom) {
-                        Color.black.opacity(0.4)
-                            .ignoresSafeArea()
-                            .transaction { transaction in
-                                transaction.animation = nil
-                            }
-                            .onTapGesture {
-                                withAnimation(.easeOut(duration: 0.25)) {
-                                    isEntryActionSheetVisible = false
-                                }
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                                    activeEntryMenuEntry = nil
-                                }
-                            }
-
-                        if isEntryActionSheetVisible, let entry = activeEntryMenuEntry {
-                            EntryActionSheetView(
-                                entry: entry,
-                                onDelete: {
-                                    performEntryDelete(entry)
-                                },
-                                onToggleContentHidden: {
-                                    // Optimistic inside toggleEntryHidden: the
-                                    // row updates instantly; a genuine failure
-                                    // rolls back and surfaces quietly.
-                                    Task {
-                                        let ok = await feedViewModel.toggleEntryHidden(
-                                            id: entry.id,
-                                            currentValue: entry.isContentHidden
-                                        )
-                                        if !ok {
-                                            showTransientNotice("Couldn\u{2019}t update entry")
-                                        }
-                                    }
-                                },
-                                onBeginTextEdit: {
-                                    let toEdit = entry
-                                    withAnimation(.easeOut(duration: 0.25)) {
-                                        isEntryActionSheetVisible = false
-                                    }
-                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                                        activeEntryMenuEntry = nil
-                                        fullScreenEditEntry = toEdit
-                                        withAnimation(.easeOut(duration: 0.25)) {
-                                            isFullScreenEditVisible = true
-                                        }
-                                    }
-                                },
-                                onRemindMe: {
-                                    let target = entry
-                                    withAnimation(.easeOut(duration: 0.25)) {
-                                        isEntryActionSheetVisible = false
-                                    }
-                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                                        activeEntryMenuEntry = nil
-                                        openReminderSheet(for: target)
-                                    }
-                                },
-                                onAddToCollection: {
-                                    let toAdd = entry
-                                    withAnimation(.easeOut(duration: 0.25)) {
-                                        isEntryActionSheetVisible = false
-                                    }
-                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                                        activeEntryMenuEntry = nil
-                                        addToCollectionEntry = toAdd
-                                        addToCollectionAppearsInPlace = false
-                                        withAnimation(.easeOut(duration: 0.25)) {
-                                            isAddToCollectionVisible = true
-                                        }
-                                    }
-                                },
-                                onDismiss: {
-                                    withAnimation(.easeOut(duration: 0.25)) {
-                                        isEntryActionSheetVisible = false
-                                    }
-                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                                        activeEntryMenuEntry = nil
-                                    }
-                                }
-                            )
-                            .transition(.move(edge: .bottom))
-                        }
-                    }
-                    .ignoresSafeArea(edges: .bottom)
-                }
-            }
-            .overlay {
-                if isFullScreenEditVisible, let editEntry = fullScreenEditEntry {
-                    EditEntryFullScreenView(
-                        entry: editEntry,
-                        initialText: editEntry.content,
-                        feedViewModel: feedViewModel,
-                        onDismiss: {
-                            withAnimation(.easeOut(duration: 0.25)) {
-                                isFullScreenEditVisible = false
-                            }
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                                fullScreenEditEntry = nil
-                            }
-                            // No authoritative reload: the optimistic patch in
-                            // updateEntryContent is the visible truth and fans
-                            // out to every warm scope. A reload here could
-                            // even race the in-flight persist and briefly
-                            // revert the edit.
-                        },
-                        onPersistSuccess: {
-                            // Editing is a strong resume signal.
-                            recentActivityStore.record(
-                                rootId: editEntry.root_id ?? editEntry.id,
-                                contextEntryId: editEntry.id,
-                                kind: .edited
-                            )
-                        },
-                        onPersistFailure: {
-                            // updateEntryContent already rolled the row back.
-                            showTransientNotice("Couldn\u{2019}t save edit")
-                        }
-                    )
-                    .transition(.move(edge: .bottom))
-                }
-            }
-            .overlay {
-                if isAddToCollectionVisible, let entry = addToCollectionEntry {
-                    AddToCollectionFullScreenView(
-                        entry: entry,
-                        onDismiss: {
-                            withAnimation(.easeOut(duration: 0.25)) {
-                                isAddToCollectionVisible = false
-                            }
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                                addToCollectionEntry = nil
-                                addToCollectionAppearsInPlace = false
-                            }
-                        },
-                        onConfirm: { oldId, newId in
-                            // Local-first move: membership patches every warm
-                            // scope immediately via the fan-out; persistence
-                            // runs behind, counts reconcile quietly.
-                            searchCorpusStore.markStale()
-                            Task {
-                                let ok = await feedViewModel.moveEntry(id: entry.id, from: oldId, to: newId)
-                                collectionsViewModel.refreshQuietly()
-                                if !ok {
-                                    showTransientNotice("Couldn\u{2019}t move entry")
-                                }
-                            }
-                        }
-                    )
-                    // Quick-action path appears in place (a quiet fade in its
-                    // final position); the ellipsis path keeps its slide.
-                    .transition(addToCollectionAppearsInPlace ? .opacity : .move(edge: .bottom))
-                }
-            }
+            .entryActionsHost(
+                menuEntry: $activeEntryMenuEntry,
+                isMenuVisible: $isEntryActionSheetVisible,
+                editEntry: $fullScreenEditEntry,
+                isEditVisible: $isFullScreenEditVisible,
+                addToCollectionEntry: $addToCollectionEntry,
+                isAddToCollectionVisible: $isAddToCollectionVisible,
+                addToCollectionAppearsInPlace: $addToCollectionAppearsInPlace,
+                feedViewModel: feedViewModel,
+                openReminderSheet: { openReminderSheet(for: $0) }
+            )
             // Collections sheet behind the nav bar's pinned +: creation is
             // relative to the current parent scope, management applies to the
             // deepest selected location.
@@ -1282,41 +1129,7 @@ struct MainAppView: View {
                     .transition(.move(edge: .bottom))
                 }
             }
-            // Reminder sheet: same contextual-sheet chrome as the entry
-            // actions. Deliberately NOT ignoring the keyboard region — the
-            // optional note field needs the sheet to lift.
-            .overlay(alignment: .bottom) {
-                if reminderSheetEntry != nil {
-                    ZStack(alignment: .bottom) {
-                        Color.black.opacity(0.4)
-                            .ignoresSafeArea()
-                            .transaction { $0.animation = nil }
-                            .onTapGesture { dismissReminderSheet() }
-
-                        if isReminderSheetVisible, let entry = reminderSheetEntry {
-                            ReminderSheetView(
-                                entry: entry,
-                                existing: reminderStore.activeReminder(for: entry.id),
-                                authorization: reminderStore.authorization,
-                                onSet: { mode, fireAt, note in
-                                    await reminderStore.save(
-                                        entry: entry,
-                                        mode: mode,
-                                        fireAt: fireAt,
-                                        note: note
-                                    )
-                                },
-                                onRemove: {
-                                    Task { await reminderStore.removeReminder(entryId: entry.id) }
-                                },
-                                onDismiss: { dismissReminderSheet() }
-                            )
-                            .transition(.move(edge: .bottom))
-                        }
-                    }
-                    .ignoresSafeArea(.container, edges: .bottom)
-                }
-            }
+            .entryReminderHost(entry: $reminderSheetEntry, isVisible: $isReminderSheetVisible)
             // A reminder that came due while the user was elsewhere in Kebab:
             // its own quiet banner, never the system one over the app.
             .overlay(alignment: .top) {
@@ -1396,28 +1209,7 @@ struct MainAppView: View {
                     scopeCoordinator.revalidateAllWarm()
                 }
             }
-            .alert("Entry couldn\u{2019}t sync", isPresented: Binding(
-                get: { pendingWarningId != nil },
-                set: { if !$0 { pendingWarningId = nil } }
-            )) {
-                Button("Try again") {
-                    if let id = pendingWarningId {
-                        feedViewModel.retryPending(id: id)
-                    }
-                    pendingWarningId = nil
-                }
-                Button("Discard entry", role: .destructive) {
-                    if let id = pendingWarningId {
-                        feedViewModel.discardPending(id: id)
-                    }
-                    pendingWarningId = nil
-                }
-                Button("Cancel", role: .cancel) {
-                    pendingWarningId = nil
-                }
-            } message: {
-                Text("This entry is saved on your phone, but the server rejected it. You can retry or discard it.")
-            }
+            .entryPendingWarningAlert(id: $pendingWarningId, feedViewModel: feedViewModel)
             // Destructive confirmation describes what happens to the entries —
             // structure is disposable, entries never are.
             .alert(

@@ -93,7 +93,7 @@ struct EntryDetailView: View {
     var body: some View {
         GeometryReader { geometry in
             VStack(spacing: 0) {
-                entryDetailHeader
+                DetailHeaderBar(title: "Entry", onBack: { dismiss() })
 
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
@@ -662,53 +662,6 @@ struct EntryDetailView: View {
         if let updated = scopeCoordinator.entry(id: displayedRootEntry.id), !updated.isPending {
             displayedRootEntry = updated
         }
-    }
-
-    // MARK: - Header
-
-    private var entryDetailHeader: some View {
-        VStack(spacing: 0) {
-            Color.clear
-                .frame(height: 60)
-
-            headerTopBar
-
-            Color.clear
-                .frame(height: 12)
-
-            Rectangle()
-                .fill(Style.Color.separator)
-                .frame(height: 1)
-                .frame(maxWidth: .infinity)
-        }
-        .frame(maxWidth: .infinity)
-        .background(Style.Color.background)
-    }
-
-    private var headerTopBar: some View {
-        ZStack {
-            Text("Entry")
-                .font(Style.Typography.face(16, .medium))
-                .foregroundColor(Style.Color.primaryText)
-
-            HStack {
-                Button {
-                    dismiss()
-                } label: {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 18, weight: .medium))
-                        .foregroundColor(Style.Color.secondary)
-                        .frame(width: 24, height: 44)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, Style.Spacing.x4)
-            .frame(height: 24, alignment: .center)
-        }
-        .frame(height: 24)
     }
 
     // MARK: - Content

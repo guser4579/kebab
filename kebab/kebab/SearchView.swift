@@ -60,9 +60,38 @@ private struct SearchHeaderView: View {
     let onSubmit: () -> Void
 
     var body: some View {
-        SearchHeaderBar(onBack: onBack) {
-            searchField
+        VStack(spacing: 0) {
+            Color.clear
+                .frame(height: 60)
+
+            // One navigation row: chevron + field, chevron centered against
+            // the field. The push/pop behavior itself is unchanged.
+            HStack(spacing: 12) {
+                Button {
+                    onBack()
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundColor(Style.Color.secondary)
+                        .frame(width: 24, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+
+                searchField
+            }
+            .padding(.horizontal, Style.Spacing.x4)
+
+            Color.clear
+                .frame(height: 16)
+
+            Rectangle()
+                .fill(Style.Color.separator)
+                .frame(height: 1)
+                .frame(maxWidth: .infinity)
         }
+        .frame(maxWidth: .infinity)
+        .background(Style.Color.background)
     }
 
     private var searchField: some View {
@@ -99,99 +128,6 @@ private struct SearchHeaderView: View {
                 }
                 .padding(.trailing, Style.Spacing.x4)
             }
-        }
-    }
-}
-
-/// Search-surface header chrome: top spacer, one navigation row (chevron +
-/// center content, chevron centered against it), 16pt, separator. The field
-/// fills the center on Search itself; a lens list puts its title there.
-struct SearchHeaderBar<Center: View>: View {
-
-    let onBack: () -> Void
-    @ViewBuilder let center: () -> Center
-
-    var body: some View {
-        VStack(spacing: 0) {
-            Color.clear
-                .frame(height: 60)
-
-            HStack(spacing: 12) {
-                Button {
-                    onBack()
-                } label: {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 18, weight: .medium))
-                        .foregroundColor(Style.Color.secondary)
-                        .frame(width: 24, height: 44)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-
-                center()
-            }
-            .padding(.horizontal, Style.Spacing.x4)
-
-            Color.clear
-                .frame(height: 16)
-
-            Rectangle()
-                .fill(Style.Color.separator)
-                .frame(height: 1)
-                .frame(maxWidth: .infinity)
-        }
-        .frame(maxWidth: .infinity)
-        .background(Style.Color.background)
-    }
-}
-
-// MARK: - Resting-state row
-
-/// Resume rows invert the search-result hierarchy — action cue first,
-/// content second — so the surface reads as "my activity", never as a stack
-/// of results. Shared by Recent Activity and the Explore lens lists.
-struct SearchMetaRow<Destination: View>: View {
-
-    let meta: String
-    let entry: Entry
-    let destination: Destination
-    var onOpen: (() -> Void)?
-
-    var body: some View {
-        VStack(spacing: 0) {
-            ZStack(alignment: .leading) {
-                NavigationLink(destination: destination) {
-                    Color.clear
-                        .contentShape(Rectangle())
-                }
-                .simultaneousGesture(TapGesture().onEnded { onOpen?() })
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(meta)
-                        .font(Style.Typography.meta())
-                        .foregroundColor(Style.Color.secondary)
-                        .lineLimit(1)
-
-                    // Same checklist-aware renderer as results (no highlights
-                    // here) — markers never leak as raw text.
-                    SearchSnippetView(
-                        snippet: SearchSnippet(
-                            text: SearchDisplay.previewText(for: entry),
-                            highlights: []
-                        ),
-                        maxSourceLines: 2,
-                        perLineLimit: 1
-                    )
-                }
-                .allowsHitTesting(false)
-            }
-            .padding(.horizontal, Style.Spacing.x4)
-            .padding(.vertical, Style.Spacing.x3)
-
-            Rectangle()
-                .fill(Style.Color.separator)
-                .frame(height: 1)
-                .frame(maxWidth: .infinity)
         }
     }
 }
@@ -507,6 +443,9 @@ private struct SearchContentView: View {
         .scrollDismissesKeyboard(.interactively)
     }
 
+    /// Resume rows invert the search-result hierarchy — action cue first,
+    /// content second — so the surface reads as "my recent activity", never
+    /// as a stack of results.
     private func activityRow(_ item: RecentActivityItem, root: Entry) -> some View {
         // Exact-context restoration: a deeply nested comment reopens that
         // comment; anything else reopens the thought.
@@ -514,11 +453,40 @@ private struct SearchContentView: View {
             ? corpus.entry(id: item.contextEntryId)
             : nil
 
-        return SearchMetaRow(
-            meta: "\(item.kind.label) · \(Style.Timestamp.relative(for: item.date))",
-            entry: root,
-            destination: activityDestination(root: root, context: context)
-        )
+        return VStack(spacing: 0) {
+            ZStack(alignment: .leading) {
+                NavigationLink(destination: activityDestination(root: root, context: context)) {
+                    Color.clear
+                        .contentShape(Rectangle())
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("\(item.kind.label) · \(Style.Timestamp.relative(for: item.date))")
+                        .font(Style.Typography.meta())
+                        .foregroundColor(Style.Color.secondary)
+                        .lineLimit(1)
+
+                    // Same checklist-aware renderer as results (no highlights
+                    // here) — markers never leak as raw text.
+                    SearchSnippetView(
+                        snippet: SearchSnippet(
+                            text: SearchDisplay.previewText(for: root),
+                            highlights: []
+                        ),
+                        maxSourceLines: 2,
+                        perLineLimit: 1
+                    )
+                }
+                .allowsHitTesting(false)
+            }
+            .padding(.horizontal, Style.Spacing.x4)
+            .padding(.vertical, Style.Spacing.x3)
+
+            Rectangle()
+                .fill(Style.Color.separator)
+                .frame(height: 1)
+                .frame(maxWidth: .infinity)
+        }
     }
 
     // MARK: State 1 · Explore

@@ -57,6 +57,13 @@ final class FeedViewModel: ObservableObject {
     /// buffers). Optimistic patches are computed against this truth; a miss
     /// means nothing on any warm surface renders the entry.
     var entryResolver: ((UUID) -> Entry?)?
+    /// The on-device corpus copy of a row no warm store holds: a comment, or a
+    /// root beyond the loaded pages (most of what an Explore lens lists).
+    var coldEntryResolver: ((UUID) -> Entry?)?
+    /// Fired with a freshly patched cold row. Mirrors it locally and nothing
+    /// else — `onEntryChanged` would make every matching feed adopt it as a
+    /// new arrival at its live edge.
+    var onColdEntryChanged: ((Entry) -> Void)?
     /// Resolves a thread from purely local state (warm scopes + the on-device
     /// corpus mirror). Detail screens call this from `init`, so the correct
     /// thread geometry exists in the FIRST rendered frame instead of arriving
@@ -97,6 +104,16 @@ final class FeedViewModel: ObservableObject {
     /// when warm, otherwise the caller's own copy.
     private func currentEntry(id: UUID, fallback: Entry) -> Entry {
         entryResolver?(id) ?? fallback
+    }
+
+    /// Fans a patch out to wherever the row actually lives. For patches that
+    /// don't reorder anything (fire, checklist): a cold row stays cold.
+    func publishInPlacePatch(_ entry: Entry) {
+        if entryResolver?(entry.id) != nil {
+            onEntryChanged?(entry)
+        } else {
+            onColdEntryChanged?(entry)
+        }
     }
 
     /// Outbox entries mapped to display form, newest first — consumed by the
@@ -787,8 +804,11 @@ final class FeedViewModel: ObservableObject {
     func updateEntryContent(id: UUID, content: String) async -> Bool {
         errorMessage = nil
         let original = entryResolver?(id)
+        let cold = original == nil ? coldEntryResolver?(id) : nil
         if let original {
             onEntryChanged?(original.withContent(content))
+        } else if let cold {
+            onColdEntryChanged?(cold.withContent(content))
         }
         do {
             try await repository.updateEntryContent(id: id, content: content)
@@ -800,6 +820,8 @@ final class FeedViewModel: ObservableObject {
         } catch {
             if let original {
                 onEntryChanged?(original)
+            } else if let cold {
+                onColdEntryChanged?(cold)
             }
             errorMessage = error.localizedDescription
             return false
@@ -814,12 +836,12 @@ final class FeedViewModel: ObservableObject {
         let base = currentEntry(id: entry.id, fallback: entry)
         let newContent = Checklist.toggling(base.content, lineIndex: lineIndex)
         guard newContent != base.content else { return true }
-        onEntryChanged?(base.withContent(newContent))
+        publishInPlacePatch(base.withContent(newContent))
         do {
             try await repository.updateEntryContent(id: entry.id, content: newContent)
             return true
         } catch {
-            onEntryChanged?(base)
+            publishInPlacePatch(base)
             return false
         }
     }
@@ -832,8 +854,11 @@ final class FeedViewModel: ObservableObject {
     @discardableResult
     func toggleEntryHidden(id: UUID, currentValue: Bool) async -> Bool {
         let warm = entryResolver?(id)
+        let cold = warm == nil ? coldEntryResolver?(id) : nil
         if let warm {
             onEntryChanged?(warm.withIsContentHidden(!currentValue))
+        } else if let cold {
+            onColdEntryChanged?(cold.withIsContentHidden(!currentValue))
         }
         do {
             try await supabase
@@ -848,6 +873,8 @@ final class FeedViewModel: ObservableObject {
         } catch {
             if let warm {
                 onEntryChanged?(warm.withIsContentHidden(currentValue))
+            } else if let cold {
+                onColdEntryChanged?(cold.withIsContentHidden(currentValue))
             }
             return false
         }
@@ -880,13 +907,13 @@ final class FeedViewModel: ObservableObject {
     func fireEntry(entry: Entry) async -> Bool {
         guard entry.parent_id == nil else { return false }
         let base = currentEntry(id: entry.id, fallback: entry)
-        onEntryChanged?(base.withFireCount(base.fire_count + 1))
+        publishInPlacePatch(base.withFireCount(base.fire_count + 1))
         do {
             try await repository.fireEntry(id: entry.id)
             return true
         } catch {
             let now = currentEntry(id: entry.id, fallback: base)
-            onEntryChanged?(now.withFireCount(base.fire_count))
+            publishInPlacePatch(now.withFireCount(base.fire_count))
             return false
         }
     }

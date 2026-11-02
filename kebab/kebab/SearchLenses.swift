@@ -176,7 +176,7 @@ nonisolated enum SearchLenses {
 
         // 10 · Photos
         let photos = newestFirst.filter { !$0.imageAttachments.isEmpty }
-        tiles.append(listTile("photos", "Photos", "image-01", photos.map { member($0, "Created", $0.created_at) }, color: .lemon))
+        tiles.append(listTile("photos", "Photos", "image-03", photos.map { member($0, "Created", $0.created_at) }, color: .lemon))
 
         return assignColors(tiles.filter { !$0.members.isEmpty })
     }

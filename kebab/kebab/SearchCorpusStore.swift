@@ -19,6 +19,8 @@ final class SearchCorpusStore: ObservableObject {
     private(set) var entries: [Entry] = []
     private(set) var membership: [UUID: UUID] = [:]
     private var entryById: [UUID: Entry] = [:]
+    /// Comment counts for `feedEntry`, rebuilt lazily after the mirror changes.
+    private var cachedThreadActivity: ThreadActivity?
 
     /// Committed-but-unsynced outbox entries; they are real content the user
     /// finished, so they are searchable immediately. Set by MainAppView.
@@ -212,6 +214,12 @@ final class SearchCorpusStore: ObservableObject {
         }
     }
 
+    /// An in-place patch to a row already mirrored; anything else is ignored.
+    func patch(_ entry: Entry) {
+        guard entryById[entry.id] != nil else { return }
+        upsert(entry)
+    }
+
     /// Pending outbox content changed (created or discarded): rebuild the
     /// index from the current mirror + pending, no network involved.
     func rebuildIndex() {
@@ -234,6 +242,44 @@ final class SearchCorpusStore: ObservableObject {
     /// built over `indexedEntries()`.
     func indexedEntry(id: UUID) -> Entry? {
         entryById[id] ?? pendingProvider?().first { $0.id == id }
+    }
+
+    /// A root as the feed would render it. The corpus fetch carries neither
+    /// comment counts nor collection breadcrumbs, so those derive from the
+    /// mirror; pending entries already carry their own.
+    func feedEntry(id: UUID, collectionInfo: ((UUID) -> CollectionDisplayInfo?)?) -> Entry? {
+        guard let entry = indexedEntry(id: id) else { return nil }
+        guard !entry.isPending else { return entry }
+        let collectionId = membership[id]
+        return Self.feedRepresentation(
+            of: entry,
+            commentCount: threadActivity.descendants(of: id),
+            collectionId: collectionId,
+            collection: collectionId.flatMap { collectionInfo?($0) }
+        )
+    }
+
+    static func feedRepresentation(
+        of entry: Entry,
+        commentCount: Int,
+        collectionId: UUID?,
+        collection: CollectionDisplayInfo?
+    ) -> Entry {
+        entry
+            .withCommentCount(commentCount)
+            .withCollection(
+                id: collectionId,
+                name: collection?.name,
+                parentId: collection?.parentId,
+                parentName: collection?.parentName
+            )
+    }
+
+    private var threadActivity: ThreadActivity {
+        if let cachedThreadActivity { return cachedThreadActivity }
+        let activity = ThreadActivity(entries: entries)
+        cachedThreadActivity = activity
+        return activity
     }
 
     /// The mirror plus pending outbox entries — exactly what the engine
@@ -261,9 +307,13 @@ final class SearchCorpusStore: ObservableObject {
     // MARK: - Internals
 
     private func adopt(entries newEntries: [Entry], membership newMembership: [UUID: UUID], persist: Bool) {
+        // Surfaces rendering rows from the mirror (lens lists) update in the
+        // same beat; `revision` only follows the debounced index rebuild.
+        objectWillChange.send()
         entries = newEntries
         membership = newMembership
         entryById = Dictionary(uniqueKeysWithValues: newEntries.map { ($0.id, $0) })
+        cachedThreadActivity = nil
         if persist {
             schedulePersist()
         }
