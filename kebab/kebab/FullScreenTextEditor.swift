@@ -70,6 +70,74 @@ final class FocusingTextView: UITextView {
     }
 }
 
+// MARK: - EditorContainerView
+//
+// The text view fills the container and the glass bar floats over it, pinned
+// to the keyboard, so text passes behind the glass. The bar has to live here
+// rather than in an inputAccessoryView: that sits in the keyboard's own window,
+// where the glass has nothing of ours to sample and renders opaque.
+
+final class EditorContainerView: UIView {
+    let textView = FocusingTextView()
+    private var bar: UIView?
+    private var isBarShown = false
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        textView.frame = bounds
+        textView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        addSubview(textView)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func installBar(_ bar: UIView) {
+        self.bar = bar
+        bar.alpha = 0
+        bar.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(bar)
+        // Hosts pad the editor by entryContentPadding, the same inset the
+        // composer capsule keeps from the screen edge.
+        NSLayoutConstraint.activate([
+            bar.leadingAnchor.constraint(equalTo: leadingAnchor),
+            bar.trailingAnchor.constraint(equalTo: trailingAnchor),
+            bar.heightAnchor.constraint(equalToConstant: FormattingBar.capsuleHeight),
+            bar.bottomAnchor.constraint(
+                equalTo: keyboardLayoutGuide.topAnchor,
+                constant: -FormattingBar.keyboardGap
+            )
+        ])
+    }
+
+    /// Only while editing, so nothing floats over the page with the keyboard down.
+    func setBarShown(_ shown: Bool) {
+        guard let bar, shown != isBarShown else { return }
+        isBarShown = shown
+        setNeedsLayout()
+        UIView.animate(withDuration: 0.2) {
+            bar.alpha = shown ? 1 : 0
+        }
+    }
+
+    /// Hosts let the editor run under the keyboard, so it insets its own text
+    /// from whatever covers it. Runs on every step of an interactive drag.
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        guard let bar else { return }
+        let covered = isBarShown ? bar.frame.minY : keyboardLayoutGuide.layoutFrame.minY
+        let inset = max(0, bounds.maxY - covered)
+        let previous = textView.contentInset.bottom
+        guard inset != previous else { return }
+        textView.contentInset.bottom = inset
+        textView.verticalScrollIndicatorInsets.bottom = inset
+        if inset > previous, textView.isFirstResponder, !textView.isTracking {
+            textView.scrollRangeToVisible(textView.selectedRange)
+        }
+    }
+}
+
 // MARK: - FullScreenTextEditor
 
 struct FullScreenTextEditor: UIViewRepresentable {
@@ -87,8 +155,9 @@ struct FullScreenTextEditor: UIViewRepresentable {
         Coordinator(self)
     }
 
-    func makeUIView(context: Context) -> FocusingTextView {
-        let tv = FocusingTextView()
+    func makeUIView(context: Context) -> EditorContainerView {
+        let container = EditorContainerView()
+        let tv = container.textView
         tv.backgroundColor = .clear
         tv.font = Style.Typography.faceUIFont(16)
         tv.textColor = Style.Color.primaryTextUIColor
@@ -107,20 +176,21 @@ struct FullScreenTextEditor: UIViewRepresentable {
         tv.onPasteImages = onPasteImages
         tv.onPasteLink = onPasteLink
         if formatting {
-            context.coordinator.enableFormatting(on: tv)
+            context.coordinator.enableFormatting(in: container)
         }
-        return tv
+        return container
     }
 
-    func updateUIView(_ uiView: FocusingTextView, context: Context) {
+    func updateUIView(_ uiView: EditorContainerView, context: Context) {
         context.coordinator.parent = self
-        uiView.onPasteImages = onPasteImages
-        uiView.onPasteLink = onPasteLink
-        if uiView.text != text {
+        let tv = uiView.textView
+        tv.onPasteImages = onPasteImages
+        tv.onPasteLink = onPasteLink
+        if tv.text != text {
             if formatting {
-                context.coordinator.adoptExternalText(text, in: uiView)
+                context.coordinator.adoptExternalText(text, in: tv)
             } else {
-                uiView.text = text
+                tv.text = text
             }
         }
     }
@@ -130,6 +200,7 @@ struct FullScreenTextEditor: UIViewRepresentable {
 
         private let barModel = FormattingBarModel()
         private weak var formattedTextView: UITextView?
+        private weak var container: EditorContainerView?
         private var barHost: UIViewController?
         /// Set while an operation is being applied, so its own change
         /// callbacks don't re-enter the formatting pipeline.
@@ -138,6 +209,9 @@ struct FullScreenTextEditor: UIViewRepresentable {
         /// restyle (an undo group, say) falls back to the whole document.
         private var pendingEdit: NSRange?
         private var needsFullRestyle = false
+        /// Where an undo or redo of an operation should leave the caret, set
+        /// while the undo manager unwinds and used once it has finished.
+        private var caretAfterUndo: Int?
 
         init(_ parent: FullScreenTextEditor) {
             self.parent = parent
@@ -172,9 +246,19 @@ struct FullScreenTextEditor: UIViewRepresentable {
             refreshBar(for: textView)
         }
 
+        func textViewDidBeginEditing(_ textView: UITextView) {
+            container?.setBarShown(true)
+        }
+
+        func textViewDidEndEditing(_ textView: UITextView) {
+            container?.setBarShown(false)
+        }
+
         // MARK: Formatting setup
 
-        func enableFormatting(on textView: FocusingTextView) {
+        func enableFormatting(in container: EditorContainerView) {
+            let textView = container.textView
+            self.container = container
             formattedTextView = textView
             textView.textStorage.delegate = self
             MarkupTextStyler.styleAll(textView.textStorage)
@@ -187,35 +271,20 @@ struct FullScreenTextEditor: UIViewRepresentable {
             host.view.backgroundColor = .clear
             host.safeAreaRegions = []
             barHost = host
-            textView.inputAccessoryView = FormattingAccessoryView(hosting: host.view)
+            container.installBar(host.view)
             refreshBar(for: textView)
 
             let tap = UITapGestureRecognizer(target: self, action: #selector(handleTap))
             tap.delegate = self
             textView.addGestureRecognizer(tap)
 
-            NotificationCenter.default.addObserver(
-                self,
-                selector: #selector(keyboardFrameWillChange),
-                name: UIResponder.keyboardWillChangeFrameNotification,
-                object: nil
-            )
-        }
-
-        /// The text view runs behind the glass bar and the keyboard (hosts
-        /// ignore the keyboard safe area), so text shows through the capsule.
-        /// Its content inset keeps the caret and last line above the bar.
-        @objc private func keyboardFrameWillChange(_ notification: Notification) {
-            guard let textView = formattedTextView, let window = textView.window,
-                  let frame = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect
-            else { return }
-            let keyboard = window.convert(frame, from: nil)
-            let field = textView.convert(textView.bounds, to: window)
-            let overlap = max(0, field.maxY - keyboard.minY)
-            textView.contentInset.bottom = overlap
-            textView.verticalScrollIndicatorInsets.bottom = overlap
-            if overlap > 0, textView.isFirstResponder {
-                textView.scrollRangeToVisible(textView.selectedRange)
+            for name in [Notification.Name.NSUndoManagerDidUndoChange, .NSUndoManagerDidRedoChange] {
+                NotificationCenter.default.addObserver(
+                    self,
+                    selector: #selector(undoManagerDidFinish),
+                    name: name,
+                    object: nil
+                )
             }
         }
 
@@ -276,13 +345,17 @@ struct FullScreenTextEditor: UIViewRepresentable {
 
         /// One undoable edit through UITextInput, whatever the operation was.
         private func apply(_ new: EditState, to textView: UITextView) {
+            let caretBefore = textView.selectedRange.location
             if let edit = MarkupEditing.replacement(from: textView.text ?? "", to: new.text),
                let start = textView.position(from: textView.beginningOfDocument, offset: edit.range.location),
                let end = textView.position(from: start, offset: edit.range.length),
                let range = textView.textRange(from: start, to: end) {
+                textView.undoManager?.beginUndoGrouping()
+                registerCaretRestore(caretBefore, on: textView)
                 isApplying = true
                 textView.replace(range, withText: edit.text)
                 isApplying = false
+                textView.undoManager?.endUndoGrouping()
             }
             isApplying = true
             textView.selectedRange = new.selection
@@ -290,6 +363,33 @@ struct FullScreenTextEditor: UIViewRepresentable {
             parent.text = textView.text ?? ""
             restylePendingEdits(in: textView)
             refreshBar(for: textView)
+        }
+
+        /// Left alone, undoing an operation selects the characters it put
+        /// back, and the next keystroke would replace them. This rides in the
+        /// operation's undo group, in both directions.
+        private func registerCaretRestore(_ caret: Int, on textView: UITextView) {
+            textView.undoManager?.registerUndo(withTarget: textView) { [weak self] textView in
+                self?.caretAfterUndo = caret
+                self?.registerCaretRestore(caret, on: textView)
+            }
+        }
+
+        @objc private func undoManagerDidFinish(_ notification: Notification) {
+            guard let textView = formattedTextView,
+                  notification.object as? UndoManager === textView.undoManager,
+                  let caret = caretAfterUndo
+            else { return }
+            caretAfterUndo = nil
+            // UIKit selects the restored characters after this notification.
+            DispatchQueue.main.async { [weak self, weak textView] in
+                guard let self, let textView else { return }
+                self.isApplying = true
+                textView.selectedRange = NSRange(location: min(caret, (textView.text as NSString).length), length: 0)
+                self.isApplying = false
+                textView.typingAttributes = MarkupTextStyler.bodyAttributes
+                self.refreshBar(for: textView)
+            }
         }
 
         private func perform(_ action: FormattingAction) {

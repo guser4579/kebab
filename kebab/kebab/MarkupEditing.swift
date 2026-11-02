@@ -378,10 +378,20 @@ nonisolated enum MarkupEditing {
             )
         }
 
+        // A pair straight after a letter or digit wouldn't flank, so it would
+        // never render.
+        let lead = followsWord(caret, floor: contentStart, in: ns) ? " " : ""
         return EditState(
-            text: ns.replacingCharacters(in: NSRange(location: caret, length: 0), with: marker + marker),
-            selection: NSRange(location: caret + length, length: 0)
+            text: ns.replacingCharacters(in: NSRange(location: caret, length: 0), with: lead + marker + marker),
+            selection: NSRange(location: caret + lead.utf16.count + length, length: 0)
         )
+    }
+
+    private static func followsWord(_ caret: Int, floor: Int, in ns: NSString) -> Bool {
+        guard caret > floor else { return false }
+        let range = ns.rangeOfComposedCharacterSequence(at: caret - 1)
+        guard let character = ns.substring(with: range).first else { return false }
+        return character.isLetter || character.isNumber
     }
 
     private static func togglingSelection(_ action: InlineAction, _ state: EditState) -> EditState {

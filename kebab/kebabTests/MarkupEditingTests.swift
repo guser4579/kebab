@@ -262,6 +262,26 @@ struct MarkupEditingTests {
         #expect(written(MarkupEditing.toggleInline(.strikethrough, state("- |"))) == "- ~~|~~")
     }
 
+    @Test("Right after a letter or digit a press adds a space first, so the pair renders")
+    func inlineAfterWord() {
+        #expect(written(MarkupEditing.toggleInline(.bold, state("line|"))) == "line **|**")
+        #expect(written(MarkupEditing.toggleInline(.italic, state("line|"))) == "line *|*")
+        #expect(written(MarkupEditing.toggleInline(.strikethrough, state("line|"))) == "line ~~|~~")
+        #expect(written(MarkupEditing.toggleInline(.bold, state("route 66|"))) == "route 66 **|**")
+        #expect(written(MarkupEditing.toggleInline(.italic, state("- café|"))) == "- café *|*")
+
+        let typed = MarkupEditing.toggleInline(.italic, state("line|")).text
+            .replacingOccurrences(of: "**", with: "*x*")
+        #expect(Markup.inline(typed).spans.contains { $0.style.contains(.italic) })
+    }
+
+    @Test("After punctuation, or with a selection, nothing extra goes in")
+    func inlineAfterWordUnchanged() {
+        #expect(written(MarkupEditing.toggleInline(.bold, state("(|"))) == "(**|**")
+        #expect(written(MarkupEditing.toggleInline(.bold, state("- |"))) == "- **|**")
+        #expect(written(MarkupEditing.toggleInline(.bold, state("line«word»"))) == "line**«word»**")
+    }
+
     @Test("Inside the style a press steps out past the closing marker")
     func inlineStepsOut() {
         #expect(written(MarkupEditing.toggleInline(.bold, state("**wo|rd** x"))) == "**word**| x")

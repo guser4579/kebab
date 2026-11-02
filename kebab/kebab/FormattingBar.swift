@@ -2,9 +2,9 @@
 //  FormattingBar.swift
 //  kebab
 //
-//  The floating glass capsule above the keyboard in the full-screen editor.
-//  It rides the keyboard as the text view's inputAccessoryView. All it does is
-//  report taps: every operation is a pure function in MarkupEditing.
+//  The floating glass capsule above the keyboard in the full-screen editor,
+//  pinned there by EditorContainerView. All it does is report taps: every
+//  operation is a pure function in MarkupEditing.
 //
 
 import Combine
@@ -43,9 +43,6 @@ struct FormattingBar: View {
         .frame(height: Self.capsuleHeight)
         .clipShape(Capsule())
         .kebabGlass(in: Capsule())
-        // The composer capsule's inset.
-        .padding(.horizontal, Style.Spacing.x4)
-        .padding(.bottom, Self.keyboardGap)
     }
 
     private func buttons(flexible: Bool) -> some View {
@@ -98,27 +95,5 @@ struct FormattingBar: View {
         .opacity(isEnabled ? 1 : 0.35)
         .accessibilityLabel(label)
         .accessibilityAddTraits(isActive ? .isSelected : [])
-    }
-}
-
-/// Fully transparent: only the capsule inside it is visible.
-final class FormattingAccessoryView: UIView {
-
-    init(hosting: UIView) {
-        let height = FormattingBar.capsuleHeight + FormattingBar.keyboardGap
-        super.init(frame: CGRect(x: 0, y: 0, width: 0, height: height))
-        autoresizingMask = .flexibleWidth
-        backgroundColor = .clear
-        hosting.frame = bounds
-        hosting.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        addSubview(hosting)
-    }
-
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    override var intrinsicContentSize: CGSize {
-        CGSize(width: UIView.noIntrinsicMetric, height: FormattingBar.capsuleHeight + FormattingBar.keyboardGap)
     }
 }
