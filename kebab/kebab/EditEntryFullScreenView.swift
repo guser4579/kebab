@@ -114,12 +114,16 @@ struct EditEntryFullScreenView: View {
                 .padding(.top, 16)
             }
 
-            FullScreenTextEditor(text: $text)
+            // Root thoughts only: comments keep plain text, no bar, no styling.
+            FullScreenTextEditor(text: $text, formatting: entry.parent_id == nil)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .padding(.horizontal, Style.Layout.entryContentPadding)
                 .padding(.top, 16)
                 .padding(.bottom, 16)
                 .background(Style.Color.background)
+                // With the bar, text scrolls behind the glass; the editor
+                // insets its own content from the keyboard.
+                .ignoresSafeArea(entry.parent_id == nil ? .keyboard : [], edges: .bottom)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(Style.Color.background)

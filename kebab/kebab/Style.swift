@@ -399,6 +399,16 @@ enum Style {
     }
 }
 
+// MARK: - Glass
+
+extension View {
+    /// Kebab's Liquid Glass: content shows through, with a subtle tint that
+    /// keeps text on it legible in dark mode without going opaque.
+    func kebabGlass<S: Shape>(in shape: S) -> some View {
+        glassEffect(.regular.tint(Style.Color.composerBackground.opacity(0.5)), in: shape)
+    }
+}
+
 // MARK: - Color hex initializers
 
 extension UIColor {

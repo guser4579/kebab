@@ -389,10 +389,7 @@ struct ComposerView: View {
         // Liquid Glass capsule: feed content scrolls visibly behind the
         // composer. The subtle tint keeps placeholder/text contrast on the
         // dark theme without going opaque.
-        .glassEffect(
-            .regular.tint(Style.Color.composerBackground.opacity(0.5)),
-            in: RoundedRectangle(cornerRadius: Style.Layout.composerCapsuleRadius)
-        )
+        .kebabGlass(in: RoundedRectangle(cornerRadius: Style.Layout.composerCapsuleRadius))
         .padding(.horizontal, composerOuterPadding)
         .padding(.bottom, isFocused ? Style.Spacing.x3 : 0)
         .onDisappear {

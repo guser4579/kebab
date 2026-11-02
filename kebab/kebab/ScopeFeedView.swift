@@ -161,10 +161,7 @@ struct ScopeFeedView: View {
                     .padding(.horizontal, store.unseenCount > 0 ? 14 : 0)
                     .frame(minWidth: 36)
                     .frame(height: 36)
-                    .glassEffect(
-                        .regular.tint(Style.Color.composerBackground.opacity(0.5)),
-                        in: Capsule()
-                    )
+                    .kebabGlass(in: Capsule())
                     .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)

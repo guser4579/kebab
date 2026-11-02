@@ -51,6 +51,7 @@ struct ComposerFullScreenView: View {
 
             FullScreenTextEditor(
                 text: $text,
+                formatting: true,
                 onPasteImages: { pasted in
                     Task {
                         for image in pasted {
@@ -70,6 +71,9 @@ struct ComposerFullScreenView: View {
                 .padding(.top, 16)
                 .padding(.bottom, 16)
                 .background(Style.Color.background)
+                // Text scrolls behind the glass formatting bar; the editor
+                // insets its own content from the keyboard.
+                .ignoresSafeArea(.keyboard, edges: .bottom)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(Style.Color.background)
