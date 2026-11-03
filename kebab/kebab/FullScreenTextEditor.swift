@@ -31,6 +31,8 @@ import UIKit
 
 final class FocusingTextView: UITextView {
     private var didRequestFocus = false
+    /// True during `EditorPrewarm`'s pass, which must never take focus.
+    static var suppressesAutoFocus = false
     /// When set, images on the pasteboard route into the composer's
     /// attachment pipeline instead of pasting into the text.
     var onPasteImages: (([UIImage]) -> Void)?
@@ -39,9 +41,9 @@ final class FocusingTextView: UITextView {
 
     override func didMoveToWindow() {
         super.didMoveToWindow()
-        guard window != nil, !didRequestFocus else { return }
+        guard window != nil, !didRequestFocus, !Self.suppressesAutoFocus else { return }
         didRequestFocus = true
-        DispatchQueue.main.async { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + EditorPrewarm.focusDelay) { [weak self] in
             guard let self, self.window != nil else { return }
             self.becomeFirstResponder()
             let end = self.endOfDocument

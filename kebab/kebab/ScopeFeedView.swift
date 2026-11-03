@@ -92,6 +92,10 @@ struct ScopeFeedView: View {
             }
         }
         .overlay(alignment: .top) { fab }
+        .onChange(of: store.hasLoadedOnce, initial: true) { _, loaded in
+            EditorPrewarm.trackKeyboard()
+            if loaded { EditorPrewarm.schedule() }
+        }
     }
 
     /// Quiet empty state for a collection or sub-collection scope, in the
