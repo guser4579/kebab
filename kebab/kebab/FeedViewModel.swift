@@ -302,7 +302,7 @@ final class FeedViewModel: ObservableObject {
                 if !imagePayloads.isEmpty {
                     // Staged bytes ARE the upload payload — no second
                     // decode/encode generation at flush time.
-                    let uploaded = try await attachmentStorage.uploadImageData(imagePayloads, userId: session.user.id)
+                    let uploaded = try await attachmentStorage.uploadImageData(imagePayloads, entryId: pending.id, userId: session.user.id)
                     // Seed the shared image cache so the promoted row renders
                     // the uploaded URLs straight from memory — the
                     // file:// → https:// swap never shows a placeholder.

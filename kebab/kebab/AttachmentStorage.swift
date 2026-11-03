@@ -10,7 +10,7 @@ import Supabase
 /// Everything attachments keep in Supabase Storage, across two buckets.
 ///
 /// **Images** live in the public `entry-images` bucket. Paths are unguessable —
-/// `{userId}/{UUID}.jpg` — which is the privacy model for the public bucket:
+/// `{userId}/{entryId}-{index}.jpg` — which is the privacy model for the public bucket:
 /// objects are only reachable with the exact URL stored on the entry. Images
 /// are resized to max 2048pt and JPEG-compressed before upload so a 48MP photo
 /// doesn't burn user bandwidth or storage quota.
@@ -41,15 +41,19 @@ final class AttachmentStorage {
     /// and returns image attachments with their public URLs, in the order
     /// given. The outbox stages bytes in exactly this format, so there is no
     /// second decode/encode (and no second lossy generation) at upload time.
-    func uploadImageData(_ payloads: [Data], userId: UUID) async throws -> [EntryAttachment] {
+    /// Safe to call again for the same entry: images that already landed on an
+    /// earlier attempt count as uploaded.
+    func uploadImageData(_ payloads: [Data], entryId: UUID, userId: UUID) async throws -> [EntryAttachment] {
         var attachments: [EntryAttachment] = []
-        for data in payloads {
-            // Lowercased to match the RLS folder check: Swift renders UUIDs
-            // uppercase but Postgres's auth.uid()::text is lowercase.
-            let path = "\(userId.uuidString.lowercased())/\(UUID().uuidString.lowercased()).jpg"
-            _ = try await supabase.storage
-                .from(Self.imagesBucket)
-                .upload(path, data: data, options: FileOptions(contentType: "image/jpeg"))
+        for (index, data) in payloads.enumerated() {
+            let path = Self.imagePath(entryId: entryId, index: index, userId: userId)
+            do {
+                _ = try await supabase.storage
+                    .from(Self.imagesBucket)
+                    .upload(path, data: data, options: FileOptions(contentType: "image/jpeg"))
+            } catch where Self.isDuplicateUpload(error) {
+                // Landed on an earlier attempt, before a later step failed.
+            }
             let url = try supabase.storage
                 .from(Self.imagesBucket)
                 .getPublicURL(path: path)
@@ -62,6 +66,26 @@ final class AttachmentStorage {
             ))
         }
         return attachments
+    }
+
+    /// Derives from the pending entry and the image's position, so a retry lands
+    /// on the same objects rather than leaving orphans. Lowercased to match the
+    /// RLS folder check: Swift renders UUIDs uppercase but Postgres's
+    /// auth.uid()::text is lowercase.
+    nonisolated static func imagePath(entryId: UUID, index: Int, userId: UUID) -> String {
+        "\(userId.uuidString.lowercased())/\(entryId.uuidString.lowercased())-\(index).jpg"
+    }
+
+    /// The SDK's form of `uploadSucceeded`'s duplicate: its error decoded from the
+    /// body when that parses, a bare HTTP error when it doesn't.
+    nonisolated static func isDuplicateUpload(_ error: Error) -> Bool {
+        if let storage = error as? StorageError {
+            return storage.statusCode == "409" || storage.error == "Duplicate"
+        }
+        if let http = error as? HTTPError {
+            return http.response.statusCode == 409
+        }
+        return false
     }
 
     // MARK: - Files

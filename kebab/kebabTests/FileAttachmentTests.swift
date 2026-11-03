@@ -8,6 +8,7 @@
 
 import AVFoundation
 import Foundation
+import Supabase
 import Testing
 import UniformTypeIdentifiers
 @testable import kebab
@@ -359,6 +360,47 @@ struct FileAttachmentTests {
         try Data("not a movie".utf8).write(to: url)
         defer { try? FileManager.default.removeItem(at: url) }
         #expect(await VideoNaming.creationDate(of: url) == nil)
+    }
+
+    // MARK: - Image paths
+
+    @Test("An image's path is the same on every retry, and lowercased for RLS")
+    func imagePathRepeats() {
+        let entryId = UUID()
+        let userId = UUID()
+        let first = AttachmentStorage.imagePath(entryId: entryId, index: 0, userId: userId)
+        #expect(first == AttachmentStorage.imagePath(entryId: entryId, index: 0, userId: userId))
+        #expect(first == "\(userId.uuidString.lowercased())/\(entryId.uuidString.lowercased())-0.jpg")
+    }
+
+    @Test("Each image in a thought, and each thought, gets its own path")
+    func imagePathsDiffer() {
+        let entryId = UUID()
+        let userId = UUID()
+        let paths = Set((0..<4).map { AttachmentStorage.imagePath(entryId: entryId, index: $0, userId: userId) })
+        #expect(paths.count == 4)
+        #expect(!paths.contains(AttachmentStorage.imagePath(entryId: UUID(), index: 0, userId: userId)))
+    }
+
+    @Test("Cleanup still finds an image at its new path")
+    func imagePathCleanup() {
+        let path = AttachmentStorage.imagePath(entryId: UUID(), index: 2, userId: UUID())
+        let url = "https://x.supabase.co/storage/v1/object/public/entry-images/\(path)"
+        #expect(AttachmentStorage.storagePath(fromPublicUrl: url) == path)
+    }
+
+    @Test("A duplicate image upload counts as success, and nothing else does")
+    func imageDuplicateIsSuccess() throws {
+        let url = try #require(URL(string: "https://x.supabase.co"))
+        func http(_ status: Int) throws -> HTTPError {
+            HTTPError(data: Data(), response: try #require(HTTPURLResponse(url: url, statusCode: status, httpVersion: nil, headerFields: nil)))
+        }
+        #expect(AttachmentStorage.isDuplicateUpload(StorageError(statusCode: "409", message: "exists", error: "Duplicate")))
+        #expect(AttachmentStorage.isDuplicateUpload(StorageError(message: "exists", error: "Duplicate")))
+        #expect(AttachmentStorage.isDuplicateUpload(try http(409)))
+        #expect(!AttachmentStorage.isDuplicateUpload(StorageError(statusCode: "403", message: "denied", error: "Unauthorized")))
+        #expect(!AttachmentStorage.isDuplicateUpload(try http(500)))
+        #expect(!AttachmentStorage.isDuplicateUpload(URLError(.notConnectedToInternet)))
     }
 
     // MARK: - Limits
