@@ -81,6 +81,7 @@ nonisolated enum ReminderNotificationContent {
         let images = entry.imageAttachments.count
         if images == 1 { return "A photo you saved." }
         if images > 1 { return "\(images) photos you saved." }
+        if let name = entry.fileAttachments.first?.file?.name { return truncated(name) }
         return "An entry you saved."
     }
 

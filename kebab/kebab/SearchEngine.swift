@@ -85,6 +85,17 @@ actor SearchEngine {
                 }
             }
 
+            // Filenames search like link titles. The first leads when there's no
+            // link, since that's what a files-only snippet shows.
+            let fileNames = entry.fileAttachments.compactMap { $0.file?.name }
+            if entry.linkAttachment == nil, let first = fileNames.first {
+                attachmentTitle = first
+            }
+            if !fileNames.isEmpty {
+                let names = fileNames.joined(separator: "\n")
+                attachmentText = attachmentText.isEmpty ? names : attachmentText + "\n" + names
+            }
+
             // Everything searchable reads the markup-free text, so a highlight
             // offset is an offset into what the snippet displays.
             let plainContent = Markup.plainText(entry.content)

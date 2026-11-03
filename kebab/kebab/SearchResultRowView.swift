@@ -19,6 +19,9 @@ enum SearchDisplay {
         if !entry.imageAttachments.isEmpty {
             return "Image"
         }
+        if let name = entry.fileAttachments.first?.file?.name {
+            return name
+        }
         return ""
     }
 
