@@ -101,7 +101,7 @@ final class FileOpener: ObservableObject {
     func playVideo(_ attachment: EntryAttachment, storage: AttachmentStorage?, onFailure: @escaping (String) -> Void) {
         guard !isOpening, let file = attachment.file else { return }
         if let local = localURL(for: attachment) {
-            VideoPresenter.present(local)
+            VideoPresenter.present(local, title: file.name)
             return
         }
         guard let storage else { return }
@@ -109,7 +109,7 @@ final class FileOpener: ObservableObject {
         Task {
             defer { isOpening = false }
             do {
-                VideoPresenter.present(try await storage.signedURL(forPath: file.path))
+                VideoPresenter.present(try await storage.signedURL(forPath: file.path), title: file.name)
             } catch {
                 onFailure("Couldn\u{2019}t play that video. Try again.")
             }
@@ -122,7 +122,7 @@ final class FileOpener: ObservableObject {
 enum VideoPresenter {
 
     @MainActor
-    static func present(_ url: URL) {
+    static func present(_ url: URL, title: String) {
         guard let root = UIApplication.shared.connectedScenes
             .compactMap({ $0 as? UIWindowScene })
             .first(where: { $0.activationState == .foregroundActive })?
@@ -134,7 +134,13 @@ enum VideoPresenter {
         }
         // Plays through the silent switch, as a video the user chose to open should.
         try? AVAudioSession.sharedInstance().setCategory(.playback)
-        let player = AVPlayer(url: url)
+        let item = AVPlayerItem(url: url)
+        let titleItem = AVMutableMetadataItem()
+        titleItem.identifier = .commonIdentifierTitle
+        titleItem.value = title as NSString
+        titleItem.extendedLanguageTag = "und"
+        item.externalMetadata = [titleItem]
+        let player = AVPlayer(playerItem: item)
         let controller = AVPlayerViewController()
         controller.player = player
         controller.modalPresentationStyle = .fullScreen

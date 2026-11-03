@@ -6,6 +6,7 @@
 //  outbox staging, object paths, limits, the cache, cleanup and search.
 //
 
+import AVFoundation
 import Foundation
 import Testing
 import UniformTypeIdentifiers
@@ -265,6 +266,99 @@ struct FileAttachmentTests {
         #expect(AttachmentStorage.uploadSucceeded(status: 400, body: duplicate))
         #expect(!AttachmentStorage.uploadSucceeded(status: 400, body: tooLarge))
         #expect(!AttachmentStorage.uploadSucceeded(status: 403, body: Data()))
+    }
+
+    // MARK: - Video names
+
+    private let noon = Date(timeIntervalSince1970: 1_793_707_200) // Nov 3, 2026, 12:00 UTC
+    private let us = Locale(identifier: "en_US")
+    private let utc = TimeZone(identifier: "UTC")!
+
+    @Test("A video is named for the day it was recorded")
+    func videoNamedByDate() {
+        #expect(VideoNaming.name(recordedOn: noon, taken: [], locale: us, timeZone: utc)
+            == "Video \u{00B7} Nov 3, 2026.mp4")
+    }
+
+    @Test("With no date it stays Video.mp4, numbered the same way")
+    func videoWithoutDate() {
+        #expect(VideoNaming.name(recordedOn: nil, taken: []) == "Video.mp4")
+        #expect(VideoNaming.name(recordedOn: nil, taken: ["Video.mp4"]) == "Video 2.mp4")
+        #expect(VideoNaming.name(recordedOn: nil, taken: ["Video.mp4", "Video 2.mp4"]) == "Video 3.mp4")
+    }
+
+    @Test("Two videos from one day in a thought get different names")
+    func sameDayVideos() {
+        let first = VideoNaming.name(recordedOn: noon, taken: ["lease.pdf"], locale: us, timeZone: utc)
+        let second = VideoNaming.name(recordedOn: noon, taken: [first], locale: us, timeZone: utc)
+        let third = VideoNaming.name(recordedOn: noon, taken: [first, second], locale: us, timeZone: utc)
+        #expect(second == "Video \u{00B7} Nov 3, 2026 2.mp4")
+        #expect(third == "Video \u{00B7} Nov 3, 2026 3.mp4")
+    }
+
+    @Test("The date follows the locale, and never puts a slash in the name")
+    func videoNameLocales() {
+        let german = VideoNaming.name(recordedOn: noon, taken: [], locale: Locale(identifier: "de_DE"), timeZone: utc)
+        #expect(german == "Video \u{00B7} 03.11.2026.mp4")
+        let japanese = VideoNaming.name(recordedOn: noon, taken: [], locale: Locale(identifier: "ja_JP"), timeZone: utc)
+        #expect(!japanese.contains("/"))
+        #expect((japanese as NSString).lastPathComponent == japanese)
+        #expect((japanese as NSString).pathExtension == "mp4")
+    }
+
+    @Test("The day comes from the user's time zone")
+    func videoNameTimeZone() {
+        let tokyo = TimeZone(identifier: "Asia/Tokyo")!
+        let evening = noon.addingTimeInterval(8 * 3600) // 20:00 UTC, already Nov 4 in Tokyo
+        #expect(VideoNaming.name(recordedOn: evening, taken: [], locale: us, timeZone: utc).contains("Nov 3"))
+        #expect(VideoNaming.name(recordedOn: evening, taken: [], locale: us, timeZone: tokyo).contains("Nov 4"))
+    }
+
+    /// A real one-frame movie, so the metadata read goes through AVFoundation.
+    private func writeMovie(metadata: [AVMetadataItem], type: AVFileType) async throws -> URL {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension(type == .mov ? "mov" : "mp4")
+        let writer = try AVAssetWriter(outputURL: url, fileType: type)
+        writer.metadata = metadata
+        let input = AVAssetWriterInput(mediaType: .video, outputSettings: [
+            AVVideoCodecKey: AVVideoCodecType.h264,
+            AVVideoWidthKey: 16,
+            AVVideoHeightKey: 16
+        ])
+        let adaptor = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: input, sourcePixelBufferAttributes: nil)
+        writer.add(input)
+        #expect(writer.startWriting())
+        writer.startSession(atSourceTime: .zero)
+        var buffer: CVPixelBuffer?
+        CVPixelBufferCreate(nil, 16, 16, kCVPixelFormatType_32BGRA, nil, &buffer)
+        adaptor.append(try #require(buffer), withPresentationTime: .zero)
+        input.markAsFinished()
+        writer.endSession(atSourceTime: CMTime(value: 1, timescale: 30))
+        await writer.finishWriting()
+        #expect(writer.status == .completed)
+        return url
+    }
+
+    @Test("The recorded date is read from QuickTime metadata, as an iPhone writes it")
+    func readsQuickTimeDate() async throws {
+        let item = AVMutableMetadataItem()
+        item.identifier = .quickTimeMetadataCreationDate
+        item.value = "2026-11-03T12:00:00+0000" as NSString
+        item.dataType = kCMMetadataBaseDataType_UTF8 as String
+        let url = try await writeMovie(metadata: [item], type: .mov)
+        defer { try? FileManager.default.removeItem(at: url) }
+        #expect(await VideoNaming.creationDate(of: url) == noon)
+    }
+
+    @Test("A file with nothing readable has no recorded date")
+    func readsNoDate() async throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension("mp4")
+        try Data("not a movie".utf8).write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+        #expect(await VideoNaming.creationDate(of: url) == nil)
     }
 
     // MARK: - Limits

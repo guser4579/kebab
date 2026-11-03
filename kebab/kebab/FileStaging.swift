@@ -20,7 +20,7 @@ import UniformTypeIdentifiers
 /// A file on its way through the composer. `pending` arrives when staging ends.
 struct ComposerFile: Identifiable, Equatable {
     let id: UUID
-    let name: String
+    var name: String
     let kind: FileKind
     var pending: PendingFile?
     var thumbnail: UIImage?
@@ -38,6 +38,9 @@ final class ComposerFileStager: ObservableObject {
 
     @Published private(set) var files: [ComposerFile] = []
     private var tasks: [UUID: Task<Void, Never>] = [:]
+    /// Picked videos whose recorded date hasn't been read yet. Their placeholder
+    /// name doesn't count as taken.
+    private var unnamedVideos: Set<UUID> = []
     private let store: OutboxStore
     var onNotice: (String) -> Void = { _ in }
 
@@ -83,7 +86,8 @@ final class ComposerFileStager: ObservableObject {
             return
         }
         let id = UUID()
-        let name = "Video.mp4"
+        let name = VideoNaming.placeholder
+        unnamedVideos.insert(id)
         files.append(ComposerFile(id: id, name: name, kind: .video, progress: 0))
         let store = store
         track(id: id, kind: .video, name: name) { [weak self] in
@@ -91,6 +95,9 @@ final class ComposerFileStager: ObservableObject {
                 throw CocoaError(.fileReadUnknown)
             }
             defer { try? FileManager.default.removeItem(at: movie.url) }
+            // From the source, because export can drop the metadata.
+            let recorded = await VideoNaming.creationDate(of: movie.url)
+            await MainActor.run { self?.nameVideo(id: id, recordedOn: recorded) }
             store.prepareFilesDirectory()
             let destination = store.stagedFileURL(id: id, name: name)
             try await VideoCompressor.compress(movie.url, to: destination) { progress in
@@ -103,6 +110,7 @@ final class ComposerFileStager: ObservableObject {
     func remove(id: UUID) {
         tasks[id]?.cancel()
         tasks[id] = nil
+        unnamedVideos.remove(id)
         if let pending = files.first(where: { $0.id == id })?.pending {
             store.removeStaged(pending)
         } else {
@@ -132,6 +140,15 @@ final class ComposerFileStager: ObservableObject {
         }
     }
 
+    private func nameVideo(id: UUID, recordedOn date: Date?) {
+        unnamedVideos.remove(id)
+        guard let index = files.firstIndex(where: { $0.id == id }) else { return }
+        let taken = files
+            .filter { $0.id != id && !unnamedVideos.contains($0.id) }
+            .map(\.name)
+        files[index].name = VideoNaming.name(recordedOn: date, taken: taken)
+    }
+
     private func setProgress(_ progress: Double, for id: UUID) {
         guard let index = files.firstIndex(where: { $0.id == id }) else { return }
         files[index].progress = progress
@@ -148,6 +165,7 @@ final class ComposerFileStager: ObservableObject {
             do {
                 let size = try await staged()
                 try Task.checkCancellation()
+                let finalName = self?.files.first(where: { $0.id == id })?.name ?? name
                 let details = await Task.detached(priority: .userInitiated) {
                     await FileDetails.generate(for: store.stagedFileURL(id: id, name: name), kind: kind, id: id, store: store)
                 }.value
@@ -156,7 +174,7 @@ final class ComposerFileStager: ObservableObject {
                     file: PendingFile(
                         id: id,
                         localFilename: store.stagedFileURL(id: id, name: name).lastPathComponent,
-                        name: name,
+                        name: finalName,
                         mime: UTType(filenameExtension: (name as NSString).pathExtension)?.preferredMIMEType ?? "application/octet-stream",
                         size: size,
                         kind: kind,
@@ -185,6 +203,7 @@ final class ComposerFileStager: ObservableObject {
 
     private func fail(id: UUID, error: Error) {
         store.removeStaged(id: id)
+        unnamedVideos.remove(id)
         guard files.contains(where: { $0.id == id }) else { return }
         files.removeAll { $0.id == id }
         tasks[id] = nil
@@ -207,6 +226,57 @@ nonisolated struct PickedMovie: Transferable {
             try FileManager.default.copyItem(at: received.file, to: copy)
             return PickedMovie(url: copy)
         }
+    }
+}
+
+/// What a video from Photos is called. The picker gives no filename, so it's
+/// named for the day it was recorded.
+nonisolated enum VideoNaming {
+
+    static let placeholder = "Video.mp4"
+
+    /// `Video · Nov 3, 2026.mp4`, or `Video.mp4` with no date, numbered from 2
+    /// when the name is already taken in this thought.
+    static func name(
+        recordedOn date: Date?,
+        taken: [String],
+        locale: Locale = .current,
+        timeZone: TimeZone = .current
+    ) -> String {
+        var base = "Video"
+        if let date {
+            let formatter = DateFormatter()
+            formatter.locale = locale
+            formatter.timeZone = timeZone
+            formatter.dateStyle = .medium
+            formatter.timeStyle = .none
+            // Some locales write 2026/11/03, and a slash would cut the name
+            // short everywhere it becomes a path.
+            let day = formatter.string(from: date)
+                .replacingOccurrences(of: "/", with: "-")
+                .replacingOccurrences(of: ":", with: "-")
+            base = "Video \u{00B7} \(day)"
+        }
+        var candidate = "\(base).mp4"
+        var number = 2
+        while taken.contains(candidate) {
+            candidate = "\(base) \(number).mp4"
+            number += 1
+        }
+        return candidate
+    }
+
+    /// The common metadata key, then the QuickTime item Apple's camera writes.
+    static func creationDate(of url: URL) async -> Date? {
+        let asset = AVURLAsset(url: url)
+        if let item = try? await asset.load(.creationDate),
+           let date = try? await item.load(.dateValue) {
+            return date
+        }
+        guard let metadata = try? await asset.load(.metadata) else { return nil }
+        let items = AVMetadataItem.metadataItems(from: metadata, filteredByIdentifier: .quickTimeMetadataCreationDate)
+        guard let item = items.first else { return nil }
+        return try? await item.load(.dateValue)
     }
 }
 
