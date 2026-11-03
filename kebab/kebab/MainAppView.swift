@@ -853,16 +853,10 @@ struct MainAppView: View {
                                     isComposerFullScreenVisible = true
                                 }
                             },
-                            onStartList: {
-                                // List: a purpose-built accelerator — seed
-                                // the first checkbox and open the
-                                // full-screen accommodation state, focused.
+                            onOpenLongNote: {
+                                // Room to write: the full-screen composer,
+                                // focused, with the draft exactly as it is.
                                 dismissPostCapture()
-                                if composerText.isEmpty {
-                                    composerText = Checklist.uncheckedMarker
-                                } else {
-                                    composerText += "\n" + Checklist.uncheckedMarker
-                                }
                                 withAnimation(.easeOut(duration: 0.25)) {
                                     isComposerFullScreenVisible = true
                                 }

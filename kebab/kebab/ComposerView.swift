@@ -223,8 +223,9 @@ struct ComposerView: View {
     /// Present ⇒ the constrained state shows the expand affordance, which
     /// hands this draft to the full-screen composer.
     var onExpandTapped: (() -> Void)?
-    /// Present ⇒ the + menu offers List, a purpose-built checklist accelerator.
-    var onStartList: (() -> Void)?
+    /// Present ⇒ the + menu offers Long note, which opens the full-screen
+    /// composer on the draft as it stands.
+    var onOpenLongNote: (() -> Void)?
 
     init(
         text: Binding<String>,
@@ -237,7 +238,7 @@ struct ComposerView: View {
         onSent: @escaping (String) -> Void,
         onFocus: (() -> Void)? = nil,
         onExpandTapped: (() -> Void)? = nil,
-        onStartList: (() -> Void)? = nil
+        onOpenLongNote: (() -> Void)? = nil
     ) {
         self._text = text
         self.maxHeight = maxHeight
@@ -249,7 +250,7 @@ struct ComposerView: View {
         self.onSent = onSent
         self.onFocus = onFocus
         self.onExpandTapped = onExpandTapped
-        self.onStartList = onStartList
+        self.onOpenLongNote = onOpenLongNote
     }
 
     @State private var isFocused: Bool = false
@@ -627,7 +628,7 @@ struct ComposerView: View {
     }
 
     // "+" attach menu — Camera / Photos / Files (capped at four images),
-    // plus the List accelerator on the root composer.
+    // plus Long note on the root composer.
     private var attachMenu: some View {
         Menu {
             Button {
@@ -645,11 +646,11 @@ struct ComposerView: View {
             } label: {
                 Label("Files", systemImage: "folder")
             }
-            if let onStartList {
+            if let onOpenLongNote {
                 Button {
-                    onStartList()
+                    onOpenLongNote()
                 } label: {
-                    Label("List", systemImage: "checklist")
+                    Label("Long note", systemImage: "doc.text")
                 }
             }
         } label: {
@@ -663,9 +664,9 @@ struct ComposerView: View {
                 .frame(width: buttonSize, height: buttonSize)
                 .contentShape(Circle())
         }
-        // List stays reachable even at the image cap; only fully disable the
+        // Long note stays reachable even at the image cap; only fully disable the
         // menu when it has nothing left to offer.
-        .disabled(attachedImages.count >= maxImages && onStartList == nil)
+        .disabled(attachedImages.count >= maxImages && onOpenLongNote == nil)
     }
 
     // Mic button — dictation toggle. While recording the glyph becomes an
