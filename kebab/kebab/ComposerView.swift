@@ -1,6 +1,7 @@
 import SwiftUI
 import UIKit
 import PhotosUI
+import UniformTypeIdentifiers
 
 // MARK: - NonScrollingTextView
 
@@ -226,6 +227,11 @@ struct ComposerView: View {
     /// Present ⇒ the + menu offers Long note, which opens the full-screen
     /// composer on the draft as it stands.
     var onOpenLongNote: (() -> Void)?
+    /// The draft's files. Nil where attachments don't apply.
+    var fileStager: ComposerFileStager?
+    /// Keeps the body current with the stager. An idle one stands in when
+    /// `fileStager` is nil, since this wrapper can't hold an optional.
+    @ObservedObject private var observedStager: ComposerFileStager
 
     init(
         text: Binding<String>,
@@ -238,7 +244,8 @@ struct ComposerView: View {
         onSent: @escaping (String) -> Void,
         onFocus: (() -> Void)? = nil,
         onExpandTapped: (() -> Void)? = nil,
-        onOpenLongNote: (() -> Void)? = nil
+        onOpenLongNote: (() -> Void)? = nil,
+        fileStager: ComposerFileStager? = nil
     ) {
         self._text = text
         self.maxHeight = maxHeight
@@ -251,6 +258,8 @@ struct ComposerView: View {
         self.onFocus = onFocus
         self.onExpandTapped = onExpandTapped
         self.onOpenLongNote = onOpenLongNote
+        self.fileStager = fileStager
+        self._observedStager = ObservedObject(wrappedValue: fileStager ?? .idle)
     }
 
     @State private var isFocused: Bool = false
@@ -277,9 +286,18 @@ struct ComposerView: View {
 
     private let maxImages = 4
 
+    private var hasFiles: Bool {
+        !observedStager.files.isEmpty
+    }
+
+    private var isStagingFiles: Bool {
+        observedStager.isStaging
+    }
+
     private var hasContent: Bool {
         !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || !attachedImages.isEmpty
+            || hasFiles
             || attachedLink != nil
     }
 
@@ -313,7 +331,7 @@ struct ComposerView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if attachedLink != nil || !attachedImages.isEmpty {
+            if attachedLink != nil || !attachedImages.isEmpty || hasFiles {
                 VStack(alignment: .leading, spacing: 8) {
                     if let url = attachedLink {
                         ComposerLinkChip(url: url) {
@@ -323,6 +341,9 @@ struct ComposerView: View {
                     }
                     if !attachedImages.isEmpty {
                         ComposerThumbnailStrip(images: $attachedImages)
+                    }
+                    if let fileStager, hasFiles {
+                        ComposerFileStrip(stager: fileStager)
                     }
                 }
                 .padding(.top, 10)
@@ -414,14 +435,19 @@ struct ComposerView: View {
         .photosPicker(
             isPresented: $isPhotosPickerPresented,
             selection: $photoSelection,
-            maxSelectionCount: max(1, maxImages - attachedImages.count),
-            matching: .images
+            maxSelectionCount: max(1, maxImages - attachedImages.count + FileLimits.maxFiles - (fileStager?.files.count ?? 0)),
+            matching: fileStager == nil ? .images : .any(of: [.images, .videos])
         )
         .onChange(of: photoSelection) { _, items in
             guard !items.isEmpty else { return }
             Task {
                 for item in items {
-                    guard attachedImages.count < maxImages else { break }
+                    // Videos become file attachments, with their own limit.
+                    if let fileStager, item.supportedContentTypes.contains(where: { $0.conforms(to: .movie) }) {
+                        fileStager.add(pickedVideo: item)
+                        continue
+                    }
+                    guard attachedImages.count < maxImages else { continue }
                     if let data = try? await item.loadTransferable(type: Data.self),
                        let staged = await PendingImage.staged(fromData: data) {
                         attachedImages.append(staged)
@@ -443,13 +469,22 @@ struct ComposerView: View {
         }
         .fileImporter(
             isPresented: $isFileImporterPresented,
-            allowedContentTypes: [.image],
+            allowedContentTypes: fileStager == nil ? [.image] : [.item],
             allowsMultipleSelection: true
         ) { result in
             guard case .success(let urls) = result else { return }
+            // Images keep the image pipeline. Everything else is a file, which
+            // the stager copies while its security scope is open.
+            let images = urls.filter { url in
+                guard fileStager != nil else { return true }
+                return UTType(filenameExtension: url.pathExtension)?.conforms(to: .image) ?? false
+            }
+            for url in urls where fileStager != nil && !images.contains(url) {
+                fileStager?.add(importedFile: url)
+            }
             // Read while the security scope is open; stage (decode/encode)
             // off-main afterwards.
-            let datas: [Data] = urls.compactMap { url in
+            let datas: [Data] = images.compactMap { url in
                 let scoped = url.startAccessingSecurityScopedResource()
                 defer { if scoped { url.stopAccessingSecurityScopedResource() } }
                 return try? Data(contentsOf: url)
@@ -627,8 +662,8 @@ struct ComposerView: View {
         }
     }
 
-    // "+" attach menu — Camera / Photos / Files (capped at four images),
-    // plus Long note on the root composer.
+    // "+" attach menu — Camera / Photos / Files, plus Long note on the root
+    // composer. Images and files have their own caps, each refused as it comes.
     private var attachMenu: some View {
         Menu {
             Button {
@@ -657,7 +692,7 @@ struct ComposerView: View {
             Image(systemName: "plus")
                 .font(.system(size: 17, weight: .medium))
                 .foregroundColor(
-                    attachedImages.count >= maxImages
+                    attachedImages.count >= maxImages && fileStager == nil
                         ? Style.Color.secondary.opacity(0.35)
                         : Style.Color.secondary
                 )
@@ -666,7 +701,7 @@ struct ComposerView: View {
         }
         // Long note stays reachable even at the image cap; only fully disable the
         // menu when it has nothing left to offer.
-        .disabled(attachedImages.count >= maxImages && onOpenLongNote == nil)
+        .disabled(attachedImages.count >= maxImages && onOpenLongNote == nil && fileStager == nil)
     }
 
     // Mic button — dictation toggle. While recording the glyph becomes an
@@ -725,7 +760,7 @@ struct ComposerView: View {
             }
         }
         .buttonStyle(.plain)
-        .disabled(!hasContent)
+        .disabled(!hasContent || isStagingFiles)
     }
 
     private func sendIfNeeded() {
@@ -733,10 +768,12 @@ struct ComposerView: View {
             voice.stop()
         }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        // Images or a staged link alone are sendable — text context is
+        // Images, files or a staged link alone are sendable — text context is
         // optional. The host reads attachedImages/attachedLink itself (and
         // clears them) inside onSent.
-        guard !trimmed.isEmpty || !attachedImages.isEmpty || attachedLink != nil else { return }
+        guard !isStagingFiles,
+              !trimmed.isEmpty || !attachedImages.isEmpty || hasFiles || attachedLink != nil
+        else { return }
         suppressLayoutAnimation = true
         onSent(trimmed)
         text = ""

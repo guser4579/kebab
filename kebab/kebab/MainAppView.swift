@@ -20,6 +20,7 @@ struct MainAppView: View {
         UserDefaults.standard.string(forKey: MainAppView.feedDraftKey) ?? ""
     /// Images staged in the feed composer (in-memory only; restored on failed send).
     @State private var composerImages: [PendingImage] = []
+    @StateObject private var composerFiles = ComposerFileStager()
     /// Link staged in the feed composer as a compact chip (pasted URL).
     @State private var composerLink: URL? =
         UserDefaults.standard.string(forKey: MainAppView.feedLinkDraftKey).flatMap(URL.init(string:))
@@ -223,6 +224,7 @@ struct MainAppView: View {
         // entry lands in the filtered collection.
         let targetId = feedViewModel.activeCollectionFilter?.targetCollectionId
         let images = composerImages
+        let files = composerFiles.takeReady()
         let link = composerLink
         composerImages = []
         composerLink = nil
@@ -231,6 +233,7 @@ struct MainAppView: View {
         let queuedId = feedViewModel.queueEntry(
             content: content,
             images: images,
+            files: files,
             linkURL: link,
             collectionId: targetId
         )
@@ -256,6 +259,7 @@ struct MainAppView: View {
             if composerImages.isEmpty {
                 composerImages = images
             }
+            composerFiles.restore(files)
             if composerLink == nil {
                 composerLink = link
             }
@@ -675,6 +679,7 @@ struct MainAppView: View {
                     // feed's scroll geometry is a stable physical surface.
                     .safeAreaPadding(.bottom, Style.Layout.feedBottomReserve)
                     .task {
+                        composerFiles.onNotice = { [weak noticeCenter] in noticeCenter?.show($0) }
                         // Search infrastructure: per-user stores plus the
                         // corpus mirror's data sources.
                         if let userId = authViewModel.currentUserId {
@@ -860,7 +865,8 @@ struct MainAppView: View {
                                 withAnimation(.easeOut(duration: 0.25)) {
                                     isComposerFullScreenVisible = true
                                 }
-                            }
+                            },
+                            fileStager: composerFiles
                         )
                 }
                 // No opaque fill: the chips and glass composer float over
@@ -1023,6 +1029,7 @@ struct MainAppView: View {
                         text: $composerText,
                         attachedImages: $composerImages,
                         attachedLink: $composerLink,
+                        fileStager: composerFiles,
                         onSend: {
                             let content = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
                             sendDraft(content)

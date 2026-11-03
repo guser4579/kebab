@@ -145,6 +145,84 @@ struct ComposerLinkChip: View {
     }
 }
 
+/// Staged files with per-file remove, shared between the inline composer and
+/// the full-screen composer. Scrolls sideways, like the image strip.
+struct ComposerFileStrip: View {
+
+    @ObservedObject var stager: ComposerFileStager
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(stager.files) { file in
+                    chip(file)
+                }
+            }
+        }
+    }
+
+    private func chip(_ file: ComposerFile) -> some View {
+        HStack(spacing: 8) {
+            Group {
+                if let thumbnail = file.thumbnail {
+                    Image(uiImage: thumbnail)
+                        .resizable()
+                        .scaledToFill()
+                } else {
+                    Icon(FileIcon.name(forKind: file.kind, filename: file.name), glyphSize: Style.Icon.glyphSmall)
+                        .foregroundColor(Style.Color.secondary)
+                }
+            }
+            .frame(width: 24, height: 24)
+            .clipShape(RoundedRectangle(cornerRadius: 4))
+
+            VStack(alignment: .leading, spacing: 0) {
+                Text(file.name)
+                    .font(Style.Typography.meta())
+                    .foregroundColor(Style.Color.primaryText)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .frame(maxWidth: 140, alignment: .leading)
+
+                if let pending = file.pending {
+                    Text(FileMeta.byteCount(pending.size))
+                        .font(Style.Typography.face(11))
+                        .foregroundColor(Style.Color.secondary)
+                } else if let progress = file.progress {
+                    ProgressView(value: progress)
+                        .progressViewStyle(.linear)
+                        .tint(Style.Color.primaryText)
+                        .frame(width: 80)
+                } else {
+                    Text("Attaching")
+                        .font(Style.Typography.face(11))
+                        .foregroundColor(Style.Color.secondary)
+                }
+            }
+
+            Button {
+                stager.remove(id: file.id)
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(Style.Color.secondary)
+                    .frame(width: 20, height: 20)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Remove \(file.name)")
+        }
+        .padding(.leading, 8)
+        .padding(.trailing, 4)
+        .frame(height: 44)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Style.Color.composerBackground)
+                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Style.Color.separator, lineWidth: 1))
+        )
+    }
+}
+
 /// Staged image thumbnails with per-image remove — shared between the inline
 /// composer and the full-screen composer so attachment state and order look
 /// identical in both. Scrolls horizontally rather than growing vertically.

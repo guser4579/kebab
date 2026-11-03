@@ -103,6 +103,7 @@ enum EditorPrewarm {
             text: .constant("Warm"),
             attachedImages: .constant([]),
             attachedLink: .constant(nil),
+            fileStager: .idle,
             onSend: {},
             onDismiss: {}
         ))

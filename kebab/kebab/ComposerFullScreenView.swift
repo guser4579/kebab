@@ -17,6 +17,8 @@ struct ComposerFullScreenView: View {
     @Binding var attachedImages: [PendingImage]
     /// Same staged link as the inline composer — one draft, every state.
     @Binding var attachedLink: URL?
+    /// Same staged files as the inline composer.
+    @ObservedObject var fileStager: ComposerFileStager
     /// Sends the current draft — the owner reads and clears the bindings,
     /// identical to the inline path.
     let onSend: () -> Void
@@ -26,14 +28,20 @@ struct ComposerFullScreenView: View {
     private var hasContent: Bool {
         !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || !attachedImages.isEmpty
+            || !fileStager.files.isEmpty
             || attachedLink != nil
+    }
+
+    /// A video still compressing holds the send back.
+    private var canSend: Bool {
+        hasContent && !fileStager.isStaging
     }
 
     var body: some View {
         VStack(spacing: 0) {
             header
 
-            if attachedLink != nil || !attachedImages.isEmpty {
+            if attachedLink != nil || !attachedImages.isEmpty || !fileStager.files.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
                     if let url = attachedLink {
                         ComposerLinkChip(url: url) {
@@ -42,6 +50,9 @@ struct ComposerFullScreenView: View {
                     }
                     if !attachedImages.isEmpty {
                         ComposerThumbnailStrip(images: $attachedImages)
+                    }
+                    if !fileStager.files.isEmpty {
+                        ComposerFileStrip(stager: fileStager)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -115,7 +126,7 @@ struct ComposerFullScreenView: View {
                     Spacer(minLength: 0)
 
                     Button {
-                        guard hasContent else { return }
+                        guard canSend else { return }
                         UIApplication.shared.sendAction(
                             #selector(UIResponder.resignFirstResponder),
                             to: nil, from: nil, for: nil
@@ -124,13 +135,13 @@ struct ComposerFullScreenView: View {
                     } label: {
                         Icon("arrow-up")
                             .foregroundColor(
-                                hasContent
+                                canSend
                                     ? Style.Color.composerSend
                                     : Style.Color.secondary.opacity(0.35)
                             )
                     }
                     .buttonStyle(.plain)
-                    .disabled(!hasContent)
+                    .disabled(!canSend)
                 }
                 .padding(.horizontal, Style.Spacing.x4)
                 .frame(height: 24, alignment: .center)
