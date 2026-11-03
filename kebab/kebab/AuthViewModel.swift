@@ -90,6 +90,7 @@ final class AuthViewModel: ObservableObject {
         UserDefaults.standard.removeObject(forKey: "composer.draft.feed.link")
         ImageDiskCache.removeAll()
         ImageCache.shared.removeAllObjects()
+        FileCache.shared.removeAll()
         URLCache.shared.removeAllCachedResponses()
         isAuthenticated = false
         currentUserId = nil
@@ -222,8 +223,9 @@ final class AuthViewModel: ObservableObject {
         struct AvatarRow: Decodable { let avatar_url: String? }
 
         var paths: Set<String> = []
+        var filePaths: Set<String> = []
 
-        // Image attachments across all of the user's entries (RLS scopes the
+        // Stored attachments across all of the user's entries (RLS scopes the
         // select to user_id = auth.uid(), so this is the user's own content).
         let rows: [AttachmentsRow] = try await supabase
             .from("entries")
@@ -231,13 +233,9 @@ final class AuthViewModel: ObservableObject {
             .eq("user_id", value: uid)
             .execute()
             .value
-        for row in rows {
-            for attachment in row.attachments ?? [] where attachment.attachmentType == .image {
-                if let path = ProfileRepository.storagePath(fromPublicUrl: attachment.url) {
-                    paths.insert(path)
-                }
-            }
-        }
+        let owned = AttachmentStorage.objectPaths(for: rows.flatMap { $0.attachments ?? [] })
+        paths.formUnion(owned.images)
+        filePaths.formUnion(owned.files)
 
         // The current avatar object (avatars share the entry-images bucket).
         let profileRows: [AvatarRow] = try await supabase
@@ -252,6 +250,11 @@ final class AuthViewModel: ObservableObject {
             paths.insert(path)
         }
 
+        try await purge(paths, from: AttachmentStorage.imagesBucket)
+        try await purge(filePaths, from: AttachmentStorage.filesBucket)
+    }
+
+    private func purge(_ paths: Set<String>, from bucket: String) async throws {
         guard !paths.isEmpty else { return }
 
         // Remove in bounded batches so a large account doesn't send one huge
@@ -265,7 +268,7 @@ final class AuthViewModel: ObservableObject {
             let batch = Array(all[index..<min(index + 100, all.count)])
             do {
                 _ = try await supabase.storage
-                    .from(ImageStorageRepository.bucket)
+                    .from(bucket)
                     .remove(paths: batch)
             } catch {
                 aBatchErrored = true
@@ -275,7 +278,7 @@ final class AuthViewModel: ObservableObject {
 
         // The gate. A listing failure throws out of here, which is correct:
         // absence that cannot be confirmed must never be assumed.
-        let stillPresent = try await presentObjects(among: paths)
+        let stillPresent = try await presentObjects(among: paths, in: bucket)
         guard stillPresent.isEmpty else {
             // Counts and status only — never a path (the first segment is the
             // user id), never content.
@@ -284,7 +287,7 @@ final class AuthViewModel: ObservableObject {
                 domain: "Kebab.DeleteAccount",
                 code: 2,
                 userInfo: [NSLocalizedDescriptionKey:
-                    "Couldn\u{2019}t remove your uploaded images, so your account wasn\u{2019}t deleted. Please try again."]
+                    "Couldn\u{2019}t remove your uploaded files, so your account wasn\u{2019}t deleted. Please try again."]
             )
         }
     }
@@ -303,7 +306,7 @@ final class AuthViewModel: ObservableObject {
     /// avatars both upload into the user's own folder — so in practice this is
     /// one folder listing; deriving the folder set keeps it correct if that
     /// ever changes. RLS scopes the listing to the caller's own folder anyway.
-    private func presentObjects(among paths: Set<String>) async throws -> Set<String> {
+    private func presentObjects(among paths: Set<String>, in bucket: String) async throws -> Set<String> {
         let folders = Set(
             paths.map { $0.split(separator: "/").dropLast().joined(separator: "/") }
         ).filter { !$0.isEmpty }
@@ -315,7 +318,7 @@ final class AuthViewModel: ObservableObject {
             // Page: a folder can hold more objects than one listing returns.
             while true {
                 let page = try await supabase.storage
-                    .from(ImageStorageRepository.bucket)
+                    .from(bucket)
                     .list(
                         path: folder,
                         options: SearchOptions(limit: pageSize, offset: offset)

@@ -25,7 +25,7 @@ struct PendingImage: Identifiable, Equatable {
     static func staged(fromData data: Data) async -> PendingImage? {
         await Task.detached(priority: .userInitiated) {
             guard let image = ImageDecode.downsampled(data),
-                  let jpeg = try? ImageStorageRepository.jpegData(from: image)
+                  let jpeg = try? AttachmentStorage.jpegData(from: image)
             else { return nil }
             return PendingImage(image: image, jpegData: jpeg)
         }.value
@@ -34,7 +34,7 @@ struct PendingImage: Identifiable, Equatable {
     /// Stages an in-memory capture (camera, pasted UIImage) the same way.
     static func staged(fromImage source: UIImage) async -> PendingImage? {
         await Task.detached(priority: .userInitiated) {
-            guard let jpeg = try? ImageStorageRepository.jpegData(from: source),
+            guard let jpeg = try? AttachmentStorage.jpegData(from: source),
                   let image = ImageDecode.downsampled(jpeg)
             else { return nil }
             return PendingImage(image: image, jpegData: jpeg)

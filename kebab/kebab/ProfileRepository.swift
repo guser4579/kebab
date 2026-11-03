@@ -68,17 +68,17 @@ final class ProfileRepository {
     /// Avatars are small; 512pt is retina-crisp at every size the app renders
     /// (96pt page avatar, 64pt menu card) without storing a full photo.
     func uploadAvatar(_ image: UIImage, userId: UUID) async throws -> String {
-        let data = try ImageStorageRepository.jpegData(
+        let data = try AttachmentStorage.jpegData(
             from: image,
             maxDimension: 512,
             quality: 0.82
         )
         let path = "\(userId.uuidString.lowercased())/avatar-\(UUID().uuidString.lowercased()).jpg"
         _ = try await supabase.storage
-            .from(ImageStorageRepository.bucket)
+            .from(AttachmentStorage.imagesBucket)
             .upload(path, data: data, options: FileOptions(contentType: "image/jpeg"))
         return try supabase.storage
-            .from(ImageStorageRepository.bucket)
+            .from(AttachmentStorage.imagesBucket)
             .getPublicURL(path: path)
             .absoluteString
     }
@@ -98,7 +98,7 @@ final class ProfileRepository {
         guard let path = Self.storagePath(fromPublicUrl: publicUrl) else { return }
         do {
             let removed = try await supabase.storage
-                .from(ImageStorageRepository.bucket)
+                .from(AttachmentStorage.imagesBucket)
                 .remove(paths: [path])
             if removed.isEmpty {
                 print("Avatar cleanup removed 0/1 object(s) — check the entry-images select+delete policies on storage.objects")
@@ -109,9 +109,9 @@ final class ProfileRepository {
     }
 
     /// Extracts the in-bucket object path from a public URL. Moved to
-    /// `ImageStorageRepository`, which owns the bucket and mints these paths;
+    /// `AttachmentStorage`, which owns the bucket and mints these paths;
     /// kept here so existing avatar/account-deletion call sites read unchanged.
     static func storagePath(fromPublicUrl url: String) -> String? {
-        ImageStorageRepository.storagePath(fromPublicUrl: url)
+        AttachmentStorage.storagePath(fromPublicUrl: url)
     }
 }

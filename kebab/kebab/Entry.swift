@@ -11,6 +11,10 @@ nonisolated struct EntryAttachment: Codable, Sendable, Equatable {
     /// and on every generic link — those keep the existing preview treatment
     /// untouched. See `SourceMetadata`.
     let source: SourceMetadata?
+    /// Present on `"file"` attachments. Older builds ignore the key, and the
+    /// unknown `type` gives them a nil `attachmentType`, so these entries
+    /// still decode there; they just don't show the file.
+    let file: FileMetadata?
 
     /// Explicit rather than synthesized so `source` can default to nil and
     /// every existing construction site keeps compiling unchanged.
@@ -20,7 +24,8 @@ nonisolated struct EntryAttachment: Codable, Sendable, Equatable {
         title: String?,
         favicon_url: String?,
         image_url: String?,
-        source: SourceMetadata? = nil
+        source: SourceMetadata? = nil,
+        file: FileMetadata? = nil
     ) {
         self.type = type
         self.url = url
@@ -28,11 +33,13 @@ nonisolated struct EntryAttachment: Codable, Sendable, Equatable {
         self.favicon_url = favicon_url
         self.image_url = image_url
         self.source = source
+        self.file = file
     }
 
     enum AttachmentType: String {
         case link
         case image
+        case file
     }
 
     var attachmentType: AttachmentType? {
@@ -63,7 +70,8 @@ nonisolated struct EntryAttachment: Codable, Sendable, Equatable {
             title: title,
             favicon_url: favicon_url,
             image_url: image_url,
-            source: newSource
+            source: newSource,
+            file: file
         )
     }
 }
@@ -99,6 +107,15 @@ nonisolated struct Entry: Identifiable, Sendable, Equatable {
 
     var imageAttachments: [EntryAttachment] {
         attachments?.filter { $0.attachmentType == .image } ?? []
+    }
+
+    var fileAttachments: [EntryAttachment] {
+        attachments?.filter { $0.attachmentType == .file && $0.file != nil } ?? []
+    }
+
+    /// What may be shown: a hidden thought hides its files, like its images.
+    var visibleFileAttachments: [EntryAttachment] {
+        isContentHidden ? [] : fileAttachments
     }
 
     /// The resolved X post this entry's link attachment carries, if any.

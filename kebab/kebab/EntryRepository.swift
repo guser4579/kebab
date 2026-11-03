@@ -119,14 +119,14 @@ final class EntryRepository {
     /// cascade, independent of what the UI happens to have loaded. For a
     /// comment, `root_id` names its thread rather than its own subtree, so the
     /// `id.eq` arm selects just that comment. That is complete today: comments
-    /// cannot own images (`InsertCommentPayload` has no attachments column and
+    /// cannot own images or files (`InsertCommentPayload` has no attachments column and
     /// both detail views compose replies with `attachments: nil`), so a
     /// comment's subtree owns no Storage objects. Revisit this query if replies
     /// ever gain uploads.
     ///
     /// RLS scopes the select to `user_id = auth.uid()`, so this only ever sees
     /// the caller's own rows.
-    func imageAttachmentsInSubtree(of id: UUID) async throws -> [EntryAttachment] {
+    func storedAttachmentsInSubtree(of id: UUID) async throws -> [EntryAttachment] {
         struct AttachmentsRow: Decodable { let attachments: [EntryAttachment]? }
         let rows: [AttachmentsRow] = try await supabase
             .from("entries")
@@ -134,7 +134,7 @@ final class EntryRepository {
             .or("id.eq.\(id.uuidString),root_id.eq.\(id.uuidString)")
             .execute()
             .value
-        return rows.flatMap { ($0.attachments ?? []).filter { $0.attachmentType == .image } }
+        return rows.flatMap { ($0.attachments ?? []).filter { $0.attachmentType == .image || $0.attachmentType == .file } }
     }
 
     func deleteEntry(id: UUID) async throws {

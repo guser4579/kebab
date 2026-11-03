@@ -134,6 +134,27 @@ final class FeedViewModel: ObservableObject {
                 image_url: nil
             )
         }
+        // Files render from their outbox copies: no path yet, so a card opens
+        // the local bytes and shows the local thumbnail.
+        for file in pending.files ?? [] {
+            imageAttachments.append(EntryAttachment(
+                type: "file",
+                url: outbox.fileURL(for: file.localFilename).absoluteString,
+                title: nil,
+                favicon_url: nil,
+                image_url: nil,
+                file: FileMetadata(
+                    path: "",
+                    name: file.name,
+                    mime: file.mime,
+                    size: file.size,
+                    kind: file.kind.rawValue,
+                    thumb_url: file.thumbnailFilename.map { outbox.fileURL(for: $0).absoluteString },
+                    duration: file.duration,
+                    page_count: file.pageCount
+                )
+            ))
+        }
         // Staged link renders as a link card from the first frame, matching
         // the promoted form.
         if let stagedURL = pending.linkURL {
@@ -171,7 +192,7 @@ final class FeedViewModel: ObservableObject {
 
     private let repository: EntryRepository
     private let collectionRepository: CollectionRepository
-    private let imageStorage: ImageStorageRepository
+    private let attachmentStorage: AttachmentStorage
     private let xPosts: XPostRepository
     private let supabase: SupabaseClient
     private let outbox = OutboxStore()
@@ -182,13 +203,14 @@ final class FeedViewModel: ObservableObject {
     init(supabase: SupabaseClient) {
         self.repository = EntryRepository(supabase: supabase)
         self.collectionRepository = CollectionRepository(supabase: supabase)
-        self.imageStorage = ImageStorageRepository(supabase: supabase)
+        self.attachmentStorage = AttachmentStorage(supabase: supabase)
         self.xPosts = XPostRepository(supabase: supabase)
         self.supabase = supabase
 
         // Offline reads live in the per-scope page caches (FeedStore); this
         // model only restores the durable outbox.
         pendingEntries = outbox.loadAll()
+        outbox.sweepOrphanedFiles(keeping: pendingEntries)
 
         // Flush the outbox whenever connectivity (re)appears — including the
         // initial callback at launch, which drains anything left over from a
@@ -218,16 +240,18 @@ final class FeedViewModel: ObservableObject {
     func queueEntry(
         content: String,
         images: [PendingImage] = [],
+        files: [PendingFile] = [],
         linkURL: URL? = nil,
         collectionId: UUID? = nil
     ) -> UUID? {
         let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty || !images.isEmpty || linkURL != nil else { return nil }
+        guard !trimmed.isEmpty || !images.isEmpty || !files.isEmpty || linkURL != nil else { return nil }
 
         do {
             let pending = try outbox.enqueue(
                 content: trimmed,
                 images: images,
+                files: files,
                 linkURL: linkURL?.absoluteString,
                 collectionId: collectionId,
                 authorUserId: supabase.auth.currentSession?.user.id
@@ -278,7 +302,7 @@ final class FeedViewModel: ObservableObject {
                 if !imagePayloads.isEmpty {
                     // Staged bytes ARE the upload payload — no second
                     // decode/encode generation at flush time.
-                    let uploaded = try await imageStorage.uploadImageData(imagePayloads, userId: session.user.id)
+                    let uploaded = try await attachmentStorage.uploadImageData(imagePayloads, userId: session.user.id)
                     // Seed the shared image cache so the promoted row renders
                     // the uploaded URLs straight from memory — the
                     // file:// → https:// swap never shows a placeholder.
@@ -295,6 +319,24 @@ final class FeedViewModel: ObservableObject {
                     }
                     attachments += uploaded
                 }
+                // Paths derive from each file's id, so a retry after any later
+                // failure lands on the same objects.
+                var fileAttachments: [EntryAttachment] = []
+                for file in pending.files ?? [] {
+                    let fileURL = outbox.fileURL(for: file.localFilename)
+                    guard FileManager.default.fileExists(atPath: fileURL.path) else {
+                        // Not a connectivity problem, so it counts against the
+                        // entry rather than stalling the whole outbox.
+                        throw CocoaError(.fileNoSuchFile)
+                    }
+                    fileAttachments.append(try await attachmentStorage.uploadFile(
+                        file,
+                        fileURL: fileURL,
+                        thumbnailURL: file.thumbnailFilename.map { outbox.fileURL(for: $0) },
+                        userId: session.user.id
+                    ))
+                }
+                attachments += fileAttachments
                 // An explicitly staged link (composer chip) takes precedence
                 // and leaves the text untouched; otherwise fall back to
                 // detecting a typed URL in the text, as before.
@@ -391,6 +433,7 @@ final class FeedViewModel: ObservableObject {
                     collection_parent_id: info?.parentId,
                     collection_parent_name: info?.parentName
                 )
+                adoptUploadedFiles(of: pending, attachments: fileAttachments)
                 pendingEntries.removeAll { $0.id == pending.id }
                 outbox.remove(pending)
                 onEntryPromoted?(promoted)
@@ -412,6 +455,25 @@ final class FeedViewModel: ObservableObject {
                 }
                 outbox.update(updated)
                 pendingEntries = pendingEntries.map { $0.id == updated.id ? updated : $0 }
+            }
+        }
+    }
+
+    /// The author already has these bytes, so a promoted card opens instantly and
+    /// offline: originals move into the file cache, and thumbnails seed the image
+    /// cache so the file:// → https:// swap shows no placeholder.
+    private func adoptUploadedFiles(of pending: PendingEntry, attachments: [EntryAttachment]) {
+        for (file, attachment) in zip(pending.files ?? [], attachments) {
+            guard let metadata = attachment.file else { continue }
+            try? FileCache.shared.adopt(
+                outbox.fileURL(for: file.localFilename),
+                path: metadata.path,
+                name: file.name
+            )
+            if let thumbnail = file.thumbnailFilename,
+               let remote = metadata.thumb_url.flatMap(URL.init(string:)),
+               let image = UIImage(contentsOfFile: outbox.fileURL(for: thumbnail).path) {
+                ImageCache.insert(image, for: remote)
             }
         }
     }
@@ -764,9 +826,9 @@ final class FeedViewModel: ObservableObject {
         onEntryDeleteRequested?(id)
         // Storage bytes are NOT covered by the parent_id cascade, and the rows
         // that name them vanish the instant the DELETE lands — so read the
-        // doomed subtree's image attachments first. Read-only and optional: if
+        // doomed subtree's stored attachments first. Read-only and optional: if
         // this fails, the delete still proceeds and we simply skip cleanup.
-        let doomedImages = (try? await repository.imageAttachmentsInSubtree(of: id)) ?? []
+        let doomedAttachments = (try? await repository.storedAttachmentsInSubtree(of: id)) ?? []
         for attempt in 0..<3 {
             do {
                 try await repository.deleteEntry(id: id)
@@ -775,8 +837,8 @@ final class FeedViewModel: ObservableObject {
                 // the bytes go. Detached and best-effort: the visible deletion
                 // never waits on the bucket, and a Storage failure can never
                 // resurrect content the database has already dropped.
-                if !doomedImages.isEmpty {
-                    Task { await self.imageStorage.removeImageObjects(for: doomedImages) }
+                if !doomedAttachments.isEmpty {
+                    Task { await self.attachmentStorage.removeObjects(for: doomedAttachments) }
                 }
                 return true
             } catch let error as URLError {
