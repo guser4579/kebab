@@ -61,16 +61,25 @@ struct EntryContentView: View {
 
             let hasImages = !entry.imageAttachments.isEmpty
                 && !entry.isContentHidden
+            let files = entry.visibleFileAttachments
+            let hasFiles = !files.isEmpty
 
             if !entry.content.isEmpty {
                 contentText
 
                 Color.clear
-                    .frame(height: (hasLinkCard || hasImages) ? 8 : 12)
+                    .frame(height: (hasLinkCard || hasImages || hasFiles) ? 8 : 12)
             }
 
             if hasImages {
                 EntryImageStripView(attachments: entry.imageAttachments)
+
+                Color.clear
+                    .frame(height: 12)
+            }
+
+            if hasFiles {
+                EntryFilesView(attachments: files)
 
                 Color.clear
                     .frame(height: 12)
@@ -83,7 +92,7 @@ struct EntryContentView: View {
                     .frame(height: 12)
             }
 
-            if entry.content.isEmpty && !hasLinkCard && !hasImages {
+            if entry.content.isEmpty && !hasLinkCard && !hasImages && !hasFiles {
                 Color.clear
                     .frame(height: 12)
             }
