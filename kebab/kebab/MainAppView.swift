@@ -73,10 +73,7 @@ struct MainAppView: View {
     @State private var pendingWarningId: UUID?
     /// Full-screen composer — the same draft (composerText/composerImages) at
     /// maximum accommodation, entered from the constrained state's expand control.
-    @State private var isComposerFullScreenVisible = false
-    /// One-shot signal asking the inline composer to retake keyboard focus
-    /// (set when collapsing back from the full-screen composer).
-    @State private var composerFocusRequest = false
+    @State private var composerPresentation = ComposerPresentation()
     // Post-capture state: the just-captured entry gets a transient action
     // strip (Comment / Add to collection / Edit) and a brief settling
     // emphasis. Action-dismissed first, timer-dismissed second (~10s).
@@ -334,6 +331,21 @@ struct MainAppView: View {
         addToCollectionAppearsInPlace = true
         withAnimation(.easeOut(duration: 0.15)) {
             isAddToCollectionVisible = true
+        }
+    }
+
+    private func openComposerFullScreen() {
+        dismissPostCapture()
+        withAnimation(.easeOut(duration: 0.25)) {
+            composerPresentation.open()
+        }
+    }
+
+    private func closeComposerFullScreen() {
+        withAnimation(.easeOut(duration: 0.25)) {
+            composerPresentation.close()
+        } completion: {
+            composerPresentation.finishLeaving()
         }
     }
 
@@ -814,7 +826,7 @@ struct MainAppView: View {
                                 && !isRenameVisible
                                 && deleteCandidate == nil
                                 && !isFullScreenEditVisible
-                                && !isComposerFullScreenVisible
+                                && !composerPresentation.isFullScreen
                                 && !isAddToCollectionVisible
                                 // On pushed screens the left edge means "back".
                                 && (PopGestureDelegate.shared.navigationController?.viewControllers.count ?? 1) <= 1
@@ -845,7 +857,7 @@ struct MainAppView: View {
                             allowsAttachments: true,
                             attachedImages: $composerImages,
                             attachedLink: $composerLink,
-                            requestFocus: $composerFocusRequest,
+                            restsCollapsed: $composerPresentation.restsCollapsed,
                             onSent: { content in
                                 sendDraft(content)
                             },
@@ -853,18 +865,12 @@ struct MainAppView: View {
                                 dismissPostCapture()
                             },
                             onExpandTapped: {
-                                dismissPostCapture()
-                                withAnimation(.easeOut(duration: 0.25)) {
-                                    isComposerFullScreenVisible = true
-                                }
+                                openComposerFullScreen()
                             },
                             onOpenLongNote: {
                                 // Room to write: the full-screen composer,
                                 // focused, with the draft exactly as it is.
-                                dismissPostCapture()
-                                withAnimation(.easeOut(duration: 0.25)) {
-                                    isComposerFullScreenVisible = true
-                                }
+                                openComposerFullScreen()
                             },
                             fileStager: composerFiles
                         )
@@ -885,6 +891,7 @@ struct MainAppView: View {
                 )
                 .frame(maxWidth: .infinity)
                 .frame(maxHeight: .infinity, alignment: .bottom)
+                .hiddenBehindFullScreen(composerPresentation.hidesInline || fullScreenEditEntry != nil)
 
                 // Settings layer: lives conceptually on the left side of the
                 // app. An always-mounted panel (stable node identity) that
@@ -1021,10 +1028,10 @@ struct MainAppView: View {
                 }
             }
             // Full-screen composer: the same draft at maximum accommodation.
-            // Entering saves nothing; X collapses the draft back to the inline
-            // composer and returns keyboard focus there.
+            // Entering saves nothing; collapsing takes the keyboard down with it,
+            // and the draft returns to the inline composer unfocused.
             .overlay {
-                if isComposerFullScreenVisible {
+                if composerPresentation.isFullScreen {
                     ComposerFullScreenView(
                         text: $composerText,
                         attachedImages: $composerImages,
@@ -1034,19 +1041,10 @@ struct MainAppView: View {
                             let content = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
                             sendDraft(content)
                             composerText = ""
-                            withAnimation(.easeOut(duration: 0.25)) {
-                                isComposerFullScreenVisible = false
-                            }
+                            closeComposerFullScreen()
                         },
                         onDismiss: {
-                            withAnimation(.easeOut(duration: 0.25)) {
-                                isComposerFullScreenVisible = false
-                            }
-                            // Hand the keyboard back to the inline composer once
-                            // the overlay has finished leaving.
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                                composerFocusRequest = true
-                            }
+                            closeComposerFullScreen()
                         }
                     )
                     .transition(.move(edge: .bottom))

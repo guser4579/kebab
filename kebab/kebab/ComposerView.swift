@@ -59,6 +59,8 @@ private struct GrowingTextView: UIViewRepresentable {
     /// External focus request (returning from full-screen) — consumed once honored.
     @Binding var requestFocus: Bool
     let maxHeight: CGFloat
+    /// One truncated line: a draft resting collapsed.
+    var isSingleLine = false
     /// Horizontal text insets vary by composer layout: tighter next to the
     /// inline + button, roomier when text owns the full row.
     let leadingInset: CGFloat
@@ -117,6 +119,11 @@ private struct GrowingTextView: UIViewRepresentable {
             inset.left = leadingInset
             inset.right = trailingInset
             textView.textContainerInset = inset
+        }
+        let maximumLines = isSingleLine ? 1 : 0
+        if textView.textContainer.maximumNumberOfLines != maximumLines {
+            textView.textContainer.maximumNumberOfLines = maximumLines
+            textView.textContainer.lineBreakMode = isSingleLine ? .byTruncatingTail : .byWordWrapping
         }
         if requestFocus {
             DispatchQueue.main.async {
@@ -219,6 +226,8 @@ struct ComposerView: View {
     /// External focus request (e.g. returning from the full-screen composer);
     /// consumed once honored.
     @Binding var requestFocus: Bool
+    /// Returning from full screen: the draft rests as one line until focused.
+    @Binding var restsCollapsed: Bool
     let onSent: (String) -> Void
     var onFocus: (() -> Void)?
     /// Present ⇒ the constrained state shows the expand affordance, which
@@ -241,6 +250,7 @@ struct ComposerView: View {
         attachedImages: Binding<[PendingImage]> = .constant([]),
         attachedLink: Binding<URL?> = .constant(nil),
         requestFocus: Binding<Bool> = .constant(false),
+        restsCollapsed: Binding<Bool> = .constant(false),
         onSent: @escaping (String) -> Void,
         onFocus: (() -> Void)? = nil,
         onExpandTapped: (() -> Void)? = nil,
@@ -254,6 +264,7 @@ struct ComposerView: View {
         self._attachedImages = attachedImages
         self._attachedLink = attachedLink
         self._requestFocus = requestFocus
+        self._restsCollapsed = restsCollapsed
         self.onSent = onSent
         self.onFocus = onFocus
         self.onExpandTapped = onExpandTapped
@@ -314,8 +325,12 @@ struct ComposerView: View {
 
     /// Focused (or holding a draft) ⇒ text owns its own region above a stable
     /// action row — five levels of accommodation, one composer, one draft.
+    private var showsCollapsedDraft: Bool {
+        restsCollapsed && !isFocused && !voice.isRecording
+    }
+
     private var isExpandedLayout: Bool {
-        isFocused || !text.isEmpty
+        isFocused || (!text.isEmpty && !showsCollapsedDraft)
     }
 
     /// Leading text inset: tight next to the inline + button, roomy when the
@@ -400,8 +415,12 @@ struct ComposerView: View {
         // the fling shipped.) Accepted trade: the first blur-collapse after
         // a send lands instantly — it is part of the composer resetting —
         // and every transition after it animates normally.
-        .onChange(of: isFocused) { _, _ in
+        .onChange(of: isFocused) { _, focused in
             suppressLayoutAnimation = false
+            if focused { restsCollapsed = false }
+        }
+        .onChange(of: voice.isRecording) { _, recording in
+            if recording { restsCollapsed = false }
         }
         .onChange(of: text) { _, newValue in
             if !newValue.isEmpty {
@@ -530,6 +549,7 @@ struct ComposerView: View {
                 isFocused: $isFocused,
                 requestFocus: $requestFocus,
                 maxHeight: maxHeight,
+                isSingleLine: showsCollapsedDraft,
                 leadingInset: textLeadingInset,
                 trailingInset: textTrailingInset,
                 onFocus: onFocus,

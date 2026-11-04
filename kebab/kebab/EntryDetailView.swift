@@ -207,6 +207,7 @@ struct EntryDetailView: View {
                     },
                     onFocus: { }
                 )
+                .hiddenBehindFullScreen(fullScreenEditEntry != nil)
             }
             .onAppear {
                 // Wait out the push transition so the focus lands after the

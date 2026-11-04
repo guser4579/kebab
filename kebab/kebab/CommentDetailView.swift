@@ -194,6 +194,7 @@ struct CommentDetailView: View {
                     },
                     onFocus: { }
                 )
+                .hiddenBehindFullScreen(fullScreenEditEntry != nil)
             }
             .overlay(alignment: .bottom) {
                 if activeEntryMenuEntry != nil {

@@ -83,6 +83,7 @@ final class EditorContainerView: UIView {
     let textView = FocusingTextView()
     private var bar: UIView?
     private var isBarShown = false
+    private var arrivedAt: Date?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -93,6 +94,11 @@ final class EditorContainerView: UIView {
 
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        if window != nil, arrivedAt == nil { arrivedAt = Date() }
     }
 
     func installBar(_ bar: UIView) {
@@ -118,7 +124,14 @@ final class EditorContainerView: UIView {
         guard let bar, shown != isBarShown else { return }
         isBarShown = shown
         setNeedsLayout()
-        UIView.animate(withDuration: 0.2) {
+        // The keyboard guide pins the bar in place while the overlay slides, so
+        // with a keyboard already up it would float over the screen below.
+        let slideLeft = arrivedAt.map { 0.25 - Date().timeIntervalSince($0) } ?? 0
+        UIView.animate(
+            withDuration: 0.2,
+            delay: shown ? max(0, slideLeft) : 0,
+            options: .beginFromCurrentState
+        ) {
             bar.alpha = shown ? 1 : 0
         }
     }
