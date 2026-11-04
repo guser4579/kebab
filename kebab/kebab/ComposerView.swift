@@ -370,8 +370,7 @@ struct ComposerView: View {
             // and focus/cursor survive layout transitions.
             HStack(alignment: .bottom, spacing: 0) {
                 if !isExpandedLayout && allowsAttachments {
-                    attachMenu
-                        .padding(.leading, 4)
+                    attachMenuSlot
                         .padding(.bottom, buttonInset)
                 }
                 textArea
@@ -431,6 +430,16 @@ struct ComposerView: View {
         // composer. The subtle tint keeps placeholder/text contrast on the
         // dark theme without going opaque.
         .kebabGlass(in: RoundedRectangle(cornerRadius: Style.Layout.composerCapsuleRadius))
+        // Over the glass rather than in it. A Menu inside a glass shape morphs
+        // that whole shape into its popover, and the shape comes back on the
+        // wrong tint for about a second after the menu closes.
+        .overlay(alignment: .bottomLeading) {
+            if allowsAttachments {
+                attachMenu
+                    .padding(.leading, 4)
+                    .padding(.bottom, buttonInset)
+            }
+        }
         .padding(.horizontal, composerOuterPadding)
         .padding(.bottom, isFocused ? Style.Spacing.x3 : 0)
         .onDisappear {
@@ -595,8 +604,7 @@ struct ComposerView: View {
     private var actionRow: some View {
         HStack(spacing: 0) {
             if allowsAttachments {
-                attachMenu
-                    .padding(.leading, 4)
+                attachMenuSlot
             }
             if showsPasteAffordance {
                 pasteChip
@@ -680,6 +688,13 @@ struct ComposerView: View {
                 }
             }
         }
+    }
+
+    /// Holds the row's room for `attachMenu`, which floats over the glass.
+    private var attachMenuSlot: some View {
+        SwiftUI.Color.clear
+            .frame(width: buttonSize, height: buttonSize)
+            .padding(.leading, 4)
     }
 
     // "+" attach menu — Camera / Photos / Files, plus Long note on the root
